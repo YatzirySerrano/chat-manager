@@ -29,6 +29,14 @@ class ConnectionRequest extends FormRequest
     public const MESSAGE_MAX_LENGTH = 1024;
 
     /**
+     * Automatic messages for the team's actions (AutomaticMessageKind),
+     * each one with its "{kind}_enabled" and "{kind}_message" fields.
+     *
+     * @var list<string>
+     */
+    public const ACTION_MESSAGES = ['agent_assigned', 'department_transfer', 'agent_transfer'];
+
+    /**
      * Longest reopen window accepted, in minutes (7 days).
      */
     public const REOPEN_WINDOW_MAX_MINUTES = 10080;
@@ -154,6 +162,10 @@ class ConnectionRequest extends FormRequest
             'away_message' => ['nullable', 'string', 'max:'.self::MESSAGE_MAX_LENGTH, 'required_if_accepted:away_enabled'],
             'farewell_enabled' => ['boolean'],
             'farewell_message' => ['nullable', 'string', 'max:'.self::MESSAGE_MAX_LENGTH, 'required_if_accepted:farewell_enabled'],
+            ...collect(self::ACTION_MESSAGES)->flatMap(fn (string $kind): array => [
+                "{$kind}_enabled" => ['sometimes', 'boolean'],
+                "{$kind}_message" => ['nullable', 'string', 'max:'.self::MESSAGE_MAX_LENGTH, "required_if_accepted:{$kind}_enabled"],
+            ])->all(),
             'reopen_window_minutes' => ['nullable', 'integer', 'min:1', 'max:'.self::REOPEN_WINDOW_MAX_MINUTES],
         ];
 
@@ -290,6 +302,9 @@ class ConnectionRequest extends FormRequest
             'welcome_message' => 'mensaje de bienvenida',
             'away_message' => 'mensaje fuera de horario',
             'farewell_message' => 'mensaje de despedida',
+            'agent_assigned_message' => 'mensaje de agente asignado',
+            'department_transfer_message' => 'mensaje de transferencia a departamento',
+            'agent_transfer_message' => 'mensaje de transferencia a otro agente',
             'reopen_window_minutes' => 'ventana de reapertura',
         ];
     }
@@ -340,6 +355,11 @@ class ConnectionRequest extends FormRequest
                 ...($this->has('away_in_open_conversations') ? ['away_in_open_conversations' => $this->boolean('away_in_open_conversations')] : []),
                 'farewell_enabled' => $this->boolean('farewell_enabled'),
                 'farewell_message' => $this->nullableString('farewell_message'),
+                // Only when sent: a client that does not know them keeps the stored values.
+                ...collect(self::ACTION_MESSAGES)->flatMap(fn (string $kind): array => $this->has("{$kind}_enabled") ? [
+                    "{$kind}_enabled" => $this->boolean("{$kind}_enabled"),
+                    "{$kind}_message" => $this->nullableString("{$kind}_message"),
+                ] : [])->all(),
                 'reopen_window_minutes' => $this->filled('reopen_window_minutes') ? $this->integer('reopen_window_minutes') : null,
             ],
             'secrets' => $secrets,

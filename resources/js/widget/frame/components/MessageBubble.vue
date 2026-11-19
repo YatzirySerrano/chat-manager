@@ -2,11 +2,14 @@
 import { Download, FileText, RotateCw } from '@lucide/vue';
 import { computed } from 'vue';
 import type { LocalStatus, ThreadMessage } from '../../types';
+import AgentAvatar from './AgentAvatar.vue';
 
 /**
  * One message of the thread. The visitor's own messages show their
  * delivery state (Enviando, Enviado, Entregado, Leído, or Fallido with its
- * reason and "Reintentar"); the agent's show the agent's name. Files (sent
+ * reason and "Reintentar"). The first message of each group from the team
+ * says who wrote it: the agent's name and photo (initials without one), or
+ * «Asistente virtual» with the bot icon for automatic messages. Files (sent
  * by either side) open through short-lived signed links: images are shown,
  * audio and video play in place, anything else downloads. A file the
  * visitor is uploading shows its name and a progress bar. The bubble colors
@@ -16,11 +19,27 @@ const props = defineProps<{
     message: ThreadMessage;
     status: LocalStatus | null;
     error: string | null;
+    /** First message of a group from the same author: shows who wrote it. */
+    showAuthor?: boolean;
 }>();
 
 defineEmits<{ retry: [] }>();
 
 const mine = computed(() => props.message.direction === 'inbound');
+
+const author = computed(() => {
+    if (mine.value || !props.showAuthor) {
+        return null;
+    }
+
+    if (props.message.assistant) {
+        return { name: 'Asistente virtual', bot: true };
+    }
+
+    return props.message.agent_name
+        ? { name: props.message.agent_name, bot: false }
+        : null;
+});
 
 const statusLabels: Record<LocalStatus, string> = {
     sending: 'Enviando',
@@ -84,10 +103,17 @@ function kindOf(mime: string | null): 'image' | 'video' | 'audio' | 'file' {
         :data-direction="message.direction"
     >
         <p
-            v-if="!mine && message.agent_name"
-            class="px-1 text-xs text-(--cm-muted)"
+            v-if="author"
+            class="flex min-w-0 items-center gap-1.5 px-1 text-xs text-(--cm-muted)"
+            data-author
         >
-            {{ message.agent_name }}
+            <AgentAvatar
+                :name="author.name"
+                :url="author.bot ? null : message.agent_avatar_url"
+                :bot="author.bot"
+                class="size-6 bg-(--cm-agent-bg) text-[0.625rem] text-(--cm-agent-fg)"
+            />
+            <span class="truncate font-medium">{{ author.name }}</span>
         </p>
         <div
             class="max-w-[85%] min-w-0 rounded-2xl px-3.5 py-2 text-[15px] leading-snug wrap-anywhere whitespace-pre-wrap"

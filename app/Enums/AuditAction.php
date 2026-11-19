@@ -142,6 +142,7 @@ enum AuditAction: string
     case ChatbotRuleCreated = 'chatbot.rule_created';
     case ChatbotRuleUpdated = 'chatbot.rule_updated';
     case ChatbotRuleDeleted = 'chatbot.rule_deleted';
+    case AiSettingsUpdated = 'ai.settings_updated';
 
     /**
      * Human readable description of the action.
@@ -281,6 +282,7 @@ enum AuditAction: string
             self::ChatbotRuleCreated => 'Palabra clave del chatbot creada',
             self::ChatbotRuleUpdated => 'Palabra clave del chatbot actualizada',
             self::ChatbotRuleDeleted => 'Palabra clave del chatbot eliminada',
+            self::AiSettingsUpdated => 'Inteligencia artificial actualizada',
         };
     }
 

@@ -3,8 +3,10 @@ import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import {
     Activity,
     ArrowLeft,
+    ArrowRightLeft,
     BadgeCheck,
     Braces,
+    Building2,
     Check,
     ClipboardList,
     Clock,
@@ -163,8 +165,23 @@ type ConnectionForm = {
     away_in_open_conversations: boolean;
     farewell_enabled: boolean;
     farewell_message: string;
+    agent_assigned_enabled: boolean;
+    agent_assigned_message: string;
+    department_transfer_enabled: boolean;
+    department_transfer_message: string;
+    agent_transfer_enabled: boolean;
+    agent_transfer_message: string;
     reopen_window_minutes: number | null;
 };
+
+/** Texts the action messages start with while never written. */
+const ACTION_MESSAGE_DEFAULTS = {
+    agent_assigned: 'Hola, soy {{agente}}. ¿En qué te puedo ayudar?',
+    department_transfer:
+        'Te transferimos a {{departamento}}. En breve te atenderán.',
+    agent_transfer:
+        'Te comunico con {{agente}}, quien continuará con tu atención.',
+} as const;
 
 const connection = computed(() => props.connection);
 const isEditing = computed(() => connection.value !== null);
@@ -239,6 +256,22 @@ const form = useForm<ConnectionForm>({
         connection.value?.messages.away.in_open_conversations ?? false,
     farewell_enabled: connection.value?.messages.farewell.enabled ?? false,
     farewell_message: connection.value?.messages.farewell.text ?? '',
+    // A new web chat introduces the agent by default.
+    agent_assigned_enabled:
+        connection.value?.messages.agent_assigned.enabled ?? isWebChat.value,
+    agent_assigned_message:
+        connection.value?.messages.agent_assigned.text ??
+        ACTION_MESSAGE_DEFAULTS.agent_assigned,
+    department_transfer_enabled:
+        connection.value?.messages.department_transfer.enabled ?? false,
+    department_transfer_message:
+        connection.value?.messages.department_transfer.text ??
+        ACTION_MESSAGE_DEFAULTS.department_transfer,
+    agent_transfer_enabled:
+        connection.value?.messages.agent_transfer.enabled ?? false,
+    agent_transfer_message:
+        connection.value?.messages.agent_transfer.text ??
+        ACTION_MESSAGE_DEFAULTS.agent_transfer,
     reopen_window_minutes: connection.value?.reopen_window_minutes ?? null,
 });
 
@@ -297,6 +330,9 @@ const validation = useFormValidation(form, {
         welcome_message: message('welcome'),
         away_message: message('away'),
         farewell_message: message('farewell'),
+        agent_assigned_message: message('agent_assigned'),
+        department_transfer_message: message('department_transfer'),
+        agent_transfer_message: message('agent_transfer'),
         reopen_window_minutes: [integerBetween(1, props.limits.reopen_window)],
     }),
     requireChanges: isEditing,
@@ -366,6 +402,8 @@ const messageDefinitions: {
     icon: LucideIcon;
     trigger: string;
     placeholder: string;
+    /** Sent after a team action (taking or transferring it). */
+    action?: boolean;
 }[] = [
     {
         kind: 'welcome',
@@ -393,6 +431,30 @@ const messageDefinitions: {
             'Al cerrar o resolver la conversación (también por inactividad), si el cliente escribió en las últimas 24 h.',
         placeholder:
             'Gracias por contactarnos. Si necesitas algo más, escríbenos aquí.',
+    },
+    {
+        kind: 'agent_assigned',
+        label: 'Agente asignado',
+        icon: UserRoundCheck,
+        trigger: 'Cuando un agente toma la conversación.',
+        placeholder: ACTION_MESSAGE_DEFAULTS.agent_assigned,
+        action: true,
+    },
+    {
+        kind: 'department_transfer',
+        label: 'Transferido a departamento',
+        icon: Building2,
+        trigger: 'Al transferirla a la fila de otro departamento.',
+        placeholder: ACTION_MESSAGE_DEFAULTS.department_transfer,
+        action: true,
+    },
+    {
+        kind: 'agent_transfer',
+        label: 'Transferido a otro agente',
+        icon: ArrowRightLeft,
+        trigger: 'Cuando otro agente continúa la atención.',
+        placeholder: ACTION_MESSAGE_DEFAULTS.agent_transfer,
+        action: true,
     },
 ];
 
@@ -427,6 +489,7 @@ const messageVariables = [
     '{{departamento}}',
     '{{conexion}}',
     '{{saludo}}',
+    '{{agente}}',
 ];
 
 const enabledMessages = computed(
@@ -459,17 +522,23 @@ const previewSample = computed(() =>
     defaultSample({ conexion: form.name.trim() || 'Tu conexión' }),
 );
 
+/* Action messages join the preview once turned on, so it stays short. */
 const previewMessages = computed(() =>
-    messageDefinitions.map((definition) => ({
-        key: definition.kind,
-        label: definition.label,
-        trigger: triggerFor(definition),
-        text: renderChatbotText(
-            messageText(definition.kind),
-            previewSample.value,
-        ),
-        enabled: messageEnabled(definition.kind),
-    })),
+    messageDefinitions
+        .filter(
+            (definition) =>
+                !definition.action || messageEnabled(definition.kind),
+        )
+        .map((definition) => ({
+            key: definition.kind,
+            label: definition.label,
+            trigger: triggerFor(definition),
+            text: renderChatbotText(
+                messageText(definition.kind),
+                previewSample.value,
+            ),
+            enabled: messageEnabled(definition.kind),
+        })),
 );
 
 const reopenEnabled = computed({
@@ -896,7 +965,14 @@ const SECTION_FIELDS: Record<string, string[]> = {
         (field) => field !== 'display_phone_number',
     ),
     departamentos: ['department_ids', 'default_department_id'],
-    mensajes: ['welcome_message', 'away_message', 'farewell_message'],
+    mensajes: [
+        'welcome_message',
+        'away_message',
+        'farewell_message',
+        'agent_assigned_message',
+        'department_transfer_message',
+        'agent_transfer_message',
+    ],
     reapertura: ['reopen_window_minutes'],
 };
 
@@ -1865,152 +1941,186 @@ const flaggedSections = computed(() =>
                                         >
                                     </p>
 
-                                    <div
+                                    <template
                                         v-for="definition in messageDefinitions"
                                         :key="definition.kind"
-                                        class="connection-message grid content-start gap-3 rounded-xl border bg-card p-4 transition-[border-color,box-shadow] duration-(--duration-base)"
-                                        :data-enabled="
-                                            messageEnabled(definition.kind)
-                                                ? ''
-                                                : undefined
-                                        "
                                     >
-                                        <div class="flex items-start gap-3">
-                                            <span
-                                                class="admin-icon-tile size-8"
-                                                aria-hidden="true"
-                                            >
-                                                <component
-                                                    :is="definition.icon"
-                                                    class="size-4"
-                                                />
-                                            </span>
-                                            <div class="grid min-w-0 flex-1">
-                                                <div
-                                                    class="flex min-w-0 items-center gap-1.5"
+                                        <p
+                                            v-if="
+                                                definition.kind ===
+                                                'agent_assigned'
+                                            "
+                                            class="mt-3 text-xs font-semibold text-muted-foreground"
+                                            data-test="action-messages-heading"
+                                        >
+                                            Al tomar o transferir la
+                                            conversación
+                                        </p>
+                                        <div
+                                            class="connection-message grid content-start gap-3 rounded-xl border bg-card p-3 transition-[border-color,box-shadow] duration-(--duration-base) sm:p-4"
+                                            :data-enabled="
+                                                messageEnabled(definition.kind)
+                                                    ? ''
+                                                    : undefined
+                                            "
+                                        >
+                                            <div class="flex items-start gap-3">
+                                                <span
+                                                    class="admin-icon-tile size-8 max-sm:hidden"
+                                                    aria-hidden="true"
                                                 >
-                                                    <label
-                                                        :for="`connection-${definition.kind}-message`"
-                                                        class="font-display text-base font-semibold"
-                                                        >{{
-                                                            definition.label
-                                                        }}</label
+                                                    <component
+                                                        :is="definition.icon"
+                                                        class="size-4"
+                                                    />
+                                                </span>
+                                                <div
+                                                    class="grid min-w-0 flex-1"
+                                                >
+                                                    <div
+                                                        class="flex min-w-0 items-center gap-1.5"
                                                     >
-                                                    <FieldHelp
-                                                        :title="
-                                                            definition.label
-                                                        "
-                                                        :help="
-                                                            help[
-                                                                definition.kind
-                                                            ]
+                                                        <label
+                                                            :for="`connection-${definition.kind}-message`"
+                                                            class="font-display text-base font-semibold"
+                                                            >{{
+                                                                definition.label
+                                                            }}</label
+                                                        >
+                                                        <FieldHelp
+                                                            :title="
+                                                                definition.label
+                                                            "
+                                                            :help="
+                                                                help[
+                                                                    definition
+                                                                        .kind
+                                                                ]
+                                                            "
+                                                        />
+                                                    </div>
+                                                    <p
+                                                        class="text-xs text-muted-foreground"
+                                                    >
+                                                        {{
+                                                            triggerFor(
+                                                                definition,
+                                                            )
+                                                        }}
+                                                    </p>
+                                                </div>
+                                                <Switch
+                                                    :model-value="
+                                                        messageEnabled(
+                                                            definition.kind,
+                                                        )
+                                                    "
+                                                    :disabled="!can.update"
+                                                    :aria-label="`Activar mensaje de ${definition.label.toLowerCase()}`"
+                                                    @update:model-value="
+                                                        (value: boolean) =>
+                                                            setMessageEnabled(
+                                                                definition.kind,
+                                                                value,
+                                                            )
+                                                    "
+                                                />
+                                            </div>
+                                            <div class="grid gap-1.5">
+                                                <Textarea
+                                                    :id="`connection-${definition.kind}-message`"
+                                                    :model-value="
+                                                        messageText(
+                                                            definition.kind,
+                                                        )
+                                                    "
+                                                    :rows="
+                                                        definition.action
+                                                            ? 2
+                                                            : 3
+                                                    "
+                                                    :maxlength="limits.message"
+                                                    :placeholder="
+                                                        definition.placeholder
+                                                    "
+                                                    v-bind="
+                                                        validation.field(
+                                                            `${definition.kind}_message`,
+                                                            `connection-${definition.kind}-message`,
+                                                        )
+                                                    "
+                                                    @update:model-value="
+                                                        (
+                                                            value:
+                                                                string | number,
+                                                        ) =>
+                                                            setMessageText(
+                                                                definition.kind,
+                                                                String(value),
+                                                            )
+                                                    "
+                                                />
+                                                <div
+                                                    class="flex items-start justify-between gap-3"
+                                                >
+                                                    <InputError
+                                                        :id="`connection-${definition.kind}-message-error`"
+                                                        :message="
+                                                            validation.error(
+                                                                `${definition.kind}_message`,
+                                                            )
                                                         "
                                                     />
+                                                    <span
+                                                        class="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
+                                                        :class="
+                                                            messageText(
+                                                                definition.kind,
+                                                            ).length >
+                                                                limits.message *
+                                                                    0.9 &&
+                                                            'text-warning-soft-foreground'
+                                                        "
+                                                    >
+                                                        {{
+                                                            messageText(
+                                                                definition.kind,
+                                                            ).length
+                                                        }}/{{ limits.message }}
+                                                    </span>
                                                 </div>
-                                                <p
-                                                    class="text-xs text-muted-foreground"
-                                                >
-                                                    {{ triggerFor(definition) }}
-                                                </p>
                                             </div>
-                                            <Switch
-                                                :model-value="
-                                                    messageEnabled(
-                                                        definition.kind,
-                                                    )
+                                            <label
+                                                v-if="
+                                                    definition.kind === 'away'
                                                 "
-                                                :disabled="!can.update"
-                                                :aria-label="`Activar mensaje de ${definition.label.toLowerCase()}`"
-                                                @update:model-value="
-                                                    (value: boolean) =>
-                                                        setMessageEnabled(
-                                                            definition.kind,
-                                                            value,
-                                                        )
-                                                "
-                                            />
-                                        </div>
-                                        <div class="grid gap-1.5">
-                                            <Textarea
-                                                :id="`connection-${definition.kind}-message`"
-                                                :model-value="
-                                                    messageText(definition.kind)
-                                                "
-                                                rows="3"
-                                                :maxlength="limits.message"
-                                                :placeholder="
-                                                    definition.placeholder
-                                                "
-                                                v-bind="
-                                                    validation.field(
-                                                        `${definition.kind}_message`,
-                                                        `connection-${definition.kind}-message`,
-                                                    )
-                                                "
-                                                @update:model-value="
-                                                    (value: string | number) =>
-                                                        setMessageText(
-                                                            definition.kind,
-                                                            String(value),
-                                                        )
-                                                "
-                                            />
-                                            <div
-                                                class="flex items-start justify-between gap-3"
+                                                class="flex items-center justify-between gap-3 rounded-lg bg-surface-sunken px-3 py-2 text-sm"
+                                                data-away-in-open
                                             >
-                                                <InputError
-                                                    :id="`connection-${definition.kind}-message-error`"
-                                                    :message="
-                                                        validation.error(
-                                                            `${definition.kind}_message`,
-                                                        )
+                                                <span class="min-w-0">
+                                                    <span
+                                                        class="block font-medium"
+                                                        >También en
+                                                        conversaciones
+                                                        abiertas</span
+                                                    >
+                                                    <span
+                                                        class="block text-xs text-muted-foreground"
+                                                    >
+                                                        Una vez por cada periodo
+                                                        fuera de horario.
+                                                    </span>
+                                                </span>
+                                                <Switch
+                                                    v-model="
+                                                        form.away_in_open_conversations
                                                     "
+                                                    :disabled="!can.update"
+                                                    aria-label="Enviar el mensaje fuera de horario también en conversaciones abiertas"
                                                 />
-                                                <span
-                                                    class="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
-                                                    :class="
-                                                        messageText(
-                                                            definition.kind,
-                                                        ).length >
-                                                            limits.message *
-                                                                0.9 &&
-                                                        'text-warning-soft-foreground'
-                                                    "
-                                                >
-                                                    {{
-                                                        messageText(
-                                                            definition.kind,
-                                                        ).length
-                                                    }}/{{ limits.message }}
-                                                </span>
-                                            </div>
+                                            </label>
                                         </div>
-                                        <label
-                                            v-if="definition.kind === 'away'"
-                                            class="flex items-center justify-between gap-3 rounded-lg bg-surface-sunken px-3 py-2 text-sm"
-                                            data-away-in-open
-                                        >
-                                            <span class="min-w-0">
-                                                <span class="block font-medium"
-                                                    >También en conversaciones
-                                                    abiertas</span
-                                                >
-                                                <span
-                                                    class="block text-xs text-muted-foreground"
-                                                >
-                                                    Una vez por cada periodo
-                                                    fuera de horario.
-                                                </span>
-                                            </span>
-                                            <Switch
-                                                v-model="
-                                                    form.away_in_open_conversations
-                                                "
-                                                :disabled="!can.update"
-                                                aria-label="Enviar el mensaje fuera de horario también en conversaciones abiertas"
-                                            />
-                                        </label>
-                                    </div>
+                                    </template>
                                 </div>
 
                                 <div class="min-w-0 xl:sticky xl:top-24">

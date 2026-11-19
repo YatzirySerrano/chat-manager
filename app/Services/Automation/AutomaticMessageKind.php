@@ -11,6 +11,14 @@ namespace App\Services\Automation;
  * of a new conversation, the retry after an answer that is not an option,
  * the reply of the chosen option and the reply to a keyword. They have slots
  * of their own, so a menu never takes the place of the away message.
+ *
+ * The team's actions add three more, configured on the connection: a person
+ * takes the conversation (AgentAssigned), it goes to another department's
+ * queue (DepartmentTransfer) or another agent takes over (AgentTransfer).
+ * They are sent once per conversation event (SendActionMessages).
+ *
+ * The assistant of «Inteligencia artificial» answers with AiReply, once per
+ * customer message it answers (App\Services\Ai\AiAssistant).
  */
 enum AutomaticMessageKind: string
 {
@@ -21,6 +29,10 @@ enum AutomaticMessageKind: string
     case ChatbotRetry = 'chatbot_retry';
     case ChatbotReply = 'chatbot_reply';
     case KeywordReply = 'keyword_reply';
+    case AgentAssigned = 'agent_assigned';
+    case DepartmentTransfer = 'department_transfer';
+    case AgentTransfer = 'agent_transfer';
+    case AiReply = 'ai_reply';
 
     /**
      * The kinds of a conversation's life cycle configured on the connection
@@ -34,9 +46,21 @@ enum AutomaticMessageKind: string
     }
 
     /**
+     * The kinds sent after the team's actions, configured on the connection
+     * as "{value}_enabled" and "{value}_message".
+     *
+     * @return list<self>
+     */
+    public static function actions(): array
+    {
+        return [self::AgentAssigned, self::DepartmentTransfer, self::AgentTransfer];
+    }
+
+    /**
      * Idempotency slot: one message per (conversation, slot, cycle). The
-     * retries and keyword replies add their own discriminator to the
-     * reference (attempt, rule and triggering message).
+     * retries, keyword replies and action messages add their own
+     * discriminator to the reference (attempt, rule and triggering message,
+     * conversation event).
      */
     public function slot(): string
     {
@@ -47,6 +71,10 @@ enum AutomaticMessageKind: string
             self::ChatbotRetry => 'chatbot-retry',
             self::ChatbotReply => 'chatbot-reply',
             self::KeywordReply => 'keyword',
+            self::AgentAssigned => 'agent-assigned',
+            self::DepartmentTransfer => 'department-transfer',
+            self::AgentTransfer => 'agent-transfer',
+            self::AiReply => 'ai-reply',
         };
     }
 
@@ -60,6 +88,10 @@ enum AutomaticMessageKind: string
             self::ChatbotRetry => 'Reintento del chatbot',
             self::ChatbotReply => 'Respuesta del chatbot',
             self::KeywordReply => 'Respuesta por palabra clave',
+            self::AgentAssigned => 'Agente asignado',
+            self::DepartmentTransfer => 'Transferido a departamento',
+            self::AgentTransfer => 'Transferido a otro agente',
+            self::AiReply => 'Respuesta de IA',
         };
     }
 }

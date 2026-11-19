@@ -26,6 +26,7 @@ import type {
 import { ApiError, newClientMessageId, VisitorApi } from './api';
 import ChatComposer from './components/ChatComposer.vue';
 import ChatHeader from './components/ChatHeader.vue';
+import type { Attendant } from './components/ChatHeader.vue';
 import MessageBubble from './components/MessageBubble.vue';
 import PrechatForm from './components/PrechatForm.vue';
 import StatusScreen from './components/StatusScreen.vue';
@@ -76,6 +77,8 @@ const HOST_TYPES: readonly HostToFrameType[] = [
 ];
 const CONNECTED_POLL_SECONDS = 60;
 const MAX_BACKOFF_SECONDS = 120;
+/** Polling re-reads the session (who attends) at least this often. */
+const SESSION_REFRESH_MS = 30000;
 
 const preview = props.config.state === 'preview';
 const appearance = ref<Appearance>({ ...props.config.appearance });
@@ -102,6 +105,8 @@ let pollTimer: ReturnType<typeof setTimeout> | undefined;
 let backoffSeconds = 0;
 let syncing = false;
 let lastCursor: string | null = null;
+/** When the session (who attends, availability) was last read. */
+let sessionReadAt = 0;
 let lastDelivered: string | null = null;
 let lastRead: string | null = null;
 let pendingIdentity: SignedIdentity | null = null;
@@ -248,16 +253,61 @@ const statusText = computed(() => {
         return null;
     }
 
-    const agent = session.value?.conversation.agent_name;
-
-    if (agent && session.value?.conversation.status === 'open') {
-        return `Te atiende ${agent}`;
-    }
-
     return availability.value.online
         ? (appearance.value.online_text ?? 'En línea')
         : (appearance.value.offline_status_text ?? 'Fuera de línea');
 });
+
+/**
+ * Who answers now, for the header: the attending agent (name and photo) or
+ * the chatbot while its menu awaits an answer; null shows the widget's own
+ * title and subtitle.
+ */
+const attendant = computed<Attendant | null>(() => {
+    const conversation = session.value?.conversation;
+
+    if (!conversation || phase.value !== 'ready') {
+        return null;
+    }
+
+    const handler =
+        conversation.handler ??
+        (conversation.agent_name && conversation.status === 'open'
+            ? 'agent'
+            : 'none');
+
+    if (handler === 'agent' && conversation.agent_name) {
+        return {
+            kind: 'agent',
+            name: conversation.agent_name,
+            avatarUrl: conversation.agent_avatar_url ?? null,
+        };
+    }
+
+    return handler === 'bot' ? { kind: 'bot' } : null;
+});
+
+/**
+ * The first message of each group from the same author shows who wrote it
+ * (the visitor's own messages never do).
+ */
+function authorKey(message: ThreadMessage): string {
+    if (message.direction === 'inbound') {
+        return 'visitor';
+    }
+
+    if (message.assistant) {
+        return 'assistant';
+    }
+
+    return message.agent_name ? `agent:${message.agent_name}` : 'system';
+}
+
+function startsGroup(index: number): boolean {
+    const list = thread.value;
+
+    return index === 0 || authorKey(list[index - 1]) !== authorKey(list[index]);
+}
 
 const offlineText = computed(
     () =>
@@ -493,7 +543,8 @@ function afterIncoming(fresh: ThreadMessage[]): void {
     }
 
     const last = agentMessages[agentMessages.length - 1];
-    announcement.value = `Nuevo mensaje${last.agent_name ? ` de ${last.agent_name}` : ''}: ${last.body ?? 'archivo adjunto'}`;
+    const from = last.assistant ? 'Asistente virtual' : last.agent_name;
+    announcement.value = `Nuevo mensaje${from ? ` de ${from}` : ''}: ${last.body ?? 'archivo adjunto'}`;
 
     if (nearBottom()) {
         scrollToEnd();
@@ -856,6 +907,8 @@ function stopSync(): void {
 }
 
 async function refreshSession(): Promise<void> {
+    sessionReadAt = Date.now();
+
     try {
         session.value = await api.session();
     } catch {
@@ -885,6 +938,10 @@ async function sync(): Promise<void> {
         if (page) {
             afterIncoming(merge(page.data));
             sendReceipts();
+            void refreshSession();
+        } else if (Date.now() - sessionReadAt > SESSION_REFRESH_MS) {
+            // Who attends may change without a new message (accepted,
+            // released, routed by the chatbot) when signals are off.
             void refreshSession();
         }
     } catch (error) {
@@ -1175,6 +1232,7 @@ function reload(): void {
         <ChatHeader
             :appearance="appearance"
             :status-text="statusText"
+            :attendant="attendant"
             :online="availability.online"
             :closable="!preview"
             @close="requestClose"
@@ -1282,9 +1340,10 @@ function reload(): void {
                 </p>
                 <ol class="grid grid-cols-1 gap-3" aria-label="Mensajes">
                     <MessageBubble
-                        v-for="message in thread"
+                        v-for="(message, index) in thread"
                         :key="message.clientId ?? message.cursor"
                         :message="message"
+                        :show-author="startsGroup(index)"
                         :status="preview ? 'read' : statusOf(message)"
                         :error="
                             message.clientId

@@ -328,7 +328,7 @@ function roleDescription(role: ManagedRole): string {
                             <TableCell class="w-full max-w-0 py-3 pl-5">
                                 <div class="flex min-w-0 items-center gap-3">
                                     <span
-                                        class="flex size-10 shrink-0 items-center justify-center rounded-lg"
+                                        class="flex size-10 shrink-0 items-center justify-center rounded-lg max-sm:hidden"
                                         :class="
                                             role.is_deleted
                                                 ? 'bg-muted text-muted-foreground'
@@ -371,7 +371,7 @@ function roleDescription(role: ManagedRole): string {
                                             class="mt-1 sm:hidden"
                                         />
                                         <p
-                                            class="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-0.5 text-xs text-muted-foreground lg:hidden"
+                                            class="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-0.5 text-xs whitespace-normal text-muted-foreground lg:hidden"
                                         >
                                             <span
                                                 class="inline-flex items-center gap-1"

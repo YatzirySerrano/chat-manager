@@ -101,6 +101,8 @@ export type ConversationState =
     | 'on_hold'
     | 'closed';
 
+export type ConversationHandler = 'agent' | 'bot' | 'none';
+
 export type RealtimeConfig = {
     enabled: boolean;
     key: string | null;
@@ -117,7 +119,14 @@ export type VisitorSession = {
     identified: boolean;
     profile: { name: string | null };
     expires_at: string;
-    conversation: { status: ConversationState; agent_name: string | null };
+    conversation: {
+        status: ConversationState;
+        agent_name: string | null;
+        /** Signed picture of the attending agent; null shows initials. */
+        agent_avatar_url?: string | null;
+        /** Who handles it now: an agent, the chatbot or nobody yet. */
+        handler?: ConversationHandler;
+    };
     availability: Availability;
     realtime: RealtimeConfig;
     poll: { visible_seconds: number; hidden_seconds: number };
@@ -135,6 +144,10 @@ export type VisitorMessage = {
     direction: 'inbound' | 'outbound';
     author: 'visitor' | 'agent' | 'system';
     agent_name: string | null;
+    /** Signed picture of the agent who wrote it; null shows initials. */
+    agent_avatar_url?: string | null;
+    /** An automatic message of the virtual assistant (welcome, chatbot...). */
+    assistant?: boolean;
     body: string | null;
     attachments: VisitorAttachment[];
     created_at: string | null;

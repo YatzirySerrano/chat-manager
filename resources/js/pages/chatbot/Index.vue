@@ -344,7 +344,9 @@ function confirmRemove(): void {
                             class="size-5 shrink-0 text-primary"
                             aria-hidden="true"
                         />
-                        <p class="min-w-0 flex-1">
+                        <!-- basis: on phones the activity line wraps below
+                             instead of squeezing this text to one word. -->
+                        <p class="min-w-0 flex-1 basis-56">
                             Cuando alguien escribe por primera vez, el bot le
                             manda un menú con números y lo pasa al departamento
                             que elija.

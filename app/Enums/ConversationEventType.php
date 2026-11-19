@@ -28,6 +28,7 @@ enum ConversationEventType: string
     case CategoryChanged = 'category_changed';
     case SlaBreached = 'sla_breached';
     case ChatbotRouted = 'chatbot_routed';
+    case AiHandoff = 'ai_handoff';
 
     public function label(): string
     {
@@ -52,6 +53,7 @@ enum ConversationEventType: string
             self::CategoryChanged => 'Categoría cambiada',
             self::SlaBreached => 'Objetivo de respuesta incumplido',
             self::ChatbotRouted => 'Enviada por el chatbot',
+            self::AiHandoff => 'La IA la pasó a un asesor',
         };
     }
 
@@ -78,7 +80,7 @@ enum ConversationEventType: string
             self::ReadinessConfirmed => 'confirmó la solicitud como completa',
             self::ReadinessReverted => 'marcó la solicitud como «Necesita información»',
             self::CategoryChanged => 'cambió la categoría',
-            self::AutoAssigned, self::OutboundBlocked, self::MessageFailed, self::SlaBreached, self::ChatbotRouted => null,
+            self::AutoAssigned, self::OutboundBlocked, self::MessageFailed, self::SlaBreached, self::ChatbotRouted, self::AiHandoff => null,
         };
     }
 }

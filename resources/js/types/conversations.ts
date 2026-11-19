@@ -405,6 +405,8 @@ export type ConversationMessage = {
     /** Partial delivery note (e.g. the file went out but its text did not). */
     delivery_warning?: string | null;
     automatic: boolean;
+    /** Which automatic message (e.g. «Respuesta de IA»), null otherwise. */
+    automatic_kind_label?: string | null;
     /** Sent through the integration API (no human author). */
     integration?: { name: string } | null;
     /** Brought from another system (Whaticket): no delivery state to show. */

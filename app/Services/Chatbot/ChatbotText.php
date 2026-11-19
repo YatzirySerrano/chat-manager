@@ -3,13 +3,16 @@
 namespace App\Services\Chatbot;
 
 use App\Models\Conversation;
+use App\Models\User;
 use App\Services\BusinessHours;
+use App\Support\ProtectedAccounts;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 
 /**
  * Variables of the automatic texts (chatbot menu, option replies, keyword
- * replies and the welcome, away and farewell messages), replaced by plain
+ * replies, the welcome, away and farewell messages and the messages of the
+ * team's actions), replaced by plain
  * text when the message is queued:
  *
  * - {{nombre}}: the contact's name (aliases {{userName}} and {{name}}, as
@@ -18,7 +21,10 @@ use Carbon\CarbonInterface;
  * - {{departamento}}: the conversation's department;
  * - {{conexion}}: the connection's name;
  * - {{saludo}}: «Buenos días», «Buenas tardes» or «Buenas noches» by the
- *   platform's time zone.
+ *   platform's time zone;
+ * - {{agente}}: the name of the agent who takes the conversation (the one
+ *   given, else its responsible). A protected account reads «nuestro
+ *   equipo», never its name; without an agent it is left out.
  *
  * Names are case-insensitive and may carry spaces inside the braces
  * ({{ Nombre }}); anything else between braces is left as written.
@@ -28,7 +34,7 @@ class ChatbotText
     /**
      * Placeholder => variable it reads. Lowercase.
      *
-     * @var array<string, 'name'|'department'|'connection'|'greeting'>
+     * @var array<string, 'name'|'department'|'connection'|'greeting'|'agent'>
      */
     private const VARIABLES = [
         'nombre' => 'name',
@@ -38,6 +44,7 @@ class ChatbotText
         'conexion' => 'connection',
         'conexión' => 'connection',
         'saludo' => 'greeting',
+        'agente' => 'agent',
     ];
 
     /**
@@ -51,14 +58,21 @@ class ChatbotText
         ['token' => '{{departamento}}', 'label' => 'Departamento de la conversación', 'example' => 'Mesa de control'],
         ['token' => '{{conexion}}', 'label' => 'Nombre de la conexión', 'example' => 'Solicitudes MC'],
         ['token' => '{{saludo}}', 'label' => 'Buenos días, tardes o noches', 'example' => 'Buenas tardes'],
+        ['token' => '{{agente}}', 'label' => 'Agente que atiende', 'example' => 'Ana'],
     ];
+
+    /** What {{agente}} reads for a protected account. */
+    public const PROTECTED_AGENT_NAME = 'nuestro equipo';
 
     /** Marker of a variable without value while rendering. */
     private const EMPTY = "\u{0}";
 
     public function __construct(private BusinessHours $hours) {}
 
-    public function render(string $text, Conversation $conversation, ?CarbonInterface $at = null): string
+    /**
+     * @param  User|null  $agent  The agent {{agente}} names; null names the conversation's responsible.
+     */
+    public function render(string $text, Conversation $conversation, ?CarbonInterface $at = null, ?User $agent = null): string
     {
         if (! str_contains($text, '{{')) {
             return $text;
@@ -66,14 +80,14 @@ class ChatbotText
 
         $values = null;
 
-        $rendered = preg_replace_callback('/\{\{\s*([\p{L}_]+)\s*\}\}/u', function (array $match) use ($conversation, $at, &$values): string {
+        $rendered = preg_replace_callback('/\{\{\s*([\p{L}_]+)\s*\}\}/u', function (array $match) use ($conversation, $at, $agent, &$values): string {
             $variable = self::VARIABLES[mb_strtolower($match[1])] ?? null;
 
             if ($variable === null) {
                 return $match[0];
             }
 
-            $values ??= $this->values($conversation, $at);
+            $values ??= $this->values($conversation, $at, $agent);
 
             // An empty value is marked so the space before it goes too.
             return $values[$variable] === '' ? self::EMPTY : $values[$variable];
@@ -99,9 +113,9 @@ class ChatbotText
     }
 
     /**
-     * @return array{name: string, department: string, connection: string, greeting: string}
+     * @return array{name: string, department: string, connection: string, greeting: string, agent: string}
      */
-    private function values(Conversation $conversation, ?CarbonInterface $at): array
+    private function values(Conversation $conversation, ?CarbonInterface $at, ?User $agent): array
     {
         $conversation->loadMissing(['contact:id,name,profile_name,phone_e164,saved_at', 'department:id,name', 'channelConnection:id,name']);
 
@@ -110,7 +124,21 @@ class ChatbotText
             'department' => (string) $conversation->department?->name,
             'connection' => (string) $conversation->channelConnection?->name,
             'greeting' => $this->greeting($at),
+            'agent' => $this->agentName($agent ?? ($conversation->assigned_user_id === null ? null : $conversation->assignee()->first(['id', 'name']))),
         ];
+    }
+
+    /**
+     * The agent's visible name, «nuestro equipo» for a protected account
+     * (the customer never learns it exists).
+     */
+    public function agentName(?User $agent): string
+    {
+        if ($agent === null) {
+            return '';
+        }
+
+        return app(ProtectedAccounts::class)->hides($agent, null) ? self::PROTECTED_AGENT_NAME : trim($agent->name);
     }
 
     private function contactName(Conversation $conversation): string

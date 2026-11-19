@@ -806,7 +806,7 @@ function phoneLabel(connection: Connection): string {
                             <TableCell class="w-full max-w-0 py-3 pl-5">
                                 <div class="flex min-w-0 items-center gap-3">
                                     <span
-                                        class="channel-tile size-10"
+                                        class="channel-tile size-10 max-sm:hidden"
                                         :class="
                                             !connection.is_active &&
                                             'opacity-55 grayscale-[0.6]'

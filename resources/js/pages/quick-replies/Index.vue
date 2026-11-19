@@ -473,7 +473,7 @@ const purgeOpen = computed({
         <div class="split-layout reveal [--aside-w:24rem]">
             <DirectoryPanel
                 :busy="loading && !showSkeleton"
-                toolbar-class="grid gap-2"
+                toolbar-class="grid grid-cols-1 gap-2"
             >
                 <template #toolbar>
                     <div

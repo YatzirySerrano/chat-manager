@@ -3,13 +3,14 @@
  * names the server replaces (App\Services\Chatbot\ChatbotText), case
  * insensitive and with optional spaces inside the braces, filled with
  * sample values. Whaticket's {{userName}} and {{name}} are aliases of
- * {{nombre}}.
+ * {{nombre}}. {{agente}} names the agent who takes the conversation.
  */
 export type ChatbotSample = {
     nombre: string;
     departamento: string;
     conexion: string;
     saludo: string;
+    agente: string;
 };
 
 const ALIASES: Record<string, keyof ChatbotSample> = {
@@ -20,6 +21,7 @@ const ALIASES: Record<string, keyof ChatbotSample> = {
     conexion: 'conexion',
     conexión: 'conexion',
     saludo: 'saludo',
+    agente: 'agente',
 };
 
 /** «Buenos días», «Buenas tardes» or «Buenas noches» for the hour given. */
@@ -39,6 +41,7 @@ export function defaultSample(
         departamento: 'Mesa de control',
         conexion: 'Tu conexión',
         saludo: greetingFor(new Date().getHours()),
+        agente: 'Ana',
         ...overrides,
     };
 }

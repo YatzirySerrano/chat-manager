@@ -9,6 +9,7 @@ use App\Enums\MessageType;
 use App\Events\Messaging\MessageRecorded;
 use App\Jobs\DeliverOutboundMessage;
 use App\Models\Conversation;
+use App\Models\ConversationEvent;
 use App\Models\Department;
 use App\Models\Message;
 use App\Services\Automation\AutomaticMessageKind;
@@ -24,8 +25,9 @@ use Illuminate\Support\Facades\Log;
 use Ramsey\Uuid\Uuid;
 
 /**
- * Queues an automatic text message (welcome, away, farewell and the
- * chatbot's menu, retries and replies) to the customer, with no human
+ * Queues an automatic text message (welcome, away, farewell, the chatbot's
+ * menu, retries and replies, and the messages of the team's actions) to the
+ * customer, with no human
  * sender, through every channel that can send: WhatsApp Cloud API inside
  * the customer service window, WhatsApp Web (QR), which has no window, and
  * the web chat. Variables of the text ({{nombre}}...) are replaced here
@@ -106,6 +108,53 @@ class QueueAutomaticMessage
         }
 
         return $this->deliver($conversation, $plan, $reference, ['cycle' => $conversation->reopen_count, ...$trace]);
+    }
+
+    /**
+     * Reference of the message of one of the team's actions: one per
+     * conversation event.
+     */
+    public static function actionReference(int $conversationId, AutomaticMessageKind $kind, int $eventId): string
+    {
+        return self::chatbotReference($conversationId, $kind, "event:{$eventId}");
+    }
+
+    /**
+     * The message of one of the team's actions (agent assigned, transferred
+     * to a department or to another agent), once per conversation event.
+     * Nothing is sent when the conversation no longer is as the action left
+     * it: closed, taken by someone else meanwhile, or, after a transfer to a
+     * department's queue, already taken by an agent (who greets instead).
+     */
+    public function handleAction(Conversation $conversation, AutomaticMessagePlan $plan, ConversationEvent $event): ?Message
+    {
+        try {
+            return DB::transaction(function () use ($conversation, $plan, $event): ?Message {
+                $conversation = $this->lifecycle->lock($conversation);
+                $reference = self::actionReference($conversation->id, $plan->kind, $event->id);
+
+                if (Message::query()->where('client_reference', $reference)->exists()) {
+                    return null;
+                }
+
+                $current = $plan->kind === AutomaticMessageKind::DepartmentTransfer
+                    ? $conversation->assigned_user_id === null && $conversation->department_id === $event->to_department_id
+                    : $conversation->assigned_user_id !== null && $conversation->assigned_user_id === $event->to_user_id;
+
+                if ($conversation->status === ConversationStatus::Closed || ! $current) {
+                    return $this->skipped($conversation, $plan, 'conversation_state_changed');
+                }
+
+                return $this->deliver($conversation, $plan, $reference, [
+                    'cycle' => $conversation->reopen_count,
+                    'trigger_event_id' => $event->id,
+                    'agent_user_id' => $plan->agent?->id,
+                ]);
+            });
+        } catch (UniqueConstraintViolationException) {
+            // Another worker stored this event's message first.
+            return null;
+        }
     }
 
     /**
@@ -235,8 +284,8 @@ class QueueAutomaticMessage
             'direction' => MessageDirection::Outbound,
             'type' => MessageType::Text,
             'status' => MessageStatus::Queued,
-            // {{nombre}}, {{departamento}}, {{conexion}}, {{saludo}} (ChatbotText).
-            'body' => $this->text->render($plan->body, $conversation),
+            // {{nombre}}, {{departamento}}, {{conexion}}, {{saludo}}, {{agente}} (ChatbotText).
+            'body' => $this->text->render($plan->body, $conversation, agent: $plan->agent),
             'sender_user_id' => null,
             'metadata' => [
                 'automatic' => true,

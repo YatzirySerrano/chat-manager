@@ -413,7 +413,8 @@ function sync(connection: TemplateConnectionOption): void {
                                 '[&_svg]:animate-spin'
                             "
                         />
-                        <div class="min-w-0 flex-1">
+                        <!-- basis: on phones «Actualizar» wraps below the name. -->
+                        <div class="min-w-0 flex-1 basis-40">
                             <p class="truncate text-sm font-medium">
                                 {{ connection.name }}
                             </p>

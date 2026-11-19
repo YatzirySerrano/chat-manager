@@ -832,8 +832,8 @@ function onAliasSaved(): void {
         :data-pane="showChat && !wide ? 'chat' : 'list'"
         :class="
             showDetailsColumn
-                ? 'lg:grid-cols-[22rem_minmax(0,1fr)] xl:grid-cols-[22rem_minmax(0,1fr)_21rem] 2xl:grid-cols-[25rem_minmax(0,1fr)_24rem] min-[120rem]:grid-cols-[27rem_minmax(0,1fr)_26rem]'
-                : 'lg:grid-cols-[22rem_minmax(0,1fr)] 2xl:grid-cols-[25rem_minmax(0,1fr)] min-[120rem]:grid-cols-[27rem_minmax(0,1fr)]'
+                ? 'lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)_19rem] 2xl:grid-cols-[25rem_minmax(0,1fr)_24rem] min-[120rem]:grid-cols-[27rem_minmax(0,1fr)_26rem]'
+                : 'lg:grid-cols-[20rem_minmax(0,1fr)] 2xl:grid-cols-[25rem_minmax(0,1fr)] min-[120rem]:grid-cols-[27rem_minmax(0,1fr)]'
         "
     >
         <div v-show="showList" class="min-h-0 border-r">

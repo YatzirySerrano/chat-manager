@@ -103,6 +103,27 @@ export const connectionFieldHelp = {
         example:
             'Gracias por contactarnos. Si necesitas algo más, escríbenos aquí.',
     },
+    agent_assigned: {
+        description:
+            'Se envía cuando un agente toma la conversación: al aceptarla, al asignarla o por asignación automática.',
+        howTo: 'Usa {{agente}} para presentarlo con su nombre. No se repite si vuelve a tomarla el mismo agente.',
+        example: 'Hola, soy {{agente}}. ¿En qué te puedo ayudar?',
+    },
+    department_transfer: {
+        description:
+            'Se envía al transferir la conversación a la fila de otro departamento.',
+        howTo: 'Usa {{departamento}} para nombrar el destino.',
+        example: 'Te transferimos a {{departamento}}. En breve te atenderán.',
+        warning:
+            'No se envía si un agente la toma de inmediato: entonces se envía «Agente asignado».',
+    },
+    agent_transfer: {
+        description:
+            'Se envía cuando la conversación pasa de un agente a otro.',
+        howTo: 'Usa {{agente}} para nombrar a quien continúa.',
+        example:
+            'Te comunico con {{agente}}, quien continuará con tu atención.',
+    },
     reopenWindow: {
         description:
             'Si un cliente vuelve a escribir poco después de que se cerró su conversación, se reabre la misma en lugar de crear una nueva.',

@@ -31,7 +31,7 @@ class VisitorFileController extends Controller
             $request->caption(),
         );
 
-        $message->load(['sender:id,name', 'attachments']);
+        $message->load(['sender:id,name,avatar_disk,avatar_path,avatar_version', 'attachments']);
 
         return (new VisitorMessageResource($message))->response()->setStatusCode($created ? 201 : 200);
     }

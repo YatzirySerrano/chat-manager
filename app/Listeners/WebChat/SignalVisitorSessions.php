@@ -22,7 +22,8 @@ use Throwable;
  * Tells the visitor's open widgets that their web chat conversation
  * changed, so they refetch: an agent reply left (accepted) or was
  * delivered or read, the visitor wrote from another tab, or the
- * conversation was taken, transferred, reopened or closed. Every usable
+ * conversation was taken, released, transferred (also by the chatbot),
+ * reopened or closed. Every usable
  * session of the conversation's contact on that connection is signalled;
  * conversations of other channels are ignored, and the agents' listeners
  * are untouched. Delivery is best effort: the widget also polls.
@@ -40,6 +41,8 @@ class SignalVisitorSessions implements ShouldQueue
         ConversationEventType::Assigned,
         ConversationEventType::AutoAssigned,
         ConversationEventType::Transferred,
+        ConversationEventType::Unassigned,
+        ConversationEventType::ChatbotRouted,
         ConversationEventType::Closed,
         ConversationEventType::Reopened,
     ];

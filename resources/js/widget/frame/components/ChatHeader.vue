@@ -2,16 +2,26 @@
 import { X } from '@lucide/vue';
 import { computed } from 'vue';
 import type { Appearance } from '../../protocol';
+import AgentAvatar from './AgentAvatar.vue';
+
+/** Who answers right now: an agent (name and photo) or the chatbot. */
+export type Attendant =
+    | { kind: 'agent'; name: string; avatarUrl: string | null }
+    | { kind: 'bot' };
 
 /**
- * Header of the widget: avatar, title, subtitle and who is attending (or
- * the team's availability), extra actions (the theme switch, `actions`
- * slot), plus the close button (asks the host page to
- * close the panel; on phones the panel covers the whole screen).
+ * Header of the widget: avatar, title, subtitle and the team's
+ * availability. While an agent attends, their photo and «Te atiende
+ * {nombre}» take the place of the avatar and subtitle; while the chatbot
+ * handles the conversation, the bot icon and «Asistente virtual». Then the
+ * extra actions (the theme switch, `actions` slot), plus the close button
+ * (asks the host page to close the panel; on phones the panel covers the
+ * whole screen).
  */
 const props = defineProps<{
     appearance: Appearance;
     statusText: string | null;
+    attendant?: Attendant | null;
     online: boolean;
     closable: boolean;
 }>();
@@ -21,14 +31,32 @@ defineEmits<{ close: [] }>();
 const initial = computed(
     () => props.appearance.title.trim().charAt(0).toUpperCase() || 'C',
 );
+
+const subtitle = computed(() => {
+    if (props.attendant?.kind === 'agent') {
+        return `Te atiende ${props.attendant.name}`;
+    }
+
+    return props.attendant?.kind === 'bot'
+        ? 'Asistente virtual'
+        : props.appearance.subtitle;
+});
 </script>
 
 <template>
     <header
         class="relative z-10 flex shrink-0 items-center gap-3 bg-(--cm-accent) px-[max(1rem,env(safe-area-inset-left))] pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 text-(--cm-accent-fg)"
     >
+        <AgentAvatar
+            v-if="attendant"
+            :name="attendant.kind === 'agent' ? attendant.name : null"
+            :url="attendant.kind === 'agent' ? attendant.avatarUrl : null"
+            :bot="attendant.kind === 'bot'"
+            class="size-10 bg-white/20 text-base"
+            data-attendant
+        />
         <img
-            v-if="appearance.avatar"
+            v-else-if="appearance.avatar"
             :src="appearance.avatar"
             alt=""
             class="size-10 shrink-0 rounded-full bg-white/20 object-cover"
@@ -44,10 +72,10 @@ const initial = computed(
                 {{ appearance.title }}
             </h1>
             <p
-                v-if="appearance.subtitle"
+                v-if="subtitle"
                 class="truncate text-sm leading-tight opacity-90"
             >
-                {{ appearance.subtitle }}
+                {{ subtitle }}
             </p>
             <p
                 v-if="statusText"

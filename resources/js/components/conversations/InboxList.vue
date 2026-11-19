@@ -1166,11 +1166,9 @@ const scopeButton =
                     class="px-1"
                     @update:model-value="chooseTab"
                 >
+                    <!-- No divider before the toggles: the strip always
+                         wraps here, so it was left alone at a line end. -->
                     <template #after>
-                        <span
-                            class="mx-0.5 h-4 w-px shrink-0 bg-border"
-                            aria-hidden="true"
-                        />
                         <div
                             class="flex shrink-0 items-center gap-1"
                             role="group"
@@ -1241,14 +1239,14 @@ const scopeButton =
             <!-- Departments as one-click chips (admins and supervisors). -->
             <div
                 v-if="departmentChips.length > 0"
-                class="-mx-1 flex flex-wrap items-center gap-1.5 px-1"
+                class="filter-tabs-scroll -mx-1 flex items-center gap-1.5 px-1 max-lg:-my-0.5 max-lg:overflow-x-auto max-lg:py-0.5 lg:flex-wrap"
                 role="group"
                 aria-label="Filtrar por departamento"
                 data-inbox-departments
             >
                 <button
                     type="button"
-                    class="inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
+                    class="inline-flex h-7 shrink-0 items-center rounded-full border px-2.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
                     :class="
                         state.department === ''
                             ? 'border-foreground/20 bg-foreground text-background'
@@ -1263,7 +1261,7 @@ const scopeButton =
                     v-for="department in departmentChips"
                     :key="department.id"
                     type="button"
-                    class="inline-flex h-7 max-w-44 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
+                    class="inline-flex h-7 max-w-44 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
                     :class="
                         state.department === String(department.id)
                             ? 'border-primary/50 bg-primary-soft text-foreground'

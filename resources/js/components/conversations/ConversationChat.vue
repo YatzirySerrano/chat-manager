@@ -475,7 +475,7 @@ watch(conversationId, () => (dragDepth.value = 0));
         -->
         <div ref="header" :class="CHAT_TOPBAR">
             <header
-                class="chat-header flex min-h-14 items-center gap-2 px-2 py-2 sm:min-h-16 sm:gap-3 sm:px-4 [@media(max-height:32rem)]:min-h-0 [@media(max-height:32rem)]:py-0.5"
+                class="chat-header @container/chat-header flex min-h-14 items-center gap-2 px-2 py-2 sm:min-h-16 sm:gap-3 sm:px-4 [@media(max-height:32rem)]:min-h-0 [@media(max-height:32rem)]:py-0.5"
             >
                 <Button
                     variant="ghost"
@@ -489,7 +489,7 @@ watch(conversationId, () => (dragDepth.value = 0));
                 </Button>
                 <!-- The customer, with the channel they write from on the avatar. -->
                 <span
-                    class="relative hidden size-10 shrink-0 sm:block [@media(max-height:32rem)]:hidden!"
+                    class="relative hidden size-10 shrink-0 sm:@md/chat-header:block [@media(max-height:32rem)]:hidden!"
                     aria-hidden="true"
                 >
                     <span :class="CHAT_HEADER_AVATAR">{{

@@ -64,6 +64,12 @@ use Illuminate\Support\Str;
  * @property bool $away_in_open_conversations Also send the away message in open conversations, once per period outside hours.
  * @property string|null $farewell_message
  * @property bool $farewell_enabled
+ * @property string|null $agent_assigned_message Sent when a person takes the conversation ({{agente}}).
+ * @property bool $agent_assigned_enabled
+ * @property string|null $department_transfer_message Sent when the conversation is transferred to another department's queue.
+ * @property bool $department_transfer_enabled
+ * @property string|null $agent_transfer_message Sent when another agent takes over the conversation.
+ * @property bool $agent_transfer_enabled
  * @property int|null $reopen_window_minutes Closed conversations are reopened when the customer writes within this window; null always starts a new one.
  * @property Carbon|null $credentials_verified_at
  * @property string|null $credentials_error
@@ -101,7 +107,8 @@ use Illuminate\Support\Str;
     'name', 'channel', 'provider', 'display_phone_number', 'phone_number_id', 'business_account_id', 'verified_name',
     'meta_app_id', 'access_token', 'app_secret', 'webhook_verify_token', 'default_department_id',
     'welcome_message', 'welcome_enabled', 'away_message', 'away_enabled', 'away_in_open_conversations', 'farewell_message', 'farewell_enabled',
-    'reopen_window_minutes',
+    'agent_assigned_message', 'agent_assigned_enabled', 'department_transfer_message', 'department_transfer_enabled',
+    'agent_transfer_message', 'agent_transfer_enabled', 'reopen_window_minutes',
 ])]
 #[Hidden(['access_token', 'app_secret', 'webhook_verify_token'])]
 class Connection extends Model
@@ -122,6 +129,9 @@ class Connection extends Model
         'away_enabled' => false,
         'away_in_open_conversations' => false,
         'farewell_enabled' => false,
+        'agent_assigned_enabled' => false,
+        'department_transfer_enabled' => false,
+        'agent_transfer_enabled' => false,
     ];
 
     /**
@@ -155,6 +165,9 @@ class Connection extends Model
             'away_enabled' => 'boolean',
             'away_in_open_conversations' => 'boolean',
             'farewell_enabled' => 'boolean',
+            'agent_assigned_enabled' => 'boolean',
+            'department_transfer_enabled' => 'boolean',
+            'agent_transfer_enabled' => 'boolean',
             'reopen_window_minutes' => 'integer',
             'credentials_verified_at' => 'datetime',
             'webhook_verified_at' => 'datetime',

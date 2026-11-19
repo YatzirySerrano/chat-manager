@@ -27,6 +27,7 @@ require __DIR__.'/reports.php';
 require __DIR__.'/notifications.php';
 require __DIR__.'/automation.php';
 require __DIR__.'/chatbot.php';
+require __DIR__.'/ai.php';
 require __DIR__.'/team-chat.php';
 require __DIR__.'/link-previews.php';
 require __DIR__.'/messaging.php';

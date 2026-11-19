@@ -190,7 +190,8 @@ const compact = computed(() => props.size === 'compact');
         :data-tone="props.tone === 'primary' ? undefined : props.tone"
         data-kpi-card
     >
-        <div class="flex min-w-0 items-start gap-1.5">
+        <!-- In narrow cards «En vivo» wraps below instead of squeezing the label. -->
+        <div class="flex min-w-0 flex-wrap items-start gap-x-1.5 gap-y-1">
             <component
                 :is="icon"
                 v-if="icon"
@@ -205,7 +206,7 @@ const compact = computed(() => props.size === 'compact');
                 aria-hidden="true"
             />
             <span
-                class="min-w-0 flex-1 text-[0.8125rem] font-medium text-pretty break-words hyphens-auto text-muted-foreground"
+                class="min-w-0 flex-1 basis-16 text-[0.8125rem] font-medium text-pretty break-words hyphens-auto text-muted-foreground"
                 data-kpi-label
                 >{{ label }}</span
             >

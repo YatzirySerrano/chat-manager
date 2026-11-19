@@ -50,6 +50,7 @@ enum Permission: string
     case ViewConnections = 'connections.view';
     case ManageConnections = 'connections.manage';
     case ManageChatbot = 'connections.chatbot';
+    case ManageAi = 'connections.ai';
 
     case ViewIntegrations = 'integrations.view';
     case ManageIntegrations = 'integrations.manage';
@@ -157,6 +158,7 @@ enum Permission: string
             self::ViewConnections => 'Ver conexiones',
             self::ManageConnections => 'Administrar conexiones y credenciales (incluye eliminar y restaurar)',
             self::ManageChatbot => 'Configurar el chatbot (menú de bienvenida y palabras clave)',
+            self::ManageAi => 'Configurar la inteligencia artificial (cuenta, información del negocio y conexiones)',
             self::ViewIntegrations => 'Ver las claves de acceso de integraciones',
             self::ManageIntegrations => 'Crear y revocar claves de acceso de integraciones',
             self::ViewTemplates => 'Ver plantillas de WhatsApp',
@@ -249,6 +251,7 @@ enum Permission: string
             self::ViewConnections => 'Consultar los canales conectados, como números de WhatsApp, y su estado.',
             self::ManageConnections => 'Conectar, configurar, eliminar y restaurar canales, incluidas sus credenciales.',
             self::ManageChatbot => 'Definir el menú de bienvenida de cada conexión y las respuestas automáticas por palabras clave que el sistema envía a los clientes.',
+            self::ManageAi => 'Conectar la cuenta de Claude o ChatGPT, escribir la información del negocio y elegir en qué conexiones contesta la IA.',
             self::ViewIntegrations => 'Consultar las claves de acceso que usan otros sistemas para conectarse.',
             self::ManageIntegrations => 'Crear y revocar claves de acceso para que otros sistemas se conecten.',
             self::ViewTemplates => 'Consultar las plantillas de WhatsApp y su estado de aprobación.',
@@ -339,6 +342,7 @@ enum Permission: string
             self::UpdateSettings,
             self::UpdateAppearance,
             self::ManageConnections,
+            self::ManageAi,
             self::ManageIntegrations,
             self::OverrideQueueRules,
             self::InterveneConversations,
@@ -381,6 +385,7 @@ enum Permission: string
             self::ViewConnections,
             self::ManageConnections,
             self::ManageChatbot,
+            self::ManageAi,
             self::ViewIntegrations,
             self::ManageIntegrations,
             self::ManageTemplates,

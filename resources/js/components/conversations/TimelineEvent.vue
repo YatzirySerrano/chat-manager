@@ -100,7 +100,7 @@ const detail = computed(() => {
             aria-hidden="true"
         />
         <p
-            class="inline-flex max-w-[min(100%,48rem)] flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-full border border-border/70 glass py-1 pr-3 pl-1 text-center text-xs wrap-anywhere text-muted-foreground shadow-(--shadow-control)"
+            class="inline-flex max-w-[min(100%,48rem)] flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-2xl border border-border/70 glass py-1 pr-3 pl-1 text-center text-xs wrap-anywhere text-muted-foreground shadow-(--shadow-control)"
         >
             <span
                 class="grid size-5 shrink-0 place-items-center rounded-full bg-primary-soft text-primary-soft-foreground"
@@ -115,10 +115,11 @@ const detail = computed(() => {
             <span v-if="event.actor && event.action && !deliveryUnknown"
                 ><strong class="font-semibold text-foreground">{{
                     event.actor
-                }}</strong>
-                <span class="text-foreground/80">
-                    {{ event.action }}</span
-                ></span
+                }}</strong
+                >{{ ' '
+                }}<span class="text-foreground/80">{{
+                    event.action
+                }}</span></span
             >
             <span v-else class="font-medium text-foreground/80">{{
                 label

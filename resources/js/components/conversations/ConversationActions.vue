@@ -509,7 +509,11 @@ const secondary = computed<Action[]>(() => {
             @click="action.run"
         >
             <component :is="action.icon" aria-hidden="true" />
-            {{ action.label }}
+            <!-- A narrow chat (list and details open beside it) keeps the
+                 icon and leaves the name to screen readers and the title. -->
+            <span class="sm:@max-md/chat-header:sr-only">{{
+                action.label
+            }}</span>
         </Button>
         <!--
             The end of the request: success tone, the icon springs on hover.
@@ -518,7 +522,7 @@ const secondary = computed<Action[]>(() => {
         <button
             v-if="completeAsButton"
             type="button"
-            class="group/complete inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-success/35 bg-success-soft px-2.5 text-sm font-semibold text-success-soft-foreground shadow-(--shadow-control) transition-[background-color,border-color,box-shadow,scale] duration-(--duration-base) ease-(--ease-spring) outline-none hover:border-success/60 hover:shadow-(--shadow-lift) focus-visible:ring-[3px] focus-visible:ring-success/35 active:not-disabled:scale-95 disabled:pointer-events-none disabled:opacity-50 sm:px-3.5 pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:justify-center"
+            class="group/complete inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-success/35 bg-success-soft px-2.5 text-sm font-semibold text-success-soft-foreground shadow-(--shadow-control) transition-[background-color,border-color,box-shadow,scale] duration-(--duration-base) ease-(--ease-spring) outline-none hover:border-success/60 hover:shadow-(--shadow-lift) focus-visible:ring-[3px] focus-visible:ring-success/35 active:not-disabled:scale-95 disabled:pointer-events-none disabled:opacity-50 sm:@xl/chat-header:px-3.5 pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:justify-center"
             :disabled="processing"
             aria-label="Solicitud completada"
             title="Cerrar la conversación como solicitud completada"
@@ -529,7 +533,9 @@ const secondary = computed<Action[]>(() => {
                 class="size-4 shrink-0 transition-transform duration-(--duration-panel) ease-(--ease-spring) group-hover/complete:scale-115 group-hover/complete:-rotate-8"
                 aria-hidden="true"
             />
-            <span class="hidden sm:inline"> Solicitud completada </span>
+            <span class="hidden sm:@xl/chat-header:inline">
+                Solicitud completada
+            </span>
         </button>
         <!--
             «menu-extra»: chat controls the header moves into this menu on

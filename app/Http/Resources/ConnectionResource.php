@@ -65,6 +65,9 @@ class ConnectionResource extends JsonResource
                 'welcome' => ['enabled' => $this->welcome_enabled, 'text' => $this->welcome_message],
                 'away' => ['enabled' => $this->away_enabled, 'text' => $this->away_message, 'in_open_conversations' => $this->away_in_open_conversations],
                 'farewell' => ['enabled' => $this->farewell_enabled, 'text' => $this->farewell_message],
+                'agent_assigned' => ['enabled' => $this->agent_assigned_enabled, 'text' => $this->agent_assigned_message],
+                'department_transfer' => ['enabled' => $this->department_transfer_enabled, 'text' => $this->department_transfer_message],
+                'agent_transfer' => ['enabled' => $this->agent_transfer_enabled, 'text' => $this->agent_transfer_message],
             ],
             'reopen_window_minutes' => $this->reopen_window_minutes,
             'web_chat_widget' => $this->when(

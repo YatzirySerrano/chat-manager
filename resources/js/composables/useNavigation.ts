@@ -21,6 +21,7 @@ import {
     ListChecks,
     Settings,
     ShieldCheck,
+    Sparkles,
     Tags,
     UserCog,
     Users,
@@ -33,6 +34,7 @@ import { useTeamChatUnread } from '@/composables/useTeamChatUnread';
 import { dashboard } from '@/routes';
 import { edit as appearanceEdit } from '@/routes/admin/appearance';
 import { index as auditIndex } from '@/routes/admin/audit';
+import { index as aiIndex } from '@/routes/admin/ai';
 import { index as chatbotIndex } from '@/routes/admin/chatbot';
 import { edit as missingInfoEdit } from '@/routes/admin/missing-info';
 import { index as attentionIndex } from '@/routes/attention';
@@ -221,6 +223,15 @@ export function useNavigation() {
                 description: 'Menú de bienvenida y palabras clave',
                 href: chatbotIndex(),
                 icon: Bot,
+            });
+        }
+
+        if (can('connections.ai')) {
+            admin.push({
+                title: 'Inteligencia artificial',
+                description: 'Claude o ChatGPT contesta por ti',
+                href: aiIndex(),
+                icon: Sparkles,
             });
         }
 

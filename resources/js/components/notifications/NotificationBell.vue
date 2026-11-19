@@ -361,7 +361,7 @@ function onOpenChange(value: boolean): void {
                     </Button>
                 </div>
 
-                <div class="flex items-center justify-between gap-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
                     <Segmented
                         v-model="center.onlyUnread.value"
                         :options="filterOptions"

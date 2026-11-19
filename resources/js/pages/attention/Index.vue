@@ -1006,7 +1006,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                 v-else
                                 tag="ul"
                                 name="filter-row"
-                                class="relative grid gap-1"
+                                class="relative grid grid-cols-1 gap-1"
                                 aria-label="Clientes esperando respuesta"
                             >
                                 <li
@@ -1112,7 +1112,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                 <li v-for="alert in alerts" :key="alert.id">
                                     <button
                                         type="button"
-                                        class="grid w-full interactive-surface gap-1.5 rounded-xl border bg-card px-3 py-2.5 text-left shadow-(--shadow-control) outline-none focus-visible:ring-[3px] focus-visible:ring-primary/25"
+                                        class="grid w-full gap-1.5 rounded-xl border interactive-surface bg-card px-3 py-2.5 text-left shadow-(--shadow-control) outline-none focus-visible:ring-[3px] focus-visible:ring-primary/25"
                                         data-attention-history
                                         @click="openDetail(alert)"
                                     >

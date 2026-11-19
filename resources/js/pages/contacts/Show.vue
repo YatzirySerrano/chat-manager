@@ -408,9 +408,10 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                                 Registro
                             </dt>
                             <dd>
-                                {{ contact.source_label }}
-                                <template v-if="contact.creator">
-                                    por {{ contact.creator.name }}</template
+                                {{ contact.source_label
+                                }}<template v-if="contact.creator">{{
+                                    ` por ${contact.creator.name}`
+                                }}</template
                                 >,
                                 {{ formatDateTime(contact.created_at) }}
                             </dd>

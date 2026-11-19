@@ -11,6 +11,7 @@ use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Models\User;
 use App\Policies\HistoryImportPolicy;
+use App\Services\Automation\AutomaticMessageKind;
 use App\Services\LinkPreviews\LinkPreviews;
 use App\Services\Storage\MediaThumbnails;
 use App\Services\VideoExports\VideoExports;
@@ -113,6 +114,7 @@ class ConversationMessageResource extends JsonResource
             'error_message' => $this->error_message,
             'delivery_warning' => is_string($metadata['delivery_warning'] ?? null) ? $metadata['delivery_warning'] : null,
             'automatic' => ($metadata['automatic'] ?? false) === true,
+            'automatic_kind_label' => is_string($metadata['automatic_kind'] ?? null) ? AutomaticMessageKind::tryFrom($metadata['automatic_kind'])?->label() : null,
             'integration' => $this->integration($metadata),
             'imported' => $this->imported($metadata, $signature['name'] ?? null),
             'simulated' => ($metadata['simulated'] ?? false) === true || ($metadata['transport'] ?? null) === 'simulated',

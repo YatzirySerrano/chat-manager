@@ -4,6 +4,7 @@ namespace App\Services\Automation;
 
 use App\Models\Connection;
 use App\Models\Department;
+use App\Models\User;
 use App\Services\BusinessHours;
 use Carbon\CarbonInterface;
 
@@ -27,6 +28,10 @@ use Carbon\CarbonInterface;
  * Every channel that can send follows these priorities, WhatsApp Web (QR)
  * included since the administrator turns each message on per connection.
  *
+ * Actions of the team (SendActionMessages): «Agente asignado», «Transferido
+ * a departamento» and «Transferido a otro agente», each one the connection's
+ * text when enabled.
+ *
  * This class only chooses the text; QueueAutomaticMessage enforces the
  * customer service window, the connection state and idempotency.
  */
@@ -46,6 +51,21 @@ class AutomaticMessages
     public function farewell(Connection $connection): ?AutomaticMessagePlan
     {
         return $this->pick(AutomaticMessageKind::Farewell, null, $connection->farewell_enabled ? $connection->farewell_message : null);
+    }
+
+    /**
+     * The connection's message for one of the team's actions, when enabled
+     * and written. The agent is the one {{agente}} names.
+     */
+    public function action(Connection $connection, AutomaticMessageKind $kind, ?User $agent = null): ?AutomaticMessagePlan
+    {
+        if (! in_array($kind, AutomaticMessageKind::actions(), true) || ! $connection->getAttribute("{$kind->value}_enabled")) {
+            return null;
+        }
+
+        $text = trim((string) $connection->getAttribute("{$kind->value}_message"));
+
+        return $text === '' ? null : new AutomaticMessagePlan($kind, $text, 'connection', $agent);
     }
 
     private function pick(AutomaticMessageKind $kind, ?string $departmentText, ?string $connectionText): ?AutomaticMessagePlan

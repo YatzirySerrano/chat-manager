@@ -479,7 +479,9 @@ const author = computed(() => {
     }
 
     if (props.message.automatic) {
-        return 'Mensaje automático';
+        return props.message.automatic_kind_label
+            ? `Mensaje automático · ${props.message.automatic_kind_label}`
+            : 'Mensaje automático';
     }
 
     if (props.message.integration) {

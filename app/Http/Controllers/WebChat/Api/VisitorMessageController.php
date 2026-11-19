@@ -44,7 +44,7 @@ class VisitorMessageController extends Controller
         $after = $request->afterCursor();
         $before = $request->beforeCursor();
 
-        $query = $this->sessions->visibleMessages($session)->with(['sender:id,name', 'attachments']);
+        $query = $this->sessions->visibleMessages($session)->with(['sender:id,name,avatar_disk,avatar_path,avatar_version', 'attachments']);
         $hasOlder = false;
 
         if ($after !== null) {
@@ -105,7 +105,7 @@ class VisitorMessageController extends Controller
             (string) $request->validated('body'),
         );
 
-        $message->load(['sender:id,name', 'attachments']);
+        $message->load(['sender:id,name,avatar_disk,avatar_path,avatar_version', 'attachments']);
 
         return (new VisitorMessageResource($message))->response()->setStatusCode($created ? 201 : 200);
     }

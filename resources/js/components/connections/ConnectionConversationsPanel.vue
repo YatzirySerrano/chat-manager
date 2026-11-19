@@ -283,7 +283,7 @@ function plural(count: number, one: string, many: string): string {
 </script>
 
 <template>
-    <div class="grid gap-4" data-test="connection-conversations">
+    <div class="grid grid-cols-1 gap-4" data-test="connection-conversations">
         <div class="flex flex-wrap items-center gap-2">
             <div class="relative min-w-48 flex-1">
                 <Search
@@ -510,7 +510,7 @@ function plural(count: number, one: string, many: string): string {
 
         <div
             v-if="listing && listing.meta.last_page > 1"
-            class="flex items-center justify-between gap-2 text-sm text-muted-foreground"
+            class="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground"
         >
             <span>
                 Página {{ listing.meta.current_page }} de

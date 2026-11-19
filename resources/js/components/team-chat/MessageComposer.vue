@@ -895,7 +895,7 @@ defineExpose({ focus, addFiles });
                         v-model="http.body"
                         rows="1"
                         :enterkeyhint="phoneKeyboard ? 'enter' : 'send'"
-                        class="max-h-[200px] min-h-10 flex-1 resize-none rounded-lg border-0 bg-transparent px-2 py-2.5 text-base leading-snug outline-none placeholder:text-muted-foreground md:text-sm md:leading-5"
+                        class="max-h-[200px] min-h-10 flex-1 resize-none rounded-lg border-0 bg-transparent px-2 py-2.5 text-base leading-snug outline-none placeholder:truncate placeholder:text-muted-foreground md:text-sm md:leading-5"
                         placeholder="Escribe un mensaje interno…"
                         :aria-invalid="errors.length > 0"
                         :aria-expanded="suggestions.length > 0"

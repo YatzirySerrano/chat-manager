@@ -26,6 +26,7 @@ use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Services\Ai\AiAssistant;
 use App\Services\Chatbot\ChatbotConversations;
 use App\Services\Chatbot\ChatbotKeywords;
 use App\Services\Conversations\ConversationLifecycle;
@@ -198,6 +199,12 @@ class ReceiveInboundMessage
             && ChatbotKeywords::normalize((string) $message->body) !== ''
             && SendChatbotKeywordReply::anyRule()) {
             SendChatbotKeywordReply::dispatch($conversation->id, $message->id)->afterCommit();
+        }
+
+        // «Inteligencia artificial»: answered on its own queue a few seconds
+        // later, only while the conversation waits in a queue (AiAssistant).
+        if (in_array($outcome, [InboundMessageOutcome::Created, InboundMessageOutcome::Appended, InboundMessageOutcome::Reopened], true)) {
+            app(AiAssistant::class)->afterInbound($connection, $conversation, $message, $menuOffered || $answeredByMenu);
         }
 
         if ($attachment !== null && $attachment->status === AttachmentStatus::Pending && ($inbound->content['source'] ?? null) !== self::UPLOADED) {

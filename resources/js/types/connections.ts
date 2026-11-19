@@ -105,7 +105,13 @@ export type ConnectionCredentialState =
     | 'verified'
     | 'invalid';
 
-export type ConnectionMessageKind = 'welcome' | 'away' | 'farewell';
+export type ConnectionMessageKind =
+    | 'welcome'
+    | 'away'
+    | 'farewell'
+    | 'agent_assigned'
+    | 'department_transfer'
+    | 'agent_transfer';
 
 export type ConnectionSecretField =
     | 'access_token'

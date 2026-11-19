@@ -2,9 +2,12 @@
 
 namespace App\Http\Resources\WebChat;
 
+use App\Enums\ConversationStatus;
 use App\Models\Conversation;
 use App\Models\WebChatSession;
 use App\Models\WebChatWidget;
+use App\Services\Chatbot\ChatbotConversations;
+use App\Services\WebChat\VisitorAgentAvatars;
 use App\Services\WebChat\VisitorRealtimeConfig;
 use App\Services\WebChat\WebChatAvailability;
 use App\Support\ProtectedAccounts;
@@ -14,7 +17,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /**
  * The visitor's session as the widget needs it: whether it is identified,
  * the visitor's own name, when it expires, the state of their latest
- * conversation (with the attending agent's name only), the team's
+ * conversation (with the attending agent's name and picture only, and who
+ * handles it: an agent, the chatbot or nobody yet), the team's
  * availability, the real-time channel and the polling cadence. Never the
  * token, the contact id, the IP or anything about other visitors.
  * Expects 'connection.webChatWidget' loaded.
@@ -33,13 +37,20 @@ class VisitorSessionResource extends JsonResource
         $widget->setRelation('connection', $this->connection);
 
         $conversation = $this->contact_id === null ? null : Conversation::query()
-            ->with('assignee:id,name')
+            ->with('assignee:id,name,avatar_disk,avatar_path,avatar_version')
             ->where('connection_id', $this->connection_id)
             ->where('contact_id', $this->contact_id)
             ->orderByDesc('id')
             ->first(['id', 'status', 'assigned_user_id']);
 
         $profile = is_array($this->profile) ? $this->profile : [];
+        $attending = $conversation !== null && $conversation->assignee !== null
+            && in_array($conversation->status, [ConversationStatus::Open, ConversationStatus::OnHold], true);
+        $handler = match (true) {
+            $attending => 'agent',
+            $conversation !== null && $conversation->status !== ConversationStatus::Closed && app(ChatbotConversations::class)->isAwaiting($conversation->id) => 'bot',
+            default => 'none',
+        };
 
         return [
             'id' => $this->public_id,
@@ -49,6 +60,8 @@ class VisitorSessionResource extends JsonResource
             'conversation' => [
                 'status' => $conversation?->status->value ?? 'none',
                 'agent_name' => app(ProtectedAccounts::class)->nameForRequest($conversation?->assignee, $request),
+                'agent_avatar_url' => app(VisitorAgentAvatars::class)->url($conversation?->assignee, $this->resource),
+                'handler' => $handler,
             ],
             'availability' => app(WebChatAvailability::class)->for($widget),
             'realtime' => app(VisitorRealtimeConfig::class)->for($this->resource),

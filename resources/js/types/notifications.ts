@@ -5,6 +5,8 @@ export type NotificationKindValue =
     | 'conversation.assigned'
     | 'conversation.transferred'
     | 'conversation.message'
+    | 'conversation.queue-overdue'
+    | 'conversation.attention-overdue'
     | 'team-chat.mention'
     | 'team-chat.message'
     | 'team-chat.desk-request'

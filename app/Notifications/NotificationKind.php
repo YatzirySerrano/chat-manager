@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Enums\DataScope;
 use App\Enums\Permission;
 use App\Models\User;
 use App\Support\Features;
@@ -17,6 +18,8 @@ enum NotificationKind: string
     case ConversationAssigned = 'conversation.assigned';
     case ConversationTransferred = 'conversation.transferred';
     case ConversationMessage = 'conversation.message';
+    case ConversationQueueOverdue = 'conversation.queue-overdue';
+    case ConversationAttentionOverdue = 'conversation.attention-overdue';
     case TeamChatMention = 'team-chat.mention';
     case TeamChatMessage = 'team-chat.message';
     case TeamChatDeskRequest = 'team-chat.desk-request';
@@ -35,6 +38,8 @@ enum NotificationKind: string
             self::ConversationAssigned => 'Conversaciones asignadas a mí',
             self::ConversationTransferred => 'Transferencias recibidas',
             self::ConversationMessage => 'Mensajes nuevos en mis conversaciones',
+            self::ConversationQueueOverdue => 'Solicitudes que esperan demasiado en «Pendientes»',
+            self::ConversationAttentionOverdue => 'Conversaciones que llevo demasiado tiempo atendiendo',
             self::TeamChatMention => 'Menciones en el chat interno',
             self::TeamChatMessage => 'Mensajes del chat interno',
             self::TeamChatDeskRequest => 'Nuevas solicitudes de la mesa de control',
@@ -54,6 +59,8 @@ enum NotificationKind: string
             self::ConversationPending => 'Cuando llega a «Pendientes» de tus departamentos una conversación que puedes aceptar y estás disponible. Si llegan varias seguidas, recibes un solo aviso por departamento.',
             self::ConversationAssigned => 'Cuando alguien o la distribución automática te asigna una conversación, o vuelve a ti al reabrirse.',
             self::ConversationTransferred => 'Cuando otra persona te transfiere una conversación.',
+            self::ConversationQueueOverdue => 'Cuando una solicitud lista para atención lleva en «Pendientes» más del tiempo configurado en Alertas de tiempo (5 minutos por omisión) y hay que tomarla ya.',
+            self::ConversationAttentionOverdue => 'Cuando llevas atendiendo una conversación más del tiempo configurado en Alertas de tiempo (15 minutos por omisión) sin resolverla.',
             self::ConversationMessage => 'Cuando el cliente escribe en una conversación que atiendes. Se agrupan por conversación hasta que la abres.',
             self::TeamChatMention => 'Cuando un compañero te menciona en el chat interno, aunque hayas silenciado ese chat. Verás quién te escribió y un fragmento breve del mensaje.',
             self::TeamChatMessage => 'Cuando un compañero te escribe en un chat interno que no silenciaste. Verás quién escribió y un fragmento breve; si tienes ese chat abierto a la vista, no aparece el aviso ni suena.',
@@ -74,6 +81,8 @@ enum NotificationKind: string
             self::ConversationPending,
             self::ConversationAssigned,
             self::ConversationTransferred,
+            self::ConversationQueueOverdue,
+            self::ConversationAttentionOverdue,
             self::TeamChatMention,
             self::TeamChatDeskRequest,
             self::SlaBreach,
@@ -128,6 +137,8 @@ enum NotificationKind: string
     {
         return match ($this) {
             self::ConversationPending => $user->holdsPermission(Permission::AcceptConversations),
+            self::ConversationQueueOverdue => $user->holdsPermission(Permission::AcceptConversations) || $user->dataScope() === DataScope::Global,
+            self::ConversationAttentionOverdue => $user->holdsPermission(Permission::ViewConversations) && $user->holdsPermission(Permission::ReplyConversations),
             self::ConversationAssigned,
             self::ConversationTransferred,
             self::ConversationMessage => $user->holdsPermission(Permission::ViewConversations) && $user->holdsPermission(Permission::ReplyConversations),

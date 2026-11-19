@@ -26,7 +26,7 @@ test('administrators see every role with its users and the permission catalog', 
         ->get(route('admin.roles.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->component('admin/roles/Index')
-            ->has('roles', 4)
+            ->has('roles', 5)
             ->where('roles.0.label', 'Superadministrador')
             ->where('roles.0.is_root', true)
             ->where('roles.0.can.delete', false)
@@ -175,7 +175,7 @@ test('deleting an unused role keeps its definition and restoring it brings it ba
 
     $this->actingAs($admin)
         ->get(route('admin.roles.index'))
-        ->assertInertia(fn (Assert $page) => $page->has('roles', 4));
+        ->assertInertia(fn (Assert $page) => $page->has('roles', 5));
 
     $this->actingAs($admin)
         ->get(route('admin.roles.index', ['record' => 'deleted']))

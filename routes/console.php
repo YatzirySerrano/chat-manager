@@ -58,6 +58,8 @@ Schedule::command('ops:check-alerts')->everyFiveMinutes()->withoutOverlapping(15
 // Service rules: SLA warnings, breaches and reminders of the requests waiting for an answer (atomic claims; safe to overlap).
 // Phase two only (FEATURE_PHASE_TWO); the command itself is inert while it is off.
 Schedule::command('sla:evaluate')->everyMinute()->withoutOverlapping(5)->when(fn (): bool => Features::phaseTwo());
+// «Alertas de tiempo»: ready requests waiting in Pendientes and conversations in attention past their limit.
+Schedule::command('conversations:time-alerts')->everyMinute()->withoutOverlapping(5);
 
 Schedule::command('queue:prune-failed --hours=2160')->dailyAt('04:30');
 Schedule::command('queue:prune-batches --hours=168')->dailyAt('04:40');

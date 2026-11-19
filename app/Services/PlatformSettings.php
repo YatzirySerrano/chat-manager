@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Cache;
  *     sla_alerts: array{agent_warning: bool, agent_breach: bool, supervisor_warning: bool, supervisor_breach: bool, reminder_minutes: int|null, reminder_limit: int},
  *     video_exports: array{root_folder: string},
  *     control_desk: array{farewell_enabled: bool, farewell_message: string},
+ *     time_alerts: array{queue_enabled: bool, queue_minutes: int, attention_enabled: bool, attention_minutes: int},
  *     missing_info: array{intro: string, items: list<string>},
  * }
  */
@@ -220,6 +221,15 @@ class PlatformSettings
             ],
             // «Mesa de control»: the goodbye sent when a request is completed
             // with «Completar y despedir» ({{nombre}}, {{agente}}, {{saludo}}).
+            // «Alertas de tiempo» (conversations:time-alerts): a ready request
+            // waiting in Pendientes, and a conversation in attention, past
+            // these minutes alert whoever must act.
+            'time_alerts' => [
+                'queue_enabled' => true,
+                'queue_minutes' => 5,
+                'attention_enabled' => true,
+                'attention_minutes' => 15,
+            ],
             'control_desk' => [
                 'farewell_enabled' => false,
                 'farewell_message' => 'Listo {{nombre}}, tu solicitud quedó completa. Si necesitas algo más, escríbenos aquí. ¡Gracias!',

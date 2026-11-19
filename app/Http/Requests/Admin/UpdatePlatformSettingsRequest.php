@@ -40,6 +40,10 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'operations.pending_block_after_minutes' => ['sometimes', 'required', 'integer', 'min:0', 'max:1440'],
             'video_exports.root_folder' => ['sometimes', 'required', 'string', 'max:120'],
             'control_desk.farewell_enabled' => ['sometimes', 'boolean'],
+            'time_alerts.queue_enabled' => ['sometimes', 'boolean'],
+            'time_alerts.queue_minutes' => ['sometimes', 'required', 'integer', 'min:1', 'max:1440'],
+            'time_alerts.attention_enabled' => ['sometimes', 'boolean'],
+            'time_alerts.attention_minutes' => ['sometimes', 'required', 'integer', 'min:1', 'max:1440'],
             'control_desk.farewell_message' => ['nullable', 'string', 'max:1000', 'required_if_accepted:control_desk.farewell_enabled'],
             // Service rules and automatic SLA alerts: bounds come from their definition.
             // Phase one (FEATURE_PHASE_TWO off): only the two report objectives.
@@ -97,6 +101,8 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'operations.pending_block_after_minutes' => 'tolerancia antes de bloquear',
             'video_exports.root_folder' => 'carpeta de archivos en Synology',
             'control_desk.farewell_message' => 'mensaje de despedida de la mesa de control',
+            'time_alerts.queue_minutes' => 'minutos en Pendientes',
+            'time_alerts.attention_minutes' => 'minutos en atención',
             ...app(ServiceRules::class)->validationAttributes(ServiceRules::LEVEL_PLATFORM),
             'sla.first_response_minutes' => 'objetivo de primera respuesta',
             'sla.resolution_minutes' => 'objetivo de resolución',
@@ -129,6 +135,12 @@ class UpdatePlatformSettingsRequest extends FormRequest
             ...$this->phaseOneGroups($days),
             // Only when sent: an older form that does not know it keeps it.
             ...($this->filled('video_exports.root_folder') ? ['video_exports' => ['root_folder' => VideoFolders::normalizeRoot($this->string('video_exports.root_folder')->value())]] : []),
+            ...($this->has('time_alerts.queue_enabled') ? ['time_alerts' => [
+                'queue_enabled' => $this->boolean('time_alerts.queue_enabled'),
+                'queue_minutes' => $this->integer('time_alerts.queue_minutes', 5),
+                'attention_enabled' => $this->boolean('time_alerts.attention_enabled'),
+                'attention_minutes' => $this->integer('time_alerts.attention_minutes', 15),
+            ]] : []),
             ...($this->has('control_desk.farewell_enabled') ? ['control_desk' => [
                 'farewell_enabled' => $this->boolean('control_desk.farewell_enabled'),
                 'farewell_message' => $this->string('control_desk.farewell_message')->trim()->value(),

@@ -434,6 +434,13 @@ export type PlatformSettings = {
     };
     /** «Guardar video»: root folder of the NAS browser. */
     video_exports: { root_folder: string };
+    /** «Alertas de tiempo»: minutes in Pendientes and in attention. */
+    time_alerts: {
+        queue_enabled: boolean;
+        queue_minutes: number;
+        attention_enabled: boolean;
+        attention_minutes: number;
+    };
     /** «Mesa de control»: goodbye of «Completar y despedir». */
     control_desk: { farewell_enabled: boolean; farewell_message: string };
     /** «Marcar que necesita información»: catalog and message intro (saved apart). */

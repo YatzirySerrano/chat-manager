@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Enums\ConnectionHealth;
+use App\Enums\ConversationStatus;
 use App\Enums\DataTransferStatus;
 use App\Enums\Permission;
 use App\Enums\ResponseCycleKind;
@@ -119,6 +120,7 @@ class NotificationPresenter
             NotificationKind::ConversationAssigned => $this->assigned($data, $viewer),
             NotificationKind::ConversationTransferred => $this->transferred($data, $viewer),
             NotificationKind::ConversationMessage => $this->message($data, $viewer, $occurrences),
+            NotificationKind::ConversationQueueOverdue, NotificationKind::ConversationAttentionOverdue => $this->overdue($kind, $data, $viewer, $settled),
             NotificationKind::ChatbotReply => $this->chatbotReply($data, $viewer),
             NotificationKind::TeamChatMention, NotificationKind::TeamChatMessage => $this->teamChat($kind, $data, $viewer, $occurrences),
             NotificationKind::TeamChatDeskRequest => $this->deskRequest($data, $viewer, $occurrences, $settled),
@@ -309,6 +311,48 @@ class NotificationPresenter
         }
 
         return [$title, $body, $url, true];
+    }
+
+    /**
+     * «Alertas de tiempo»: a ready request waiting too long in «Pendientes»,
+     * or a conversation attended too long by the viewer. Once it was taken
+     * (or resolved) the alert no longer asks for an action.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{string, string|null, string|null, bool}
+     */
+    private function overdue(NotificationKind $kind, array $data, User $viewer, bool &$settled): array
+    {
+        $queue = $kind === NotificationKind::ConversationQueueOverdue;
+        $minutes = is_int($data['minutes'] ?? null) ? $data['minutes'] : null;
+        $limit = $minutes === null ? 'el tiempo límite' : ($minutes === 1 ? '1 minuto' : "{$minutes} minutos");
+        $conversation = $this->visibleConversation($data['conversation_id'] ?? null, $viewer);
+
+        if ($conversation === null) {
+            return [$queue ? 'Solicitud en espera demasiado tiempo' : 'Conversación en atención demasiado tiempo', 'Ya no tienes acceso a esta conversación.', null, false];
+        }
+
+        $this->aboutContact($conversation);
+        $name = $this->contactName($conversation);
+        $url = $this->routeOrNull('conversations.show', $conversation);
+
+        if ($queue) {
+            if ($conversation->status !== ConversationStatus::Pending || $conversation->assigned_user_id !== null) {
+                $settled = true;
+
+                return ["La solicitud de {$name} esperó más de {$limit}", 'Ya la tomaron o salió de «Pendientes».', $url, true];
+            }
+
+            return ["{$name} lleva más de {$limit} en «Pendientes»", 'La solicitud está lista para atención: tómala ya.', $url, true];
+        }
+
+        if ($conversation->status !== ConversationStatus::Open || $conversation->assigned_user_id !== $viewer->id) {
+            $settled = true;
+
+            return ["La atención de {$name} pasó de {$limit}", 'La conversación ya se resolvió o ya no está a tu cargo.', $url, true];
+        }
+
+        return ["Llevas más de {$limit} atendiendo a {$name}", 'Ya se superó el tiempo para resolver la solicitud.', $url, true];
     }
 
     /**

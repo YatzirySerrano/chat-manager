@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
 import {
+    AlarmClock,
     CalendarOff,
     CircleDashed,
     Clock,
@@ -112,6 +113,14 @@ const validation = useFormValidation(form, {
                 maxLength(120),
             ],
             'control_desk.farewell_message': [maxLength(1000)],
+            'time_alerts.queue_minutes': [
+                required('Escribe los minutos.'),
+                integerBetween(1, 1440),
+            ],
+            'time_alerts.attention_minutes': [
+                required('Escribe los minutos.'),
+                integerBetween(1, 1440),
+            ],
         };
 
         // Service rules: bounds come from the server definition.
@@ -180,6 +189,7 @@ const sections = computed(() => [
     ...(phaseTwo.value
         ? [{ id: 'informacion-faltante', label: 'Información faltante' }]
         : []),
+    { id: 'alertas-de-tiempo', label: 'Alertas de tiempo' },
     { id: 'mesa-de-control', label: 'Mesa de control' },
     { id: 'videos', label: 'Archivos en Synology' },
     { id: 'meta', label: 'Integración con Meta' },
@@ -192,6 +202,7 @@ const SECTION_PREFIXES: Record<string, string> = {
     'alertas-sla': 'sla_alerts.',
     videos: 'video_exports.',
     'mesa-de-control': 'control_desk.',
+    'alertas-de-tiempo': 'time_alerts.',
 };
 
 /** Sections with a field to review: marked in the navigation. */
@@ -903,6 +914,121 @@ const integrationConnected = computed(
                         :catalog="settings.missing_info"
                         :can-update="can.update"
                     />
+                </SettingsSection>
+
+                <SettingsSection
+                    v-if="form.time_alerts"
+                    id="alertas-de-tiempo"
+                    :icon="AlarmClock"
+                    class="scroll-mt-32"
+                    title="Alertas de tiempo"
+                    description="Avisos en la campana (con sonido y notificación del sistema) cuando una conversación pasa de estos tiempos."
+                    flush
+                >
+                    <div>
+                        <div
+                            class="grid gap-3 border-b border-border/70 px-4 py-4 sm:grid-cols-[1fr_auto] sm:items-center sm:px-6"
+                        >
+                            <label
+                                for="time-alert-queue"
+                                class="flex items-center gap-3"
+                            >
+                                <Switch
+                                    id="time-alert-queue"
+                                    v-model="form.time_alerts.queue_enabled"
+                                    :disabled="!can.update"
+                                />
+                                <span>
+                                    <span class="block text-sm font-medium"
+                                        >General: solicitud lista en
+                                        «Pendientes»</span
+                                    >
+                                    <span
+                                        class="block text-sm text-muted-foreground"
+                                    >
+                                        Avisa a quien puede tomarla y a los
+                                        administradores.
+                                    </span>
+                                </span>
+                            </label>
+                            <FormField
+                                id="time-alert-queue-minutes"
+                                label="Minutos"
+                                :error="
+                                    validation.error(
+                                        'time_alerts.queue_minutes',
+                                    )
+                                "
+                            >
+                                <Input
+                                    id="time-alert-queue-minutes"
+                                    v-model.number="
+                                        form.time_alerts.queue_minutes
+                                    "
+                                    type="number"
+                                    min="1"
+                                    max="1440"
+                                    inputmode="numeric"
+                                    class="w-28"
+                                    :disabled="
+                                        !can.update ||
+                                        !form.time_alerts.queue_enabled
+                                    "
+                                />
+                            </FormField>
+                        </div>
+                        <div
+                            class="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_auto] sm:items-center sm:px-6"
+                        >
+                            <label
+                                for="time-alert-attention"
+                                class="flex items-center gap-3"
+                            >
+                                <Switch
+                                    id="time-alert-attention"
+                                    v-model="form.time_alerts.attention_enabled"
+                                    :disabled="!can.update"
+                                />
+                                <span>
+                                    <span class="block text-sm font-medium"
+                                        >Individual: conversación «En
+                                        atención»</span
+                                    >
+                                    <span
+                                        class="block text-sm text-muted-foreground"
+                                    >
+                                        Avisa al agente que la atiende cuando ya
+                                        pasó el tiempo para resolverla.
+                                    </span>
+                                </span>
+                            </label>
+                            <FormField
+                                id="time-alert-attention-minutes"
+                                label="Minutos"
+                                :error="
+                                    validation.error(
+                                        'time_alerts.attention_minutes',
+                                    )
+                                "
+                            >
+                                <Input
+                                    id="time-alert-attention-minutes"
+                                    v-model.number="
+                                        form.time_alerts.attention_minutes
+                                    "
+                                    type="number"
+                                    min="1"
+                                    max="1440"
+                                    inputmode="numeric"
+                                    class="w-28"
+                                    :disabled="
+                                        !can.update ||
+                                        !form.time_alerts.attention_enabled
+                                    "
+                                />
+                            </FormField>
+                        </div>
+                    </div>
                 </SettingsSection>
 
                 <SettingsSection

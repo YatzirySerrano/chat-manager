@@ -64,6 +64,18 @@ const KINDS: Record<NotificationKindValue, KindMeta> = {
         tone: 'muted',
         unit: ['mensaje', 'mensajes'],
     },
+    'conversation.queue-overdue': {
+        icon: AlarmClock,
+        label: 'Espera larga',
+        tone: 'danger',
+        unit: ['aviso', 'avisos'],
+    },
+    'conversation.attention-overdue': {
+        icon: Hourglass,
+        label: 'Tiempo de atención',
+        tone: 'danger',
+        unit: ['aviso', 'avisos'],
+    },
     'team-chat.mention': {
         icon: AtSign,
         label: 'Mención',

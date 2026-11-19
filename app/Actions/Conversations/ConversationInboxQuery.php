@@ -245,7 +245,8 @@ class ConversationInboxQuery
             'views' => $views,
             'personal' => $personal,
             'status' => $status,
-            'department' => is_scalar($department) && (string) $department !== '' ? (string) $department : null,
+            // «Mensajes web» lists the whole web chat, whatever the department.
+            'department' => ($validated['space'] ?? null) !== self::SPACE_WEB && is_scalar($department) && (string) $department !== '' ? (string) $department : null,
             // Personal inboxes never filter by agent: they only hold their own work.
             'agent' => ! $personal && is_scalar($agent) && (string) $agent !== '' ? (string) $agent : null,
             'connection' => is_numeric($validated['connection'] ?? null) ? (int) $validated['connection'] : null,

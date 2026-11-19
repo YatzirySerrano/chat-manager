@@ -204,7 +204,10 @@ class ConversationController extends Controller
             return $cached;
         };
 
+        $web = ($filters['space'] ?? null) === ConversationInboxQuery::SPACE_WEB;
+
         return Inertia::render('conversations/Index', [
+            'breadcrumbs' => $web ? [['title' => 'Mensajes web', 'href' => route('web-messages.index')]] : null,
             'conversations' => fn (): array => $this->list($inbox, $actor, $filters, $request),
             'filters' => fn (): array => [
                 'view' => $filters['view'],
@@ -366,7 +369,9 @@ class ConversationController extends Controller
      */
     public function webIndex(Request $request): Response
     {
-        $request->merge(['space' => ConversationInboxQuery::SPACE_WEB]);
+        // Every web chat conversation, whatever its department.
+        $request->query->remove('department');
+        $request->merge(['space' => ConversationInboxQuery::SPACE_WEB, 'department' => null]);
 
         return app()->call([$this, 'index']);
     }

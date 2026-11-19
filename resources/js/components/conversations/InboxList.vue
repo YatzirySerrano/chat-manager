@@ -789,6 +789,7 @@ function applyDraft(): void {
  * An agent of a single department never sees it.
  */
 const departmentChips = computed(() =>
+    props.filters.space !== 'web' &&
     (props.inbox.scope === 'global' || props.inbox.scope === 'departments') &&
     props.departments.length > 1
         ? props.departments.filter((department) => department.is_active)
@@ -1053,7 +1054,11 @@ const scopeButton =
             :data-scrolled="scrolled ? '' : undefined"
         >
             <!-- The page header already names the module: this title is for screen readers. -->
-            <h1 class="sr-only">Conversaciones</h1>
+            <h1 class="sr-only">
+                {{
+                    filters.space === 'web' ? 'Mensajes web' : 'Conversaciones'
+                }}
+            </h1>
 
             <div class="flex items-center gap-1.5">
                 <FilterSearch

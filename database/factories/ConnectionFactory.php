@@ -189,7 +189,7 @@ class ConnectionFactory extends Factory
             'display_phone_number' => null,
             'phone_number_id' => null,
             'business_account_id' => null,
-            'access_token' => '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw',
+            'access_token' => '12345:fake-telegram-token-for-tests-only-x1',
             'app_secret' => null,
             'webhook_verify_token' => 'telegram-secret-token-value',
             'is_active' => true,

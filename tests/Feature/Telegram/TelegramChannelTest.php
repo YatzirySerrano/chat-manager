@@ -27,7 +27,7 @@ use Tests\Support\WhatsAppFixtures;
 | their failures. Every Telegram call is faked; nothing reaches Telegram.
 */
 
-const TG_TOKEN = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw';
+const TG_TOKEN = '12345:fake-telegram-token-for-tests-only-x1';
 
 /** A 1x1 PNG. */
 function telegramPng(): string
@@ -214,7 +214,7 @@ test('a token Telegram rejects is refused by the form', function () {
     $this->actingAs($admin)->post(route('connections.store'), [
         'channel' => 'telegram',
         'name' => 'Bot',
-        'bot_token' => '111111111:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw',
+        'bot_token' => '11111:fake-telegram-token-for-tests-only-x2',
         'department_ids' => [],
     ])->assertSessionHasErrors('bot_token');
 

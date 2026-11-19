@@ -20,6 +20,7 @@ import CompletedBadge from '@/components/conversations/CompletedBadge.vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
 import SlaBadge from '@/components/sla/SlaBadge.vue';
 import CategoryBadge from '@/components/categories/CategoryBadge.vue';
+import TagBadge from '@/components/tags/TagBadge.vue';
 import AcceptanceNotice from '@/components/conversations/AcceptanceNotice.vue';
 import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
 import TemplatePickerDialog from '@/components/conversations/TemplatePickerDialog.vue';
@@ -539,6 +540,32 @@ watch(conversationId, () => (dragDepth.value = 0));
                             :title="conversation.contact.display_name"
                             >{{ conversation.contact.display_name }}</span
                         >
+                        <!-- Tags at a glance, next to the name (all of them in «Detalles»). -->
+                        <span
+                            v-if="conversation.tags?.length"
+                            class="flex min-w-0 shrink items-center gap-1 overflow-hidden"
+                            data-header-tags
+                        >
+                            <TagBadge
+                                v-for="tag in conversation.tags.slice(0, 3)"
+                                :key="tag.id"
+                                :name="tag.name"
+                                :color="tag.color"
+                                :deleted="tag.is_active === false"
+                                class="max-w-32"
+                            />
+                            <span
+                                v-if="conversation.tags.length > 3"
+                                class="shrink-0 text-xs font-medium text-muted-foreground"
+                                :title="
+                                    conversation.tags
+                                        .slice(3)
+                                        .map((tag) => tag.name)
+                                        .join(', ')
+                                "
+                                >+{{ conversation.tags.length - 3 }}</span
+                            >
+                        </span>
                         <span
                             v-if="conversation.contact.alias"
                             class="shrink-0 rounded-full border px-1.5 py-px text-xs font-medium text-muted-foreground"

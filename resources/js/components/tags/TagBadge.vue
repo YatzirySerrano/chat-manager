@@ -4,7 +4,7 @@ import { colorPresentations } from '@/lib/colors';
 import type { AppColor } from '@/types';
 
 /**
- * Colored chip of a tag. Deleted tags stay visible where they were applied
+ * Solid colored chip of a tag. Deleted tags stay visible where they were applied
  * (as history) but are shown muted and labelled as such.
  */
 const props = withDefaults(
@@ -27,24 +27,22 @@ const label = computed(() =>
 );
 </script>
 
+<!--
+    Solid chip: the tag's color as background with white (or black, when it
+    reads better) text, rounded, like the labels of the conversation list.
+-->
 <template>
     <span
-        class="inline-flex max-w-48 items-center gap-1.5 rounded-full font-medium"
+        class="inline-flex max-w-48 items-center rounded-md font-semibold shadow-xs"
         :class="[
             size === 'md' ? 'px-2.5 py-1 text-sm' : 'px-2 py-0.5 text-xs',
             deleted
-                ? 'border border-dashed bg-muted text-muted-foreground'
-                : presentation.soft.class,
+                ? 'border border-dashed bg-muted text-muted-foreground shadow-none'
+                : presentation.solid.class,
         ]"
-        :style="deleted ? undefined : presentation.soft.style"
+        :style="deleted ? undefined : presentation.solid.style"
         :title="label"
     >
-        <span
-            class="size-1.5 shrink-0 rounded-full"
-            :class="deleted ? 'bg-muted-foreground/50' : presentation.dot.class"
-            :style="deleted ? undefined : presentation.dot.style"
-            aria-hidden="true"
-        />
         <span class="truncate">{{ name }}</span>
         <span v-if="deleted" class="sr-only">(eliminada)</span>
     </span>

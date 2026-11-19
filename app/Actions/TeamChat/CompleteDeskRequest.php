@@ -58,9 +58,12 @@ class CompleteDeskRequest
 
             $this->activity->recordSystemEvent($locked, $actor, TeamChatSystemEvent::DeskCompleted);
 
+            // The requester always keeps her own desk thread, also when she
+            // attended her own request (an administrator testing the desk).
             TeamParticipant::query()
                 ->where('team_thread_id', $locked->id)
                 ->where('user_id', $actor->id)
+                ->where('user_id', '!=', (int) $locked->desk_requester_id)
                 ->whereNull('left_at')
                 ->update(['left_at' => now(), 'removed_by_user_id' => $actor->id, 'updated_at' => now()]);
 

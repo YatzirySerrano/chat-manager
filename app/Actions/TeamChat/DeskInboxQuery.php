@@ -122,15 +122,14 @@ class DeskInboxQuery
     }
 
     /**
-     * Every desk thread but the viewer's own: an auditor who writes to the
-     * desk herself is attended by the others and reaches it as a requester.
+     * Every desk thread, the viewer's own included: an administrator who
+     * writes to the desk sees her request arrive and may attend it herself
+     * (when she is alone at the desk, or to try it out).
      *
      * @return Builder<TeamThread>
      */
     private function base(User $viewer): Builder
     {
-        return TeamThread::query()
-            ->where('type', TeamThreadType::Desk)
-            ->where(fn (Builder $query) => $query->whereNull('desk_requester_id')->orWhere('desk_requester_id', '!=', $viewer->id));
+        return TeamThread::query()->where('type', TeamThreadType::Desk);
     }
 }

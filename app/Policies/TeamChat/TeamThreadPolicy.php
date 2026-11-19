@@ -60,8 +60,7 @@ class TeamThreadPolicy
      */
     public function attendDesk(User $actor, TeamThread $thread): Response
     {
-        // An auditor who writes to the desk herself is attended by the others.
-        return $thread->isDesk() && $this->desk->attends($actor) && $thread->desk_requester_id !== $actor->id
+        return $thread->isDesk() && $this->desk->attends($actor)
             ? Response::allow()
             : Response::denyAsNotFound();
     }

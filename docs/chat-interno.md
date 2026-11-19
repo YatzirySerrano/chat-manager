@@ -180,8 +180,8 @@ aceptar → atender → completar), pero entre personas del equipo.
   WhatsApp con un solo chat, sin depender de Meta. Para dar de alta uno, crea el usuario con el rol «Cliente».
 - **Auditoras y administradores también escriben a la mesa**: en la sección «Mesa de control», el botón «Escribir a la
   mesa» (`POST team-chat/desk`, `TeamDeskController@open`) abre su propia mesa (creada la primera vez). Su solicitud
-  la atiende **otra** persona de la mesa: nadie acepta la suya (`TeamThreadPolicy::attendDesk`) ni la ve en sus
-  pestañas (`DeskInboxQuery` excluye la propia).
+  aparece en «Pendientes» para toda la mesa, ella incluida (también recibe el aviso), y la puede aceptar cualquiera,
+  ella misma también (útil si está sola en la mesa o para probar). Al completarla sigue participando en su propia mesa.
 - **Despliegue sin sorpresas**: la migración otorga el permiso a la autoridad raíz, al Administrador y a **todo rol
   existente que ya tenía `team-chat.use`**, y los roles predeterminados Supervisor y Agente lo incluyen en su
   definición. Así nadie pierde sus chats al actualizar. **Para convertir un rol en solicitante, quítale el permiso**
@@ -257,7 +257,7 @@ Pedir, aceptar y completar emiten `TeamThreadChanged` (`reason: desk`) con todas
 mensaje de una mesa avisa a todas por `users.{id}` (`.team-chat.changed`): sus listas (`deskInbox`, `deskPending`) se
 recargan solas; el hilo abierto recibe `thread.changed` y vuelve a pedir su estado (botones, barra). Sin Reverb, la
 lista se refresca cada 20 s como el resto del chat. **Solicitud nueva**: el mensaje que la pone en espera avisa en la
-campana (y con sonido/notificación del sistema según preferencias) a todas las auditoras activas menos la solicitante
+campana (y con sonido/notificación del sistema según preferencias) a todas las auditoras activas (también a la solicitante si atiende la mesa)
 (`NotifyDeskRequest`, tipo `team-chat.desk-request`, urgente, agrupado en un solo aviso); al aceptarse o completarse
 el aviso queda como informativo («Ya la atiende alguien…»). La auditora asignada recibe además los avisos normales de
 los mensajes de su solicitud.

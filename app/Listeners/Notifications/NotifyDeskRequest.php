@@ -16,8 +16,9 @@ use Illuminate\Support\Facades\Notification;
 /**
  * The message that puts a desk thread on the waiting list (it is the
  * thread's `desk_request_message_id` and the request is still pending)
- * notifies every active auditor except the requester, so whoever is free
- * accepts it. Later messages of the same pending request do not repeat it.
+ * notifies every active auditor, so whoever is free accepts it. An
+ * administrator who writes to the desk herself is notified too: she sees
+ * her request arrive and may attend it when nobody else is at the desk. Later messages of the same pending request do not repeat it.
  */
 class NotifyDeskRequest implements ShouldQueue
 {
@@ -50,7 +51,7 @@ class NotifyDeskRequest implements ShouldQueue
         }
 
         $recipients = User::query()
-            ->whereKey(array_values(array_diff($this->desk->auditorIds(), [$event->authorId])))
+            ->whereKey($this->desk->auditorIds())
             ->get();
 
         if ($recipients->isEmpty()) {

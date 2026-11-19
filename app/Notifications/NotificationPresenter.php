@@ -440,9 +440,12 @@ class NotificationPresenter
             return [$generic, 'Ya no tienes acceso a esta conversación interna.', null, false];
         }
 
-        $url = $this->routeOrNull('team-chat.threads.show', ['thread' => $threadId]);
         $author = $this->userName($data['author_id'] ?? null, $viewer);
         $message = $this->teamMessage($data['message_id'] ?? null);
+        // A «Mesa de control» request the viewer attends opens inside the desk
+        // section («Mías»), where she follows it up, not among her chats.
+        $deskTab = $message?->thread !== null && $message->thread->isDesk() && $message->thread->desk_requester_id !== $viewer->id ? ['desk' => 'mine'] : [];
+        $url = $this->routeOrNull('team-chat.threads.show', ['thread' => $threadId, ...$deskTab]);
 
         if ($author !== null) {
             // Users have no profile picture: the bell shows their initials.
@@ -519,7 +522,7 @@ class NotificationPresenter
     private function teamMessages(array $ids): array
     {
         return TeamMessage::query()
-            ->with(['thread:id,type,name', 'attachments:id,team_message_id,kind'])
+            ->with(['thread:id,type,name,desk_requester_id', 'attachments:id,team_message_id,kind'])
             ->whereKey(array_values(array_unique($ids)))
             ->get()
             ->keyBy('id')

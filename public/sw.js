@@ -48,7 +48,7 @@
  * to sign in), so no customer data is exposed.
  */
 
-const VERSION = '2026-11-19.1';
+const VERSION = '2026-11-19.2';
 const CACHE_PREFIX = 'chat-manager-static-';
 const CACHE_NAME = `${CACHE_PREFIX}${VERSION}`;
 const OFFLINE_URL = '/offline.html';
@@ -70,7 +70,9 @@ const MAX_ASSET_ENTRIES = 80;
 
 const SUMMARY_URL = '/notifications/summary';
 const LIST_URL = '/notifications?unread=1';
-const OPEN_URL = '/dashboard';
+// Where a notice without a record opens: the person's own landing page
+// (main panel, conversations or the internal chat, by role).
+const OPEN_URL = '/';
 const TAG = 'chat-manager-push';
 const TITLE = 'Notificaciones nuevas';
 const FOCUSED_CLOSE_MS = 4000;
@@ -297,11 +299,12 @@ async function newestUnread() {
 
 async function handlePush() {
     const focused = await hasFocusedWindow();
-    // With the app in front the page alerts in-app (and may have just
-    // marked the message read): only the brief silent notice below.
-    const item = focused ? null : await newestUnread();
+    // The newest unread notice is read also with the app in front: even the
+    // brief silent notice below must open the message it is about, never a
+    // generic page.
+    const item = await newestUnread();
 
-    if (item && typeof item.id === 'string') {
+    if (!focused && item && typeof item.id === 'string') {
         // One system notification (Windows toast) per message, under the
         // same tag and version the open page uses: whichever shows it first
         // wins, and when the page already showed it that alert is the
@@ -331,7 +334,7 @@ async function handlePush() {
             renotify: false,
             silent: focused,
             icon: '/icons/icon-192.png',
-            data: { url: OPEN_URL },
+            data: { url: item?.url || OPEN_URL },
         });
 
         if (focused) {

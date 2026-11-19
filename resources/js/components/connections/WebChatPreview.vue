@@ -54,7 +54,9 @@ function sendAppearance(): void {
             v: 1,
             source: 'chat-manager',
             type: 'cm:preview-appearance',
-            payload: { ...props.appearance },
+            // A plain copy: Vue's reactive proxies (nested launcher_offset)
+            // cannot be structured-cloned and postMessage would throw.
+            payload: JSON.parse(JSON.stringify(props.appearance)),
         },
         frameOrigin.value,
     );

@@ -50,6 +50,19 @@ export type FrameState = 'ready' | 'offline' | 'unauthorized' | 'preview';
 
 export type Availability = { online: boolean; message: string | null };
 
+/** What the visitor may upload (StoreVisitorFileRequest checks it again). */
+export type VisitorFilesConfig =
+    | { enabled: false }
+    | {
+          enabled: true;
+          /** File chooser hint: real types and extensions. */
+          accept: string;
+          max_bytes: number;
+          video_max_bytes: number;
+          max_mb: string;
+          video_max_mb: string;
+      };
+
 /** Embedded by resources/views/widget/frame.blade.php (WidgetFrameController). */
 export type FrameConfig = {
     v: 1;
@@ -67,6 +80,8 @@ export type FrameConfig = {
     };
     availability: Availability | null;
     message_max_length: number;
+    /** Absent when the frame was rendered before files were supported. */
+    visitor_files?: VisitorFilesConfig;
     poll: { visible_seconds: number; hidden_seconds: number };
     endpoints: {
         sessions: string;
@@ -74,6 +89,7 @@ export type FrameConfig = {
         identity: string;
         messages: string;
         receipts: string;
+        files?: string;
     };
 };
 
@@ -142,4 +158,12 @@ export type ThreadMessage = VisitorMessage & {
     localStatus?: LocalStatus;
     /** Sort key: the message id behind the cursor (Infinity while sending). */
     order: number;
+    /** A file the visitor is uploading (kept to retry it). */
+    upload?: {
+        file: File;
+        /** 0 to 1 while it uploads. */
+        progress: number;
+        /** Local preview of an image or video (object URL). */
+        previewUrl: string | null;
+    };
 };

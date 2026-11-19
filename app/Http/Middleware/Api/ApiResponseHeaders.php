@@ -39,6 +39,7 @@ class ApiResponseHeaders
         'conflict' => 'La operación entra en conflicto con el estado actual del recurso.',
         'idempotency_key_reused' => 'La clave de idempotencia ya se usó con otra solicitud.',
         'widget_unavailable' => 'El chat no está disponible en este momento.',
+        'files_disabled' => 'Este chat no admite archivos.',
         'conversation_closed' => 'La conversación está cerrada.',
         'connection_unavailable' => 'La conexión de la conversación no está disponible.',
         'customer_window_closed' => 'La ventana de atención del cliente está cerrada.',

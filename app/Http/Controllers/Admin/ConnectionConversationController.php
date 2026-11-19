@@ -89,11 +89,11 @@ class ConnectionConversationController extends Controller
 
         // Whatever is moved always belongs to this connection: the
         // selection is narrowed by the same query that lists it.
-        $ids = $list->query($connection, $validated)
+        $ids = array_values($list->query($connection, $validated)
             ->when(! $request->boolean('all'), fn (Builder $query) => $query->whereKey(array_map('intval', (array) ($validated['conversation_ids'] ?? []))))
             ->pluck('conversations.id')
             ->map(fn (mixed $id): int => (int) $id)
-            ->all();
+            ->all());
 
         $result = $move->handle($connection, $target, $ids, $request->boolean('show_archived'), $actor);
 

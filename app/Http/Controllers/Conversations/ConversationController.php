@@ -100,7 +100,11 @@ class ConversationController extends Controller
      */
     public static function listUrl(): string
     {
-        return route('conversations.index', self::rememberedQuery());
+        $query = self::rememberedQuery();
+        $route = ($query['space'] ?? null) === ConversationInboxQuery::SPACE_WEB ? 'web-messages.index' : 'conversations.index';
+        unset($query['space']);
+
+        return route($route, $query);
     }
 
     /**
@@ -119,10 +123,10 @@ class ConversationController extends Controller
             return null;
         }
 
-        unset($query['view'], $query['status'], $query['sort']);
+        unset($query['view'], $query['status'], $query['sort'], $query['space']);
 
         // Accepted, the request is now the agent's own: "Mías", oldest first.
-        return route('conversations.index', [...$query, 'view' => ConversationInboxQuery::VIEW_MINE, 'status' => 'active', 'c' => $conversation->id]);
+        return route(self::inboxRouteOf($conversation), [...$query, 'view' => ConversationInboxQuery::VIEW_MINE, 'status' => 'active', 'c' => $conversation->id]);
     }
 
     /**
@@ -165,6 +169,9 @@ class ConversationController extends Controller
             'c' => ['nullable', 'integer', 'min:1'],
         ]);
 
+        // «Conversaciones» never lists the web chat: it has its own inbox («Mensajes web»).
+        $validated['space'] ??= ConversationInboxQuery::SPACE_MAIN;
+
         // The inbox opens on the requests waiting to be accepted.
         $filters = $inbox->filters($actor, $validated, ConversationStatus::Pending->value);
         $views = $filters['views'];
@@ -206,6 +213,7 @@ class ConversationController extends Controller
                 'agent' => $filters['agent'],
                 'connection' => $filters['connection'],
                 'channel' => $filters['channel'] ?? null,
+                'space' => $filters['space'] ?? ConversationInboxQuery::SPACE_MAIN,
                 'search' => $filters['search'],
                 'search_in' => $filters['search_in'] ?? ConversationInboxQuery::SEARCH_CONTACT,
                 'search_ignored' => $inbox->searchIgnored($filters),
@@ -340,6 +348,8 @@ class ConversationController extends Controller
             'limit' => ['nullable', 'integer', 'min:1', 'max:'.self::LIST_CHUNK_MAX],
         ]);
 
+        $validated['space'] ??= ConversationInboxQuery::SPACE_MAIN;
+
         return response()->json($this->list(
             $inbox,
             $actor,
@@ -351,6 +361,17 @@ class ConversationController extends Controller
     }
 
     /**
+     * «Mensajes web»: the inbox narrowed to the web chat, with every
+     * function of «Conversaciones» (accept, reply, transfer, notes, close).
+     */
+    public function webIndex(Request $request): Response
+    {
+        $request->merge(['space' => ConversationInboxQuery::SPACE_WEB]);
+
+        return app()->call([$this, 'index']);
+    }
+
+    /**
      * Old links to a conversation open it inside the inbox, keeping the
      * list the user last looked at.
      */
@@ -358,7 +379,34 @@ class ConversationController extends Controller
     {
         abort_unless(Gate::allows('view', $conversation), 404);
 
-        return redirect()->route('conversations.index', [...self::rememberedQuery(), 'c' => $conversation->id]);
+        $query = self::rememberedQuery();
+
+        // The remembered filters belong to the inbox the user left; another inbox opens clean.
+        if (($query['space'] ?? ConversationInboxQuery::SPACE_MAIN) !== self::spaceOf($conversation)) {
+            $query = [];
+        }
+
+        unset($query['space']);
+
+        return redirect()->route(self::inboxRouteOf($conversation), [...$query, 'c' => $conversation->id]);
+    }
+
+    /**
+     * The inbox a conversation lives in: «Mensajes web» for the web chat,
+     * «Conversaciones» for every other channel.
+     */
+    public static function inboxRouteOf(Conversation $conversation): string
+    {
+        return self::spaceOf($conversation) === ConversationInboxQuery::SPACE_WEB ? 'web-messages.index' : 'conversations.index';
+    }
+
+    public static function spaceOf(Conversation $conversation): string
+    {
+        $channel = $conversation->channelConnection()->value('channel');
+
+        return ($channel instanceof ConnectionChannel ? $channel : ConnectionChannel::tryFrom((string) $channel)) === ConnectionChannel::WebChat
+            ? ConversationInboxQuery::SPACE_WEB
+            : ConversationInboxQuery::SPACE_MAIN;
     }
 
     /**

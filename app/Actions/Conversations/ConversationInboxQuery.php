@@ -83,7 +83,7 @@ use Illuminate\Validation\ValidationException;
  * conversations never count, so whoever never opened a conversation does
  * not inherit its whole history as unread (docs/bandejas-y-asignacion.md).
  *
- * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, search_in?: string, tags?: list<int>, tag_match?: string, sort?: string, unread?: bool, awaiting?: bool, channel?: string|null, category?: int|null, readiness?: string|null}
+ * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, search_in?: string, tags?: list<int>, tag_match?: string, sort?: string, unread?: bool, awaiting?: bool, channel?: string|null, space?: string|null, category?: int|null, readiness?: string|null}
  * @phpstan-type InboxCounts array{general: int, mine: int, pending: int, attending: int}
  * @phpstan-type InboxCursor array{rank: int, at: string|null, id: int}
  */
@@ -166,6 +166,12 @@ class ConversationInboxQuery
      */
     public const STATUS_COMPLETED = 'completed';
 
+    /** «Mensajes web»: only conversations of the web chat. */
+    public const SPACE_WEB = 'web';
+
+    /** «Conversaciones»: every channel but the web chat. */
+    public const SPACE_MAIN = 'main';
+
     public function __construct(private ConversationAccess $access, private ContactSearch $contacts) {}
 
     /**
@@ -182,6 +188,8 @@ class ConversationInboxQuery
             'agent' => ['nullable', 'regex:/^(none|\d{1,10})$/'],
             'connection' => ['nullable', 'integer'],
             'channel' => ['nullable', Rule::enum(ConnectionChannel::class)],
+            // «Mensajes web» (only the web chat) or «Conversaciones» (everything else).
+            'space' => ['nullable', Rule::in([self::SPACE_WEB, self::SPACE_MAIN])],
             'search' => ['nullable', 'string', 'max:100'],
             'search_in' => ['nullable', Rule::in([self::SEARCH_CONTACT, self::SEARCH_MESSAGES])],
             'tag' => ['nullable', 'integer', 'min:1'],
@@ -250,6 +258,7 @@ class ConversationInboxQuery
             'awaiting' => filter_var($validated['awaiting'] ?? false, FILTER_VALIDATE_BOOL),
             'channel' => $channel instanceof ConnectionChannel ? $channel->value : (is_string($channel) && ConnectionChannel::tryFrom($channel) !== null ? $channel : null),
             'category' => is_numeric($validated['category'] ?? null) ? (int) $validated['category'] : null,
+            'space' => in_array($validated['space'] ?? null, [self::SPACE_WEB, self::SPACE_MAIN], true) ? (string) $validated['space'] : null,
             // Preparation state: a phase-two filter, ignored while it is off (App\Support\Features).
             'readiness' => ! Features::phaseTwo() ? null : (($readiness = $validated['readiness'] ?? null) instanceof ConversationReadiness
                 ? $readiness->value
@@ -379,6 +388,7 @@ class ConversationInboxQuery
         $agent = $filters['agent'];
         $search = $filters['search'];
         $channel = $filters['channel'] ?? null;
+        $space = $filters['space'] ?? null;
 
         return Conversation::query()
             ->visibleTo($actor)
@@ -397,6 +407,9 @@ class ConversationInboxQuery
             // Uncorrelated: the connections of the channel are read once,
             // deleted ones included (their history keeps its channel).
             ->when($channel !== null, fn (Builder $query) => $query->whereIn('conversations.connection_id', Connection::query()->select('connections.id')->where('connections.channel', $channel)))
+            // Two separate inboxes: «Mensajes web» holds only the web chat, «Conversaciones» the rest.
+            ->when($space === self::SPACE_WEB, fn (Builder $query) => $query->whereIn('conversations.connection_id', Connection::query()->select('connections.id')->where('connections.channel', ConnectionChannel::WebChat->value)))
+            ->when($space === self::SPACE_MAIN, fn (Builder $query) => $query->whereNotIn('conversations.connection_id', Connection::query()->select('connections.id')->where('connections.channel', ConnectionChannel::WebChat->value)))
             // Request type and preparation state (`category`, `readiness`).
             ->when(($filters['category'] ?? null) !== null, fn (Builder $query) => $query->where('conversations.category_id', $filters['category'] ?? null))
             ->when(($filters['readiness'] ?? null) !== null, fn (Builder $query) => $query->where('conversations.readiness', $filters['readiness'] ?? null))

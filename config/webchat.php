@@ -51,7 +51,27 @@ return [
         'hidden_seconds' => 20,
     ],
 
-    /** Lifetime of the signed URLs of attachments sent to the visitor. */
+    /*
+    | Files visitors send from the widget (paperclip), when the widget allows
+    | it (web_chat_widgets.allow_visitor_files). The type is read from the
+    | file's bytes (App\Services\WebChat\VisitorFiles): images, PDF, Office,
+    | TXT/CSV, audio and video; never archives or executables. Sizes are in
+    | decimal bytes (1 MB = 1,000,000) like the composer's limits; videos have
+    | their own, larger cap. The PHP upload limits of the server
+    | (upload_max_filesize, post_max_size) may lower both: the widget is told
+    | the effective limit. Each upload also counts as a message for the
+    | message limits above.
+    */
+    'visitor_files' => [
+        'max_bytes' => (int) (env('WEBCHAT_VISITOR_FILE_MAX_BYTES') ?: 25_000_000),
+        'video_max_bytes' => (int) (env('WEBCHAT_VISITOR_VIDEO_MAX_BYTES') ?: 64_000_000),
+        'per_session_per_minute' => (int) env('WEBCHAT_VISITOR_FILES_PER_SESSION_PER_MINUTE', 6),
+        'per_ip_per_minute' => (int) env('WEBCHAT_VISITOR_FILES_PER_IP_PER_MINUTE', 20),
+        /** Longest caption sent with a file. */
+        'caption_max_length' => 1000,
+    ],
+
+    /** Lifetime of the signed URLs of the files shown in the widget. */
     'attachments' => [
         'url_ttl_seconds' => 600,
     ],

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, Copy } from '@lucide/vue';
+import { Check, Copy, TriangleAlert } from '@lucide/vue';
 import { useClipboard } from '@vueuse/core';
 import { toast } from 'vue-sonner';
 import { Button } from '@/components/ui/button';
@@ -27,8 +27,7 @@ async function copySnippet(): Promise<void> {
             <div class="min-w-0">
                 <h3 class="text-sm font-medium">Código para insertar</h3>
                 <p class="text-xs text-muted-foreground">
-                    Pégalo antes de la etiqueta &lt;/body&gt; en cada página
-                    donde quieras mostrar el chat.
+                    Pégalo antes de &lt;/body&gt; en cada página con chat.
                 </p>
             </div>
             <Button
@@ -49,11 +48,14 @@ async function copySnippet(): Promise<void> {
         ><code class="font-mono break-all whitespace-pre-wrap" data-testid="web-chat-snippet">{{ snippet }}</code></pre>
         <p
             v-if="!configured"
-            class="rounded-lg bg-warning-soft p-3 text-xs"
+            class="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-xs"
             role="note"
         >
-            El chat solo aparecerá en los dominios autorizados. Guarda al menos
-            un dominio para que el código funcione.
+            <TriangleAlert
+                class="size-3.5 shrink-0 text-warning"
+                aria-hidden="true"
+            />
+            Guarda al menos un dominio autorizado para que el código funcione.
         </p>
     </div>
 </template>

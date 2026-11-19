@@ -8,6 +8,7 @@ use App\Http\Middleware\SecurityHeaders;
 use App\Http\Requests\Admin\WebChatWidgetRequest;
 use App\Models\WebChatWidget;
 use App\Services\WebChat\FrameTicket;
+use App\Services\WebChat\VisitorFiles;
 use App\Services\WebChat\WebChatAvailability;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -28,12 +29,14 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * ?preview=1 is only honored when the Referer is the application itself
  * (the live preview of the connection form): no ticket, no session.
  *
- * The embedded configuration is public by design: appearance, endpoints,
- * allowed origins and availability. Never the identity secret or a token.
+ * The embedded configuration is public by design: appearance (texts,
+ * colors, the floating button the loader draws and the window size),
+ * endpoints, allowed origins, availability and what files a visitor may
+ * send. Never the identity secret or a token.
  */
 class WidgetFrameController extends Controller
 {
-    public function __invoke(Request $request, string $publicKey, FrameTicket $tickets, WebChatAvailability $availability, SecurityHeaders $headers): Response
+    public function __invoke(Request $request, string $publicKey, FrameTicket $tickets, WebChatAvailability $availability, SecurityHeaders $headers, VisitorFiles $files): Response
     {
         $widget = WebChatWidget::query()
             ->with('connection')
@@ -81,8 +84,20 @@ class WidgetFrameController extends Controller
                 'position' => $widget->position->value,
                 'launcher_enabled' => $widget->launcher_enabled,
                 'launcher_label' => $widget->launcher_label,
+                ...$widget->launcherStyle(),
+                'background_color' => $widget->background_color,
+                'visitor_bubble_color' => $widget->visitor_bubble_color,
+                'visitor_text_color' => $widget->visitor_text_color,
+                'agent_bubble_color' => $widget->agent_bubble_color,
+                'agent_text_color' => $widget->agent_text_color,
+                'online_text' => $widget->online_text,
+                'offline_status_text' => $widget->offline_status_text,
+                'composer_placeholder' => $widget->composer_placeholder,
                 'avatar' => $state === 'unauthorized' ? null : $this->avatar($widget),
             ],
+            'visitor_files' => $widget->allow_visitor_files
+                ? ['enabled' => true, ...$files->summary()]
+                : ['enabled' => false],
             'identity_mode' => $widget->identity_mode->value,
             'prechat' => [
                 'fields' => array_values(array_intersect(['name', 'email'], (array) ($widget->prechat['fields'] ?? []))),
@@ -101,6 +116,7 @@ class WidgetFrameController extends Controller
                 'identity' => route('api.v1.widget.session.identity.store', absolute: false),
                 'messages' => route('api.v1.widget.session.messages.index', absolute: false),
                 'receipts' => route('api.v1.widget.session.receipts.store', absolute: false),
+                'files' => route('api.v1.widget.session.files.store', absolute: false),
             ],
         ];
 

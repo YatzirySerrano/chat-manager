@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { LucideIcon } from '@lucide/vue';
 import { useEventListener } from '@vueuse/core';
 import { nextTick, onMounted, ref, watch } from 'vue';
 import { useSlidingIndicator } from '@/composables/useSlidingIndicator';
@@ -12,16 +13,21 @@ import '@/components/filters/filters.css';
  *
  * `sections` are the `id`s of the page's sections, in order. `flagged`
  * marks the ones that need attention (a validation error inside them).
+ *
+ * `vertical` draws it as a sticky side index instead (one row per section,
+ * with its optional `icon`), for pages that keep a rail next to the content.
  */
 const props = withDefaults(
     defineProps<{
-        sections: { id: string; label: string }[];
+        sections: { id: string; label: string; icon?: LucideIcon }[];
         ariaLabel?: string;
         flagged?: string[];
+        vertical?: boolean;
     }>(),
     {
         ariaLabel: 'Secciones',
         flagged: () => [],
+        vertical: false,
     },
 );
 
@@ -88,6 +94,10 @@ onMounted(async () => {
 });
 
 watch(active, async () => {
+    if (props.vertical) {
+        return;
+    }
+
     await update();
     nav.value
         ?.querySelector<HTMLElement>('[aria-current=location]')
@@ -106,6 +116,38 @@ watch(
 
 <template>
     <nav
+        v-if="vertical"
+        ref="nav"
+        :aria-label="ariaLabel"
+        data-slot="section-nav"
+        data-orientation="vertical"
+        class="grid content-start gap-0.5"
+    >
+        <a
+            v-for="section in sections"
+            :key="section.id"
+            :href="`#${section.id}`"
+            :aria-current="active === section.id ? 'location' : undefined"
+            class="group/nav flex min-h-9 items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors outline-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=location]:bg-primary-soft aria-[current=location]:text-primary-soft-foreground"
+            @click.prevent="go(section.id)"
+        >
+            <component
+                :is="section.icon"
+                v-if="section.icon"
+                class="size-4 shrink-0 opacity-70 group-aria-[current=location]/nav:opacity-100"
+                aria-hidden="true"
+            />
+            <span class="min-w-0 flex-1 truncate">{{ section.label }}</span>
+            <span
+                v-if="flagged.includes(section.id)"
+                class="size-1.5 shrink-0 rounded-full bg-destructive shadow-[0_0_0_3px_color-mix(in_oklch,var(--destructive)_18%,transparent)]"
+            >
+                <span class="sr-only">(tiene campos por revisar)</span>
+            </span>
+        </a>
+    </nav>
+    <nav
+        v-else
         ref="nav"
         :aria-label="ariaLabel"
         data-slot="section-nav"

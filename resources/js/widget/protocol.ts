@@ -7,6 +7,9 @@
  * visitor's token never travels through this channel. Shared by both
  * bundles, so it stays dependency free and small.
  */
+import { readLauncherStyle } from './launcher';
+import type { LauncherStyle } from './launcher';
+
 export const PROTOCOL_VERSION = 1;
 export const PROTOCOL_SOURCE = 'chat-manager';
 
@@ -32,19 +35,41 @@ export type Envelope<T extends string = string> = {
     payload?: unknown;
 };
 
+/** Optional colors of the conversation (#rrggbb; null = the widget's own look). */
+export type ConversationColors = {
+    background_color: string | null;
+    visitor_bubble_color: string | null;
+    visitor_text_color: string | null;
+    agent_bubble_color: string | null;
+    agent_text_color: string | null;
+};
+
+export const CONVERSATION_COLORS: readonly (keyof ConversationColors)[] = [
+    'background_color',
+    'visitor_bubble_color',
+    'visitor_text_color',
+    'agent_bubble_color',
+    'agent_text_color',
+];
+
 export type Appearance = {
     title: string;
     subtitle: string | null;
     welcome_text: string | null;
     offline_text: string | null;
+    /** Status line texts and the message box placeholder (null = the defaults). */
+    online_text: string | null;
+    offline_status_text: string | null;
+    composer_placeholder: string | null;
     accent_color: string;
     position: 'right' | 'left';
     launcher_enabled: boolean;
     launcher_label: string | null;
     avatar: string | null;
-};
+} & ConversationColors &
+    LauncherStyle;
 
-/** What the loader needs from cm:ready to draw the launcher. */
+/** What the loader needs from cm:ready to draw the launcher and the panel. */
 export type LauncherAppearance = Pick<
     Appearance,
     | 'title'
@@ -52,7 +77,8 @@ export type LauncherAppearance = Pick<
     | 'position'
     | 'launcher_enabled'
     | 'launcher_label'
->;
+> &
+    LauncherStyle;
 
 /**
  * Light validation of the launcher's part of an appearance (the loader
@@ -78,6 +104,7 @@ export function readLauncherAppearance(
                   typeof a.launcher_label === 'string'
                       ? a.launcher_label.slice(0, 120)
                       : null,
+              ...readLauncherStyle(a),
           }
         : null;
 }
@@ -116,6 +143,14 @@ function isObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
 }
 
+function isNullableColor(value: unknown): boolean {
+    return (
+        value === null ||
+        value === undefined ||
+        (typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value))
+    );
+}
+
 function isNullableString(value: unknown, max: number): boolean {
     return (
         value === null ||
@@ -144,6 +179,9 @@ export function readAppearance(value: unknown): Appearance | null {
         launcher_enabled,
         launcher_label,
         avatar,
+        online_text,
+        offline_status_text,
+        composer_placeholder,
     } = value;
 
     if (
@@ -153,6 +191,10 @@ export function readAppearance(value: unknown): Appearance | null {
         !isNullableString(welcome_text, 2000) ||
         !isNullableString(offline_text, 2000) ||
         !isNullableString(launcher_label, 120) ||
+        !isNullableString(online_text, 120) ||
+        !isNullableString(offline_status_text, 120) ||
+        !isNullableString(composer_placeholder, 240) ||
+        CONVERSATION_COLORS.some((key) => !isNullableColor(value[key])) ||
         typeof accent_color !== 'string' ||
         !/^#[0-9a-fA-F]{6}$/.test(accent_color) ||
         (position !== 'right' && position !== 'left') ||
@@ -177,5 +219,17 @@ export function readAppearance(value: unknown): Appearance | null {
         launcher_enabled,
         launcher_label: (launcher_label as string | null | undefined) ?? null,
         avatar: (avatar as string | null | undefined) ?? null,
+        online_text: (online_text as string | null | undefined) ?? null,
+        offline_status_text:
+            (offline_status_text as string | null | undefined) ?? null,
+        composer_placeholder:
+            (composer_placeholder as string | null | undefined) ?? null,
+        background_color: (value.background_color as string | null) ?? null,
+        visitor_bubble_color:
+            (value.visitor_bubble_color as string | null) ?? null,
+        visitor_text_color: (value.visitor_text_color as string | null) ?? null,
+        agent_bubble_color: (value.agent_bubble_color as string | null) ?? null,
+        agent_text_color: (value.agent_text_color as string | null) ?? null,
+        ...readLauncherStyle(value),
     };
 }

@@ -238,6 +238,126 @@ export class VisitorApi {
         }
     }
 
+    /**
+     * Uploads a file (multipart) reporting its progress; retried with the
+     * same client id on network errors and 5xx, like send().
+     */
+    async sendFile(
+        clientMessageId: string,
+        file: File,
+        onProgress: (fraction: number) => void,
+    ): Promise<VisitorMessage> {
+        for (let attempt = 0; ; attempt++) {
+            try {
+                return await this.upload(clientMessageId, file, onProgress);
+            } catch (error) {
+                const retryable =
+                    !(error instanceof ApiError) || error.status >= 500;
+
+                if (!retryable || attempt >= RETRY_DELAYS_MS.length) {
+                    throw error;
+                }
+
+                await wait(RETRY_DELAYS_MS[attempt]);
+            }
+        }
+    }
+
+    /** XMLHttpRequest: fetch() cannot report upload progress. */
+    private upload(
+        clientMessageId: string,
+        file: File,
+        onProgress: (fraction: number) => void,
+    ): Promise<VisitorMessage> {
+        const endpoint = this.config.endpoints.files;
+
+        if (!endpoint) {
+            return Promise.reject(
+                new ApiError(
+                    409,
+                    'files_disabled',
+                    'Este chat no admite archivos.',
+                ),
+            );
+        }
+
+        return new Promise((resolve, reject) => {
+            const token = this.storage.get();
+            const request = new XMLHttpRequest();
+            const body = new FormData();
+
+            body.append('client_message_id', clientMessageId);
+            body.append('file', file, file.name);
+
+            request.open('POST', endpoint);
+            request.withCredentials = false;
+            request.setRequestHeader('Accept', 'application/json');
+
+            if (token) {
+                request.setRequestHeader('Authorization', `Bearer ${token}`);
+            }
+
+            request.upload.onprogress = (event) => {
+                if (event.lengthComputable && event.total > 0) {
+                    onProgress(Math.min(1, event.loaded / event.total));
+                }
+            };
+
+            request.onerror = () => reject(new TypeError('network'));
+            request.ontimeout = () => reject(new TypeError('timeout'));
+            request.onload = () => {
+                let data: {
+                    data?: VisitorMessage;
+                    message?: string;
+                    code?: string;
+                    errors?: Record<string, string[]>;
+                } | null = null;
+
+                try {
+                    data = JSON.parse(request.responseText);
+                } catch {
+                    data = null;
+                }
+
+                if (request.status === 401 && token) {
+                    this.storage.clear();
+                    this.etag = null;
+                    this.onUnauthorized();
+                }
+
+                if (
+                    request.status >= 200 &&
+                    request.status < 300 &&
+                    data?.data
+                ) {
+                    onProgress(1);
+                    resolve(data.data);
+
+                    return;
+                }
+
+                const retryAfter = Number(
+                    request.getResponseHeader('Retry-After'),
+                );
+
+                reject(
+                    new ApiError(
+                        request.status,
+                        data?.code ?? null,
+                        data?.errors?.file?.[0] ??
+                            data?.message ??
+                            'No se pudo enviar el archivo.',
+                        Number.isFinite(retryAfter) && retryAfter > 0
+                            ? retryAfter
+                            : null,
+                    ),
+                );
+            };
+
+            request.send(body);
+        });
+    }
+
     async receipts(receipt: {
         delivered_up_to?: string;
         read_up_to?: string;

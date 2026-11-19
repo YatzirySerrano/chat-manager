@@ -7,6 +7,7 @@ use App\Enums\DataTransferStatus;
 use App\Enums\Permission;
 use App\Enums\ResponseCycleKind;
 use App\Enums\TeamChat\TeamAttachmentKind;
+use App\Http\Controllers\Conversations\ConversationController;
 use App\Listeners\Notifications\NotifyConnectionProblem;
 use App\Models\ChatbotKeywordRule;
 use App\Models\Connection;
@@ -297,7 +298,7 @@ class NotificationPresenter
             ? ($occurrences > 1 ? "{$waiting} siguen en «Pendientes», esperando que alguien las acepte." : "{$this->contactName($latest)} espera ser atendido.")
             : 'Ya fueron atendidas.';
         $url = $occurrences > 1
-            ? $this->routeOrNull('conversations.index', ['view' => 'queue'])
+            ? $this->routeOrNull(ConversationController::inboxRouteOf($latest), ['view' => 'queue'])
             : $this->routeOrNull('conversations.show', $latest);
 
         if ($occurrences === 1) {

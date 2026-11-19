@@ -40,6 +40,9 @@ use Illuminate\Support\Str;
  */
 class VisitorSessions
 {
+    /** Provider id prefix of every message a visitor sent from the widget (ReceiveVisitorMessage). */
+    public const WIDGET_PREFIX = 'web.in.';
+
     /**
      * @param  array{name?: string|null, email?: string|null}|null  $profile
      * @return array{session: WebChatSession, token: string}

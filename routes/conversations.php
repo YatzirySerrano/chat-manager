@@ -24,6 +24,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('conversations', [ConversationController::class, 'index'])->name('conversations.index');
+    // «Mensajes web»: the same inbox, only for the web chat.
+    Route::get('web-messages', [ConversationController::class, 'webIndex'])->name('web-messages.index');
     Route::get('conversations/page', [ConversationController::class, 'page'])
         ->middleware('throttle:120,1')
         ->name('conversations.page');

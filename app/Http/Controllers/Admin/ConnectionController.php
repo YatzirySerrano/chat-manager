@@ -29,6 +29,7 @@ use App\Models\User;
 use App\Services\Exports\ReportExporter;
 use App\Services\Meta\ConnectionDiagnostics;
 use App\Services\Meta\MetaApp;
+use App\Services\WebChat\VisitorFiles;
 use App\Services\WhatsAppWeb\WhatsAppWebSessions;
 use App\Support\SaveToast;
 use Illuminate\Database\Eloquent\Builder;
@@ -284,7 +285,7 @@ class ConnectionController extends Controller
             $target = Connection::query()->findOrFail((int) $validated['transfer_to']);
             $move->ensureValidTarget($connection, $target);
 
-            $ids = $list->query($connection, [])->pluck('conversations.id')->map(fn (mixed $id): int => (int) $id)->all();
+            $ids = array_values($list->query($connection, [])->pluck('conversations.id')->map(fn (mixed $id): int => (int) $id)->all());
             $transferred = [...$move->handle($connection, $target, $ids, $request->boolean('show_archived'), $actor), 'target' => $target->name];
         }
 
@@ -352,6 +353,7 @@ class ConnectionController extends Controller
                     'min_contrast' => WebChatWidgetRequest::MIN_CONTRAST,
                     'session_idle_days' => 90,
                 ],
+                'visitorFiles' => app(VisitorFiles::class)->summary(),
             ] : null,
         ];
     }

@@ -434,8 +434,7 @@ watch(
                 <div class="min-w-0 grow basis-80">
                     <p class="text-sm font-medium">Desconectar temporalmente</p>
                     <p class="max-w-prose text-xs text-muted-foreground">
-                        Detiene la sesión y conserva la vinculación. Se
-                        reconecta después sin escanear.
+                        Conserva la vinculación; se reconecta sin escanear.
                     </p>
                 </div>
                 <Button
@@ -458,8 +457,7 @@ watch(
                         Cerrar sesión del dispositivo
                     </p>
                     <p class="max-w-prose text-xs text-muted-foreground">
-                        Quita a ChatManager de los dispositivos vinculados del
-                        teléfono. Habrá que escanear un código nuevo.
+                        Desvincula el teléfono; habrá que escanear de nuevo.
                     </p>
                 </div>
                 <Button
@@ -480,9 +478,8 @@ watch(
                 <div class="min-w-0 grow basis-80">
                     <p class="text-sm font-medium">Eliminar conexión</p>
                     <p class="max-w-prose text-xs text-muted-foreground">
-                        Quita la conexión de la plataforma y cierra su sesión.
-                        No borra conversaciones, contactos ni historial, y se
-                        puede restaurar.
+                        Cierra la sesión; conserva el historial y se puede
+                        restaurar.
                     </p>
                 </div>
                 <Button

@@ -62,6 +62,7 @@ import {
     page as conversationsPage,
     read as markConversationRead,
 } from '@/routes/conversations';
+import { index as webMessagesIndex } from '@/routes/web-messages';
 import type {
     AppColor,
     AcceptBlock,
@@ -226,8 +227,14 @@ watch(
 /** Query string of the current list, as the list component builds it. */
 const inboxList = ref<InstanceType<typeof InboxList> | null>(null);
 
+/** «Mensajes web» lives at its own address, so the menu marks the right inbox. */
+const webSpace = computed(() => props.filters.space === 'web');
+const inboxTitle = computed(() =>
+    webSpace.value ? 'Mensajes web' : 'Conversaciones',
+);
+
 function url(selected: number | null, query: ListQuery): string {
-    return conversationsIndex.url({
+    return (webSpace.value ? webMessagesIndex : conversationsIndex).url({
         query: {
             ...query,
             ...(selected !== null ? { c: String(selected) } : {}),
@@ -315,7 +322,11 @@ async function loadMore(): Promise<void> {
     try {
         const next = await moreHttp.get(
             conversationsPage.url({
-                query: { ...currentQuery(), after: current.next_cursor },
+                query: {
+                    ...currentQuery(),
+                    space: props.filters.space,
+                    after: current.next_cursor,
+                },
             }),
         );
 
@@ -365,6 +376,7 @@ async function refreshMore(first: ConversationList): Promise<void> {
             conversationsPage.url({
                 query: {
                     ...currentQuery(),
+                    space: props.filters.space,
                     after: first.next_cursor,
                     limit: String(Math.min(REFRESH_MAX, loaded)),
                 },
@@ -793,7 +805,7 @@ const title = computed(() => {
 
     return contact
         ? `Conversación con ${contact.display_name || contact.name}`
-        : 'Conversaciones';
+        : inboxTitle.value;
 });
 
 /*
@@ -873,7 +885,7 @@ function onAliasSaved(): void {
                 {{
                     conversation
                         ? `Conversación con ${conversation.contact.display_name}`
-                        : 'Conversaciones'
+                        : inboxTitle
                 }}
             </h1>
             <ConversationChat

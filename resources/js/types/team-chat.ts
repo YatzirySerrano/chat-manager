@@ -1,3 +1,4 @@
+import type { TagOption } from './tags';
 import type { FileSaveOptions, VideoSaveOptions } from '@/lib/videoExports';
 import type { AppColor } from './admin';
 import type { ViewerChatAppearance } from './personalization';
@@ -47,6 +48,26 @@ export type TeamDeskRow = {
     last_activity_at: string | null;
     last_message: TeamMessagePreview | null;
     desk: TeamDeskInfo;
+    /** Tags the desk applied to the request. */
+    tags: TagOption[];
+};
+
+/** An internal note of the desk on a request (never seen by the requester). */
+export type TeamDeskNote = {
+    id: number;
+    body: string;
+    author: string;
+    created_at: string | null;
+    edited_at: string | null;
+    can_edit: boolean;
+};
+
+/** Follow-up of a desk request, for whoever attends the desk. */
+export type TeamDeskDetails = {
+    notes: TeamDeskNote[];
+    tags: TagOption[];
+    available_tags: TagOption[];
+    can: { note: boolean; tag: boolean; export: boolean };
 };
 
 /** The auditor's «Mesa de control» section (DeskInboxQuery). */
@@ -140,6 +161,8 @@ export type TeamThreadDetail = {
     };
     post_blocked_reason: string | null;
     desk?: TeamDeskInfo | null;
+    /** Notes and tags of the request: only for whoever attends the desk. */
+    desk_details?: TeamDeskDetails | null;
     /** The viewer's own chat colors for this thread. */
     appearance?: ViewerChatAppearance;
 };

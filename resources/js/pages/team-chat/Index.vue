@@ -39,6 +39,7 @@ import { useSelectionGlider } from '@/components/filters/useSelectionGlider';
 import ChatWindow from '@/components/team-chat/ChatWindow.vue';
 import DeskRequestBar from '@/components/team-chat/DeskRequestBar.vue';
 import DeskRequestItem from '@/components/team-chat/DeskRequestItem.vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import NewDirectDialog from '@/components/team-chat/NewDirectDialog.vue';
 import NewGroupDialog from '@/components/team-chat/NewGroupDialog.vue';
 import ThreadListItem from '@/components/team-chat/ThreadListItem.vue';
@@ -68,6 +69,7 @@ import type {
     TeamChatFilters,
     TeamChatLimits,
     TeamDeskInbox,
+    TeamDeskRow,
     TeamDeskRole,
     TeamDeskTab,
     TeamMessagePage,
@@ -94,7 +96,7 @@ const props = defineProps<{
     unreadTotal: number;
     /** Numbers of «No leídos» and «Menciones» in the scope. */
     threadCounts?: TeamThreadCounts;
-    can: { createGroup: boolean; startDirect?: boolean };
+    can: { createGroup: boolean; startDirect?: boolean; exportDesk?: boolean };
     limits: TeamChatLimits;
     /** «Mesa de control»: requester, auditor, or null when it does not apply. */
     desk?: TeamDeskRole;
@@ -406,6 +408,23 @@ const previewRow = computed(
             (row) => row.id === previewThread.value?.id,
         ) ?? previewThread.value,
 );
+
+/* A desk request previews like a chat (same panel, read position kept). */
+function previewDeskRow(row: TeamDeskRow): void {
+    previewThread.value = {
+        id: row.id,
+        type: 'desk',
+        title: row.title,
+        partner: null,
+        participants_count: 0,
+        archived: false,
+        muted: false,
+        unread: row.unread,
+        last_activity_at: row.last_activity_at,
+        last_message: row.last_message,
+        desk: row.desk,
+    };
+}
 
 function openFromPreview(id: number): void {
     previewThread.value = null;
@@ -925,17 +944,26 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                             {{ deskCapacity.text }}
                         </p>
                         <span v-else />
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            class="h-7 shrink-0 gap-1.5 px-2 text-xs"
-                            title="Envía tu propia solicitud: la atenderá otra persona de la mesa de control"
-                            data-desk-write
-                            @click="writeToDesk"
-                        >
-                            <MessageCircle class="size-3.5" />
-                            Escribir a la mesa
-                        </Button>
+                        <span class="flex shrink-0 items-center gap-1.5">
+                            <ExportMenu
+                                v-if="can.exportDesk"
+                                report="desk-requests"
+                                :filters="{ tab: deskTab ?? 'pending' }"
+                                heading="Exportar solicitudes de esta pestaña"
+                                compact
+                            />
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="h-7 shrink-0 gap-1.5 px-2 text-xs"
+                                title="Envía tu propia solicitud a la mesa de control"
+                                data-desk-write
+                                @click="writeToDesk"
+                            >
+                                <MessageCircle class="size-3.5" />
+                                Escribir a la mesa
+                            </Button>
+                        </span>
                     </div>
                 </template>
 
@@ -1095,6 +1123,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                                     activeThread?.id === row.id
                                 "
                                 :opening="openingThreadId === row.id"
+                                @preview="previewDeskRow"
                             />
                         </TransitionGroup>
                         <p

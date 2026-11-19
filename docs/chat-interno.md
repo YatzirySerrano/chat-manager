@@ -251,6 +251,23 @@ otra.». La carga se lee con lectura bloqueante bajo el bloqueo de su fila.
 - Las solicitudes no aparecen en la lista normal de chats de las auditoras (ni en «Todos»); sí cuentan en su badge
   mientras las atienden.
 
+### Seguimiento: notas, etiquetas, vista previa y reportes
+
+Como en una conversación de cliente, quien atiende la mesa tiene en cada solicitud el botón **«Seguimiento»** (barra
+de estado), que abre un panel con:
+
+- **Etiquetas** del catálogo (con `tags.assign`; tabla `team_thread_tag`). Se ven también en las filas de la sección.
+- **Notas internas** (`team_desk_notes`): cualquiera de la mesa escribe; solo su autor edita o elimina. La solicitante
+  nunca las ve (`desk_details` llega nulo para ella y las rutas responden 404).
+- **Descargar expediente** (`desk-request-dossier`, PDF o Excel): datos de la solicitud, notas y mensajes con sus
+  archivos.
+
+En la sección, cada fila tiene **vista previa** (el ojo, igual que los chats; no mueve la posición de lectura) y el
+encabezado ofrece **Exportar** la pestaña actual (`desk-requests`, con `reports.export`): solicitante, estado, quién
+atiende, tiempos, etiquetas, mensajes y notas. Código: `TeamDeskDetailsController`,
+`app/Reports/Definitions/{DeskRequestsReport,DeskRequestDossierReport}.php`, `DeskFollowUpSheet.vue`. Pruebas:
+`tests/Feature/TeamChat/DeskFollowUpTest.php`.
+
 ### Tiempo real
 
 Pedir, aceptar y completar emiten `TeamThreadChanged` (`reason: desk`) con todas las auditoras como afectadas, y cada

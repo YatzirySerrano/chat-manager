@@ -52,7 +52,7 @@ class DeskInboxQuery
         $tab = in_array($tab, self::TABS, true) ? $tab : 'pending';
 
         $threads = $this->tab($viewer, $tab)
-            ->with(['deskRequester:id,name,is_active', 'deskAssignee:id,name,is_active', 'deskCompletedBy:id,name,is_active'])
+            ->with(['deskRequester:id,name,is_active', 'deskAssignee:id,name,is_active', 'deskCompletedBy:id,name,is_active', 'tags' => fn ($query) => $query->orderBy('tags.name')])
             ->limit(self::LIMIT + 1)
             ->get();
 
@@ -77,6 +77,7 @@ class DeskInboxQuery
                 'last_activity_at' => ($thread->last_message_at ?? $thread->created_at)?->toIso8601String(),
                 'last_message' => $this->presenter->preview($thread->last_message_id === null ? null : $lastMessages->get($thread->last_message_id), $viewer),
                 'desk' => $this->presenter->desk($thread, $viewer),
+                'tags' => $this->presenter->tagOptions($thread->tags),
             ])->all()),
             'has_more' => $hasMore,
             'counts' => [

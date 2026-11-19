@@ -5,10 +5,12 @@ import {
     Clock,
     Hand,
     Headset,
+    ClipboardList,
     MessageSquarePlus,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import FieldHelp from '@/components/FieldHelp.vue';
+import DeskFollowUpSheet from '@/components/team-chat/DeskFollowUpSheet.vue';
 import { Button } from '@/components/ui/button';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { accept, complete } from '@/routes/team-chat/threads/desk';
@@ -24,6 +26,14 @@ import type { TeamThreadDetail } from '@/types/team-chat';
 const props = defineProps<{ thread: TeamThreadDetail }>();
 
 const busy = ref<'accept' | 'complete' | null>(null);
+
+/* «Seguimiento»: tags, internal notes and the dossier (desk staff only). */
+const followUpOpen = ref(false);
+const details = computed(() => props.thread.desk_details ?? null);
+const followUpCount = computed(
+    () =>
+        (details.value?.notes.length ?? 0) + (details.value?.tags.length ?? 0),
+);
 
 const desk = computed(() => props.thread.desk ?? null);
 
@@ -185,5 +195,28 @@ function run(action: 'accept' | 'complete'): void {
         >
             <CircleCheck aria-hidden="true" /> Solicitud completa
         </Button>
+        <Button
+            v-if="details"
+            size="sm"
+            variant="outline"
+            class="h-8 gap-1.5 rounded-full bg-background"
+            title="Etiquetas, notas internas y expediente de la solicitud"
+            data-desk-follow-up-open
+            @click="followUpOpen = true"
+        >
+            <ClipboardList aria-hidden="true" /> Seguimiento
+            <span
+                v-if="followUpCount > 0"
+                class="rounded-full bg-muted px-1.5 text-[0.6875rem] font-semibold tabular-nums"
+                >{{ followUpCount }}</span
+            >
+        </Button>
     </div>
+    <DeskFollowUpSheet
+        v-if="details"
+        v-model:open="followUpOpen"
+        :thread-id="thread.id"
+        :title="thread.title"
+        :details="details"
+    />
 </template>

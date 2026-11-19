@@ -6,6 +6,7 @@ use App\Actions\TeamChat\DeskInboxQuery;
 use App\Actions\TeamChat\TeamMessageHistory;
 use App\Actions\TeamChat\TeamThreadListQuery;
 use App\Actions\TeamChat\TeamUnreadCounter;
+use App\Enums\Permission;
 use App\Enums\TeamChat\TeamDeskStatus;
 use App\Http\Controllers\Controller;
 use App\Models\TeamChat\TeamParticipant;
@@ -105,6 +106,8 @@ class TeamChatController extends Controller
             'can' => [
                 'createGroup' => $viewer->can('createGroup', TeamThread::class),
                 'startDirect' => $viewer->can('startDirect', TeamThread::class),
+                // «Exportar» of the desk section (DeskRequestsReport).
+                'exportDesk' => $attendsDesk && $viewer->holdsPermission(Permission::ExportReports),
             ],
             // null: no desk for this person. A requester only has her desk
             // thread; an auditor gets the section with its tabs (`desk` in
@@ -180,6 +183,8 @@ class TeamChatController extends Controller
             ],
             'post_blocked_reason' => $canPost ? null : $postBlockedReason,
             'desk' => $this->presenter->desk($thread, $viewer),
+            // Notes and tags of the request: only for whoever attends the desk.
+            'desk_details' => $thread->isDesk() && $canAttendDesk ? $this->presenter->deskDetails($thread, $viewer) : null,
             // The viewer's own chat colors for this thread (never anyone else's).
             'appearance' => $this->appearances->forViewer($viewer, $thread),
         ];

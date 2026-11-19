@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
-import { CheckCheck, Clock, Hand, Headset } from '@lucide/vue';
+import { CheckCheck, Clock, Eye, Hand, Headset } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import CountBadge from '@/components/filters/CountBadge.vue';
 import ListAvatar from '@/components/filters/ListAvatar.vue';
+import TagBadge from '@/components/tags/TagBadge.vue';
 import { listTime } from '@/components/team-chat/teamChatFormat';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -23,6 +24,8 @@ const props = defineProps<{
     active: boolean;
     opening?: boolean;
 }>();
+
+const emit = defineEmits<{ preview: [row: TeamDeskRow] }>();
 
 const accepting = ref(false);
 
@@ -169,6 +172,24 @@ function acceptRow(): void {
                         >{{ detail }}</span
                     >
                 </span>
+                <span
+                    v-if="row.tags?.length"
+                    class="mt-1 flex flex-wrap gap-1"
+                    data-desk-row-tags
+                >
+                    <TagBadge
+                        v-for="tag in row.tags.slice(0, 3)"
+                        :key="tag.id"
+                        :name="tag.name"
+                        :color="tag.color"
+                        size="sm"
+                    />
+                    <span
+                        v-if="row.tags.length > 3"
+                        class="text-[0.6875rem] text-muted-foreground"
+                        >+{{ row.tags.length - 3 }}</span
+                    >
+                </span>
             </span>
             <CountBadge v-if="unread" :value="row.unread" tone="primary" />
             <span v-if="unread" class="sr-only"
@@ -187,5 +208,21 @@ function acceptRow(): void {
             <Hand class="size-3.5" aria-hidden="true" />
             {{ accepting ? 'Aceptando…' : 'Aceptar' }}
         </button>
+        <!-- Hover quick action: the same preview as the chats. -->
+        <div
+            class="list-quick absolute top-1 flex items-center rounded-md border bg-popover p-px shadow-(--shadow-control) pointer-coarse:top-auto pointer-coarse:bottom-1 pointer-coarse:border-transparent pointer-coarse:bg-transparent pointer-coarse:shadow-none"
+            :class="tab === 'pending' ? 'right-24' : 'right-1.5'"
+        >
+            <button
+                type="button"
+                class="flex size-6 items-center justify-center rounded text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-colors pointer-coarse:size-9"
+                :aria-label="`Vista previa de la solicitud de ${row.title}`"
+                title="Vista previa sin marcar como leído"
+                data-desk-preview
+                @click="emit('preview', row)"
+            >
+                <Eye class="size-3.5" aria-hidden="true" />
+            </button>
+        </div>
     </div>
 </template>

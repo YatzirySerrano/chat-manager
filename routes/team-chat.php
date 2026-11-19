@@ -5,6 +5,7 @@ use App\Http\Controllers\TeamChat\TeamChatController;
 use App\Http\Controllers\TeamChat\TeamChatPeopleController;
 use App\Http\Controllers\TeamChat\TeamChatSearchController;
 use App\Http\Controllers\TeamChat\TeamDeskController;
+use App\Http\Controllers\TeamChat\TeamDeskDetailsController;
 use App\Http\Controllers\TeamChat\TeamMessageController;
 use App\Http\Controllers\TeamChat\TeamParticipantController;
 use App\Http\Controllers\TeamChat\TeamThreadController;
@@ -42,6 +43,11 @@ Route::middleware(['auth', 'verified'])->prefix('team-chat')->name('team-chat.')
         // «Mesa de control»: an auditor accepts a pending request or completes hers.
         Route::post('desk/accept', [TeamDeskController::class, 'accept'])->middleware('throttle:60,1')->name('desk.accept');
         Route::post('desk/complete', [TeamDeskController::class, 'complete'])->middleware('throttle:60,1')->name('desk.complete');
+        // Follow-up of a request: internal notes and tags (never seen by the requester).
+        Route::post('desk/notes', [TeamDeskDetailsController::class, 'storeNote'])->middleware('throttle:60,1')->name('desk.notes.store');
+        Route::put('desk/notes/{note}', [TeamDeskDetailsController::class, 'updateNote'])->withoutScopedBindings()->middleware('throttle:60,1')->name('desk.notes.update');
+        Route::delete('desk/notes/{note}', [TeamDeskDetailsController::class, 'destroyNote'])->withoutScopedBindings()->middleware('throttle:60,1')->name('desk.notes.destroy');
+        Route::put('desk/tags', [TeamDeskDetailsController::class, 'syncTags'])->middleware('throttle:60,1')->name('desk.tags.update');
 
         Route::post('participants', [TeamParticipantController::class, 'store'])->name('participants.store');
         Route::put('participants/{user}', [TeamParticipantController::class, 'update'])->withoutScopedBindings()->name('participants.update');

@@ -9,6 +9,8 @@ use App\Reports\Definitions\ConversationDossierReport;
 use App\Reports\Definitions\ConversationsReport;
 use App\Reports\Definitions\DashboardReport;
 use App\Reports\Definitions\DepartmentsReport;
+use App\Reports\Definitions\DeskRequestDossierReport;
+use App\Reports\Definitions\DeskRequestsReport;
 use App\Reports\Definitions\MessageTemplatesReport;
 use App\Reports\Definitions\QuickRepliesReport;
 use App\Reports\Definitions\RolesReport;
@@ -45,6 +47,8 @@ return [
         'analytics' => AnalyticsReport::class,
         'agent-productivity' => AgentProductivityReport::class,
         'sla-compliance' => SlaComplianceReport::class,
+        'desk-requests' => DeskRequestsReport::class,
+        'desk-request-dossier' => DeskRequestDossierReport::class,
     ],
 
     /*

@@ -2,9 +2,12 @@
 
 namespace App\Services\TeamChat;
 
+use App\Enums\Permission;
 use App\Enums\TeamChat\TeamAttachmentKind;
 use App\Enums\TeamChat\TeamChatSystemEvent;
+use App\Models\Tag;
 use App\Models\TeamChat\TeamAttachment;
+use App\Models\TeamChat\TeamDeskNote;
 use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamMessageReaction;
 use App\Models\TeamChat\TeamParticipant;
@@ -38,6 +41,55 @@ class TeamChatPresenter
         $viewer = Auth::user();
 
         return (string) app(ProtectedAccounts::class)->nameFor($user, $viewer instanceof User ? $viewer : null);
+    }
+
+    /**
+     * Tags of a desk thread (or of the catalog) as the pickers and badges
+     * read them.
+     *
+     * @param  iterable<Tag>  $tags
+     * @return list<array{id: int, name: string, color: string, is_active: bool}>
+     */
+    public function tagOptions(iterable $tags): array
+    {
+        $options = [];
+
+        foreach ($tags as $tag) {
+            $options[] = ['id' => $tag->id, 'name' => $tag->name, 'color' => $tag->color->value, 'is_active' => $tag->is_active];
+        }
+
+        return $options;
+    }
+
+    /**
+     * Follow-up of a desk request for someone who attends the desk: its
+     * internal notes (newest first), its tags, the catalog to pick from and
+     * what the viewer may do. Never built for the requester.
+     *
+     * @return array<string, mixed>
+     */
+    public function deskDetails(TeamThread $thread, User $viewer): array
+    {
+        $canTag = $viewer->holdsPermission(Permission::AssignTags);
+        $notes = $thread->deskNotes()->with('author:id,name,is_active')->orderByDesc('id')->limit(200)->get();
+
+        return [
+            'notes' => array_values($notes->map(fn (TeamDeskNote $note): array => [
+                'id' => $note->id,
+                'body' => $note->body,
+                'author' => $note->author === null ? 'Usuario eliminado' : $this->userName($note->author),
+                'created_at' => $note->created_at?->toIso8601String(),
+                'edited_at' => $note->edited_at?->toIso8601String(),
+                'can_edit' => $note->user_id === $viewer->id,
+            ])->all()),
+            'tags' => $this->tagOptions($thread->tags()->orderBy('tags.name')->get()),
+            'available_tags' => $canTag ? $this->tagOptions(Tag::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'color', 'is_active'])) : [],
+            'can' => [
+                'note' => true,
+                'tag' => $canTag,
+                'export' => $viewer->holdsPermission(Permission::ExportReports),
+            ],
+        ];
     }
 
     /**

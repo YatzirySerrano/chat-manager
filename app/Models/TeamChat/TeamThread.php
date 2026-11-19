@@ -4,6 +4,7 @@ namespace App\Models\TeamChat;
 
 use App\Enums\TeamChat\TeamDeskStatus;
 use App\Enums\TeamChat\TeamThreadType;
+use App\Models\Tag;
 use App\Models\User;
 use App\Policies\TeamChat\TeamThreadPolicy;
 use Database\Factories\TeamChat\TeamThreadFactory;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -173,6 +175,26 @@ class TeamThread extends Model
     public function deskCompletedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'desk_completed_by_user_id');
+    }
+
+    /**
+     * Internal notes of the «Mesa de control» team on this desk thread.
+     *
+     * @return HasMany<TeamDeskNote, $this>
+     */
+    public function deskNotes(): HasMany
+    {
+        return $this->hasMany(TeamDeskNote::class);
+    }
+
+    /**
+     * Tags of the catalog applied to this desk thread.
+     *
+     * @return BelongsToMany<Tag, $this>
+     */
+    public function tags(): BelongsToMany
+    {
+        return $this->belongsToMany(Tag::class, 'team_thread_tag')->withPivot(['tagged_by_user_id', 'created_at']);
     }
 
     /**

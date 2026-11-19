@@ -36,6 +36,8 @@ export type LauncherStyle = {
     launcher_icon_color: string | null;
     launcher_shape: LauncherShape;
     launcher_icon: LauncherIcon;
+    /** The administrator's own image (data: PNG, JPEG or WebP), replacing the icon. */
+    launcher_image: string | null;
     launcher_size: LauncherSize;
     launcher_offset: { x: number; y: number };
     launcher_pulse: boolean;
@@ -49,6 +51,7 @@ export const DEFAULT_LAUNCHER_STYLE: LauncherStyle = {
     launcher_icon_color: null,
     launcher_shape: 'circle',
     launcher_icon: 'chat',
+    launcher_image: null,
     launcher_size: 'medium',
     launcher_offset: { x: 0, y: 0 },
     launcher_pulse: false,
@@ -113,10 +116,12 @@ export type LauncherMetrics = {
     iconSize: number;
     fontSize: number;
     radius: number;
-    /** Fixed width in px, or null: square (circle, rounded) or fits its text (pill). */
+    /** Fixed width in px, or null: fits its text. Without text it is square. */
     width: number | null;
-    /** Whether the text label is drawn (only pills carry text). */
+    /** Whether the text label is drawn (whenever there is one). */
     showLabel: boolean;
+    /** Size of the administrator's own image (a bit larger than an icon). */
+    imageSize: number;
 };
 
 /** Everything needed to draw the button, from the accent and its style. */
@@ -127,26 +132,38 @@ export function launcherMetrics(
 ): LauncherMetrics {
     const background = style.launcher_color ?? accent;
     const height = HEIGHTS[style.launcher_size] ?? HEIGHTS.medium;
-    const pill = style.launcher_shape === 'pill';
-    const showLabel = pill && !!label && label.trim() !== '';
+    // A text turns any shape into a button with icon and text: a pill, or
+    // a rounded rectangle when the shape is the rounded square.
+    const showLabel = !!label && label.trim() !== '';
+    const iconSize = ICON_SIZES[style.launcher_size] ?? ICON_SIZES.medium;
 
     return {
         background,
         color: style.launcher_icon_color ?? readableOn(background),
         height,
-        iconSize: ICON_SIZES[style.launcher_size] ?? ICON_SIZES.medium,
+        iconSize,
         fontSize: FONT_SIZES[style.launcher_font_size] ?? FONT_SIZES.medium,
         radius:
             style.launcher_shape === 'rounded'
                 ? Math.round(height * 0.3)
                 : height / 2,
-        width: pill ? style.launcher_width : height,
+        width: showLabel ? style.launcher_width : height,
         showLabel,
+        imageSize: iconSize + 8,
     };
 }
 
 function isColor(value: unknown): value is string {
     return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+/** Only inlined PNG, JPEG or WebP images (never SVG, which can carry script). */
+function isImageDataUri(value: unknown): value is string {
+    return (
+        typeof value === 'string' &&
+        value.length <= 400_000 &&
+        /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value)
+    );
 }
 
 function bounded(value: unknown, min: number, max: number): number | null {
@@ -189,6 +206,9 @@ export function readLauncherStyle(value: unknown): LauncherStyle {
             : null,
         launcher_shape: oneOf(a.launcher_shape, LAUNCHER_SHAPES, 'circle'),
         launcher_icon: oneOf(a.launcher_icon, LAUNCHER_ICONS, 'chat'),
+        launcher_image: isImageDataUri(a.launcher_image)
+            ? a.launcher_image
+            : null,
         launcher_size: oneOf(a.launcher_size, LAUNCHER_SIZES, 'medium'),
         launcher_offset: {
             x: bounded(offset.x, 0, MAX_LAUNCHER_OFFSET) ?? 0,

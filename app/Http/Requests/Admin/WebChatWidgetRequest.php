@@ -111,6 +111,8 @@ class WebChatWidgetRequest extends FormRequest
             'launcher_label' => ['nullable', 'string', 'max:40'],
             'avatar' => ['nullable', File::image()->types(['png', 'jpg', 'jpeg', 'webp'])->max(self::AVATAR_MAX_KB)],
             'remove_avatar' => ['nullable', 'boolean'],
+            'launcher_image' => ['nullable', File::image()->types(['png', 'jpg', 'jpeg', 'webp'])->max(self::AVATAR_MAX_KB)],
+            'remove_launcher_image' => ['nullable', 'boolean'],
             'identity_mode' => ['required', Rule::enum(WebChatIdentityMode::class)],
             'prechat' => ['nullable', 'array'],
             'prechat.fields' => ['nullable', 'array', 'max:2'],
@@ -124,7 +126,8 @@ class WebChatWidgetRequest extends FormRequest
 
     /**
      * The same origin written twice (after normalizing) is rejected, and the
-     * avatar must really be a PNG, JPEG or WebP image (checked by its bytes).
+     * avatar and the button's icon must really be PNG, JPEG or WebP images
+     * (checked by their bytes; never SVG); the icon must be almost square.
      *
      * @return array<int, callable(Validator): void>
      */
@@ -143,14 +146,25 @@ class WebChatWidgetRequest extends FormRequest
                 }
             },
             function (Validator $validator): void {
-                $avatar = $this->file('avatar');
+                foreach (['avatar', 'launcher_image'] as $field) {
+                    $image = $this->file($field);
 
-                if ($validator->errors()->has('avatar') || ! $avatar instanceof UploadedFile) {
-                    return;
-                }
+                    if ($validator->errors()->has($field) || ! $image instanceof UploadedFile) {
+                        continue;
+                    }
 
-                if (self::imageTypeOf((string) file_get_contents($avatar->getRealPath(), length: 16)) === null) {
-                    $validator->errors()->add('avatar', 'La imagen debe ser PNG, JPG o WebP.');
+                    if (self::imageTypeOf((string) file_get_contents($image->getRealPath(), length: 16)) === null) {
+                        $validator->errors()->add($field, 'La imagen debe ser PNG, JPG o WebP.');
+
+                        continue;
+                    }
+
+                    // The button's icon is drawn in a square: an elongated image would be unreadable.
+                    $size = $field === 'launcher_image' ? @getimagesize($image->getRealPath()) : null;
+
+                    if (is_array($size) && $size[1] > 0 && ($size[0] / $size[1] < 0.5 || $size[0] / $size[1] > 2)) {
+                        $validator->errors()->add($field, 'Usa una imagen casi cuadrada para el ícono.');
+                    }
                 }
             },
         ];
@@ -178,6 +192,9 @@ class WebChatWidgetRequest extends FormRequest
             'avatar.max' => 'La imagen no debe pesar más de '.self::AVATAR_MAX_KB.' KB.',
             'avatar.mimes' => 'La imagen debe ser PNG, JPG o WebP.',
             'avatar.image' => 'La imagen debe ser PNG, JPG o WebP.',
+            'launcher_image.max' => 'El ícono no debe pesar más de '.self::AVATAR_MAX_KB.' KB.',
+            'launcher_image.mimes' => 'El ícono debe ser PNG, JPG o WebP.',
+            'launcher_image.image' => 'El ícono debe ser PNG, JPG o WebP.',
         ];
     }
 
@@ -221,6 +238,7 @@ class WebChatWidgetRequest extends FormRequest
             'launcher_enabled' => 'botón flotante',
             'launcher_label' => 'texto del botón',
             'avatar' => 'imagen',
+            'launcher_image' => 'ícono del botón',
             'identity_mode' => 'identificación',
             'prechat.fields' => 'campos del formulario previo',
             'prechat.fields.*' => 'campo',
@@ -233,13 +251,14 @@ class WebChatWidgetRequest extends FormRequest
     /**
      * Validated settings ready to fill, with the origins normalized.
      *
-     * @return array{settings: array<string, mixed>, avatar: UploadedFile|null, remove_avatar: bool}
+     * @return array{settings: array<string, mixed>, avatar: UploadedFile|null, remove_avatar: bool, launcher_image: UploadedFile|null, remove_launcher_image: bool}
      */
     public function payload(): array
     {
         $fields = $this->input('prechat.fields');
 
         $avatar = $this->file('avatar');
+        $launcherImage = $this->file('launcher_image');
 
         return [
             'settings' => [
@@ -269,6 +288,8 @@ class WebChatWidgetRequest extends FormRequest
             ],
             'avatar' => $avatar instanceof UploadedFile ? $avatar : null,
             'remove_avatar' => $this->boolean('remove_avatar'),
+            'launcher_image' => $launcherImage instanceof UploadedFile ? $launcherImage : null,
+            'remove_launcher_image' => $this->boolean('remove_launcher_image'),
         ];
     }
 

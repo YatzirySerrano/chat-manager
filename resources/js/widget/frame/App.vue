@@ -255,6 +255,7 @@ function announceReady(): void {
             launcher_icon_color: appearance.value.launcher_icon_color,
             launcher_shape: appearance.value.launcher_shape,
             launcher_icon: appearance.value.launcher_icon,
+            launcher_image: appearance.value.launcher_image,
             launcher_size: appearance.value.launcher_size,
             launcher_offset: { ...appearance.value.launcher_offset },
             launcher_pulse: appearance.value.launcher_pulse,

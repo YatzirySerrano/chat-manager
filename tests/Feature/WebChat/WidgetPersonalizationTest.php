@@ -1,8 +1,11 @@
 <?php
 
+use App\Actions\WebChat\UpdateWidgetSettings;
 use App\Models\User;
 use App\Models\WebChatWidget;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\Support\WebChatFixtures;
 
 /*
@@ -118,4 +121,28 @@ test('the frame embeds the colors, the button, the window and the file limits', 
         ->toMatchArray(['background_color' => '#fafafa', 'launcher_shape' => 'pill', 'panel' => ['width' => 380, 'height' => 700]])
         ->and($config['visitor_files']['enabled'])->toBeTrue()
         ->and($config['endpoints']['files'])->toBe('/api/v1/widget/session/files');
+});
+
+test('the button takes an image of its own, never an SVG, and it can be removed', function () {
+    Storage::fake((string) config('filesystems.media_disk', 'local'));
+
+    $svg = UploadedFile::fake()->createWithContent('icono.png', '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+
+    $this->actingAs($this->admin)
+        ->put(route('connections.widget.update', $this->connection), personalizationPayload(['launcher_image' => $svg]))
+        ->assertSessionHasErrors(['launcher_image']);
+
+    $this->actingAs($this->admin)
+        ->put(route('connections.widget.update', $this->connection), personalizationPayload(['launcher_image' => UploadedFile::fake()->image('icono.png', 64, 64)]))
+        ->assertSessionHasNoErrors();
+
+    $widget = WebChatWidget::query()->sole();
+    expect($widget->launcher_icon_path)->not->toBeNull()
+        ->and(UpdateWidgetSettings::imageDataUri($widget->launcher_icon_path))->toStartWith('data:image/png;base64,');
+
+    $this->actingAs($this->admin)
+        ->put(route('connections.widget.update', $this->connection), personalizationPayload(['remove_launcher_image' => true]))
+        ->assertSessionHasNoErrors();
+
+    expect(WebChatWidget::query()->sole()->launcher_icon_path)->toBeNull();
 });

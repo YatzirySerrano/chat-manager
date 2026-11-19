@@ -43,6 +43,7 @@ use Illuminate\Support\Str;
  * @property string|null $launcher_icon_color Icon and text of the floating button; null picks a readable one.
  * @property string $launcher_shape One of self::LAUNCHER_SHAPES; the text only shows as a pill.
  * @property string $launcher_icon One of self::LAUNCHER_ICONS.
+ * @property string|null $launcher_icon_path Image of the button uploaded by the administrator (replaces the icon); stored like avatar_path.
  * @property string $launcher_size One of self::LAUNCHER_SIZES.
  * @property int $launcher_offset_x Extra distance from the side edge, in px (0 to self::MAX_LAUNCHER_OFFSET).
  * @property int $launcher_offset_y Extra distance from the bottom edge, in px.

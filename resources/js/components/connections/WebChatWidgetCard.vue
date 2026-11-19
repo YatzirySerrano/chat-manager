@@ -10,6 +10,7 @@ import {
     ShieldCheck,
     Trash2,
     TriangleAlert,
+    Upload,
 } from '@lucide/vue';
 import { useClipboard } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
@@ -125,6 +126,8 @@ type WidgetForm = {
     allow_visitor_files: boolean;
     avatar: File | null;
     remove_avatar: boolean;
+    launcher_image: File | null;
+    remove_launcher_image: boolean;
     identity_mode: WebChatIdentityMode;
     prechat: {
         fields: WebChatPrechatField[];
@@ -172,6 +175,8 @@ function initialValues(widget: WebChatWidgetSettings): WidgetForm {
         allow_visitor_files: widget.allow_visitor_files ?? true,
         avatar: null,
         remove_avatar: false,
+        launcher_image: null,
+        remove_launcher_image: false,
         identity_mode: widget.identity_mode,
         prechat: {
             fields: [...widget.prechat.fields],
@@ -357,7 +362,7 @@ const SHAPE_OPTIONS: { value: WidgetForm['launcher_shape']; label: string }[] =
     [
         { value: 'circle', label: 'Círculo' },
         { value: 'rounded', label: 'Cuadrado redondeado' },
-        { value: 'pill', label: 'Píldora con texto' },
+        { value: 'pill', label: 'Píldora' },
     ];
 
 const ICON_OPTIONS: { value: WidgetForm['launcher_icon']; label: string }[] = [
@@ -386,7 +391,74 @@ const widthMode = computed<string>({
     },
 });
 
-const isPill = computed(() => form.launcher_shape === 'pill');
+/** With a text the button shows icon and text, whatever its shape. */
+const hasLabel = computed(() => form.launcher_label.trim() !== '');
+
+const launcherImagePreview = ref<string | null>(
+    props.widget.launcher_image_url ?? null,
+);
+const launcherImageError = ref<string | null>(null);
+const launcherImageInput = ref<HTMLInputElement | null>(null);
+
+/** Width / height of an image file, read by the browser. */
+function imageRatio(url: string): Promise<number> {
+    return new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () =>
+            resolve(
+                image.naturalHeight > 0
+                    ? image.naturalWidth / image.naturalHeight
+                    : 0,
+            );
+        image.onerror = () => resolve(0);
+        image.src = url;
+    });
+}
+
+/** The button's own image: PNG, JPG or WebP, small and almost square (no SVG). */
+async function pickLauncherImage(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+
+    input.value = '';
+    launcherImageError.value = null;
+
+    if (!file) {
+        return;
+    }
+
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+        launcherImageError.value = 'El ícono debe ser PNG, JPG o WebP.';
+
+        return;
+    }
+
+    if (file.size > props.options.limits.avatar_kb * 1024) {
+        launcherImageError.value = `El ícono no debe pesar más de ${props.options.limits.avatar_kb} KB.`;
+
+        return;
+    }
+
+    const url = await readAsDataUrl(file);
+    const ratio = await imageRatio(url);
+
+    if (ratio < 0.5 || ratio > 2) {
+        launcherImageError.value = 'Usa una imagen casi cuadrada.';
+
+        return;
+    }
+
+    form.launcher_image = file;
+    form.remove_launcher_image = false;
+    launcherImagePreview.value = url;
+}
+
+function removeLauncherImage(): void {
+    form.launcher_image = null;
+    form.remove_launcher_image = props.widget.launcher_image_url !== null;
+    launcherImagePreview.value = null;
+    launcherImageError.value = null;
+}
 
 function numberOrNull(value: string | number): number | null {
     return value === '' ? null : Number(value);
@@ -449,12 +521,22 @@ const validation = useFormValidation(form, {
 
         return rules;
     },
-    ignore: ['avatar', 'remove_avatar'],
+    ignore: [
+        'avatar',
+        'remove_avatar',
+        'launcher_image',
+        'remove_launcher_image',
+    ],
     requireChanges: true,
 });
 
 const hasChanges = computed(
-    () => validation.hasChanges || form.avatar !== null || form.remove_avatar,
+    () =>
+        validation.hasChanges ||
+        form.avatar !== null ||
+        form.remove_avatar ||
+        form.launcher_image !== null ||
+        form.remove_launcher_image,
 );
 
 const filledOrigins = computed(() =>
@@ -602,6 +684,7 @@ const appearance = computed<WebChatPreviewAppearance>(() => ({
     launcher_icon_color: colorOf('launcher_icon_color'),
     launcher_shape: form.launcher_shape,
     launcher_icon: form.launcher_icon,
+    launcher_image: launcherImagePreview.value,
     launcher_size: form.launcher_size,
     launcher_font_size: form.launcher_font_size,
     launcher_width:
@@ -644,6 +727,7 @@ watch(
         form.defaults(values);
         form.reset();
         avatarPreview.value = widget.avatar_url;
+        launcherImagePreview.value = widget.launcher_image_url ?? null;
         validation.load(values);
     },
 );
@@ -697,6 +781,8 @@ function discard(): void {
     form.clearErrors();
     avatarPreview.value = props.widget.avatar_url;
     avatarError.value = null;
+    launcherImagePreview.value = props.widget.launcher_image_url ?? null;
+    launcherImageError.value = null;
     validation.load(initialValues(props.widget));
 }
 
@@ -1133,6 +1219,80 @@ const fieldError = (path: string): string | undefined =>
                     </label>
                 </div>
                 <div class="widget-color-grid col-span-full">
+                    <FormField
+                        id="widget-launcher-label"
+                        label="Texto del botón"
+                        :error="fieldError('launcher_label')"
+                        class="col-span-2 max-sm:col-span-full"
+                    >
+                        <Input
+                            id="widget-launcher-label"
+                            v-model="form.launcher_label"
+                            v-bind="
+                                validation.field(
+                                    'launcher_label',
+                                    'widget-launcher-label',
+                                )
+                            "
+                            maxlength="40"
+                            placeholder="Vacío: solo el ícono"
+                            :disabled="!form.launcher_enabled"
+                        />
+                    </FormField>
+                    <FormField
+                        v-if="hasLabel"
+                        id="widget-launcher-font"
+                        label="Tamaño del texto"
+                        :error="fieldError('launcher_font_size')"
+                    >
+                        <AppSelect
+                            id="widget-launcher-font"
+                            v-model="form.launcher_font_size"
+                            :options="SIZE_OPTIONS"
+                            :disabled="!canUpdate"
+                        />
+                    </FormField>
+                    <FormField
+                        v-if="hasLabel"
+                        id="widget-launcher-width-mode"
+                        label="Ancho"
+                        :error="fieldError('launcher_width')"
+                    >
+                        <div class="flex gap-1.5">
+                            <AppSelect
+                                id="widget-launcher-width-mode"
+                                v-model="widthMode"
+                                :options="WIDTH_OPTIONS"
+                                :disabled="!canUpdate"
+                                class="min-w-0 flex-1"
+                            />
+                            <Input
+                                v-if="form.launcher_width !== null"
+                                id="widget-launcher-width"
+                                :model-value="form.launcher_width"
+                                v-bind="
+                                    validation.field(
+                                        'launcher_width',
+                                        'widget-launcher-width',
+                                    )
+                                "
+                                type="number"
+                                :min="LAUNCHER_WIDTH.min"
+                                :max="LAUNCHER_WIDTH.max"
+                                step="1"
+                                class="w-20"
+                                aria-label="Ancho fijo en píxeles"
+                                @update:model-value="
+                                    (value: string | number) =>
+                                        (form.launcher_width =
+                                            value === '' ? 0 : Number(value))
+                                "
+                            />
+                        </div>
+                    </FormField>
+                </div>
+
+                <div class="widget-color-grid col-span-full">
                     <WebChatColorField
                         id="widget-launcher-color"
                         v-model="form.launcher_color"
@@ -1159,8 +1319,60 @@ const fieldError = (path: string): string | undefined =>
                             id="widget-launcher-icon"
                             v-model="form.launcher_icon"
                             :options="ICON_OPTIONS"
-                            :disabled="!canUpdate"
+                            :disabled="
+                                !canUpdate || launcherImagePreview !== null
+                            "
                         />
+                    </FormField>
+                    <FormField
+                        id="widget-launcher-image"
+                        label="Ícono propio"
+                        :error="
+                            launcherImageError ?? form.errors.launcher_image
+                        "
+                    >
+                        <div class="flex items-center gap-1.5">
+                            <img
+                                v-if="launcherImagePreview"
+                                :src="launcherImagePreview"
+                                alt="Ícono propio del botón"
+                                class="size-9 shrink-0 rounded-md border object-contain p-0.5"
+                            />
+                            <input
+                                id="widget-launcher-image"
+                                ref="launcherImageInput"
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                class="sr-only"
+                                :disabled="!canUpdate"
+                                @change="pickLauncherImage"
+                            />
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                class="h-9"
+                                :disabled="!canUpdate"
+                                :title="`PNG, JPG o WebP cuadrado, hasta ${options.limits.avatar_kb} KB`"
+                                @click="launcherImageInput?.click()"
+                            >
+                                <Upload />
+                                {{ launcherImagePreview ? 'Cambiar' : 'Subir' }}
+                            </Button>
+                            <Button
+                                v-if="launcherImagePreview"
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                class="size-9"
+                                aria-label="Quitar ícono propio"
+                                title="Quitar"
+                                :disabled="!canUpdate"
+                                @click="removeLauncherImage"
+                            >
+                                <Trash2 />
+                            </Button>
+                        </div>
                     </FormField>
                     <FormField
                         id="widget-launcher-shape"
@@ -1249,78 +1461,6 @@ const fieldError = (path: string): string | undefined =>
                         />
                     </FormField>
                 </div>
-                <div v-if="isPill" class="widget-color-grid col-span-full">
-                    <FormField
-                        id="widget-launcher-label"
-                        label="Texto del botón"
-                        :error="fieldError('launcher_label')"
-                        class="col-span-2 max-sm:col-span-full"
-                    >
-                        <Input
-                            id="widget-launcher-label"
-                            v-model="form.launcher_label"
-                            v-bind="
-                                validation.field(
-                                    'launcher_label',
-                                    'widget-launcher-label',
-                                )
-                            "
-                            maxlength="40"
-                            placeholder="¿Te ayudamos?"
-                            :disabled="!form.launcher_enabled"
-                        />
-                    </FormField>
-                    <FormField
-                        id="widget-launcher-font"
-                        label="Tamaño del texto"
-                        :error="fieldError('launcher_font_size')"
-                    >
-                        <AppSelect
-                            id="widget-launcher-font"
-                            v-model="form.launcher_font_size"
-                            :options="SIZE_OPTIONS"
-                            :disabled="!canUpdate"
-                        />
-                    </FormField>
-                    <FormField
-                        id="widget-launcher-width-mode"
-                        label="Ancho"
-                        :error="fieldError('launcher_width')"
-                    >
-                        <div class="flex gap-1.5">
-                            <AppSelect
-                                id="widget-launcher-width-mode"
-                                v-model="widthMode"
-                                :options="WIDTH_OPTIONS"
-                                :disabled="!canUpdate"
-                                class="min-w-0 flex-1"
-                            />
-                            <Input
-                                v-if="form.launcher_width !== null"
-                                id="widget-launcher-width"
-                                :model-value="form.launcher_width"
-                                v-bind="
-                                    validation.field(
-                                        'launcher_width',
-                                        'widget-launcher-width',
-                                    )
-                                "
-                                type="number"
-                                :min="LAUNCHER_WIDTH.min"
-                                :max="LAUNCHER_WIDTH.max"
-                                step="1"
-                                class="w-20"
-                                aria-label="Ancho fijo en píxeles"
-                                @update:model-value="
-                                    (value: string | number) =>
-                                        (form.launcher_width =
-                                            value === '' ? 0 : Number(value))
-                                "
-                            />
-                        </div>
-                    </FormField>
-                </div>
-
                 <p
                     v-if="lowContrast.length > 0"
                     class="col-span-full flex items-start gap-1.5 text-xs text-warning-soft-foreground"

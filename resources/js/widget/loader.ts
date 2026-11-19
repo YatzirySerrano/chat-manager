@@ -104,6 +104,7 @@ function styles(zIndex: number): string {
 .l:hover{transform:translateY(-1px)}
 .l:focus-visible{outline:3px solid var(--a,#2563eb);outline-offset:3px}
 .l svg{width:var(--i,24px);height:var(--i,24px);flex:none}
+.l img{display:block;width:var(--m,32px);height:var(--m,32px);flex:none;object-fit:contain;border:0;margin:0;padding:0;max-width:none}
 .l[hidden],.b[hidden],.l>span[hidden]{display:none}
 .u .l::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:0 0 0 0 var(--a,#2563eb);animation:cm-pulse 2s ease-out infinite;pointer-events:none}
 @keyframes cm-pulse{0%{box-shadow:0 0 0 0 var(--a,#2563eb);opacity:.55}100%{box-shadow:0 0 0 14px var(--a,#2563eb);opacity:0}}
@@ -253,9 +254,22 @@ function init(options: WidgetOptions): WidgetInstance | null {
                 : '');
         launcher.className = text !== '' ? 'l t' : 'l';
 
-        if (iconName !== look.launcher_icon) {
-            iconName = look.launcher_icon;
-            icon.innerHTML = launcherIconSvg(look.launcher_icon);
+        // The administrator's own image (a data: PNG/JPEG/WebP validated
+        // by readLauncherStyle) or a built-in icon; set as a node, never as markup.
+        const iconKey = look.launcher_image ?? look.launcher_icon;
+
+        if (iconName !== iconKey) {
+            iconName = iconKey;
+
+            if (look.launcher_image) {
+                const image = document.createElement('img');
+                image.alt = '';
+                image.decoding = 'async';
+                image.src = look.launcher_image;
+                icon.replaceChildren(image);
+            } else {
+                icon.innerHTML = launcherIconSvg(look.launcher_icon);
+            }
         }
         launcher.hidden = !showLauncher;
         launcher.setAttribute('aria-expanded', String(opened));
@@ -279,6 +293,7 @@ function init(options: WidgetOptions): WidgetInstance | null {
             '--r': `${metrics.radius}px`,
             '--w': metrics.width !== null ? `${metrics.width}px` : 'auto',
             '--i': `${metrics.iconSize}px`,
+            '--m': `${metrics.imageSize}px`,
             '--t': `${metrics.fontSize}px`,
             '--x': `${hostOffsetX ?? look.launcher_offset.x}px`,
             '--y': `${hostOffsetY ?? look.launcher_offset.y}px`,

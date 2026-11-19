@@ -56,6 +56,8 @@ export type WebChatWidgetSettings = {
     composer_placeholder: string | null;
     allow_visitor_files: boolean;
     avatar_url: string | null;
+    /** The button's own image, inlined; null uses the built-in icon. */
+    launcher_image_url: string | null;
     identity_mode: WebChatIdentityMode;
     prechat: {
         fields: WebChatPrechatField[];

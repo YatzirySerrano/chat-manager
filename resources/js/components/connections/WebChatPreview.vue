@@ -220,8 +220,18 @@ const launcher = computed(() => {
                 :style="{ ...launcher.style, ...launcher.corner }"
                 aria-hidden="true"
             >
-                <!-- Static SVG markup from the widget's own icon set. -->
-                <span class="contents" v-html="launcher.icon" />
+                <!-- The administrator's own image, or static SVG markup from the widget's icon set. -->
+                <img
+                    v-if="appearance.launcher_image"
+                    :src="appearance.launcher_image"
+                    alt=""
+                    class="shrink-0 object-contain"
+                    :style="{
+                        width: `${launcher.metrics.imageSize}px`,
+                        height: `${launcher.metrics.imageSize}px`,
+                    }"
+                />
+                <span v-else class="contents" v-html="launcher.icon" />
                 <span v-if="launcher.metrics.showLabel" class="truncate">{{
                     appearance.launcher_label
                 }}</span>

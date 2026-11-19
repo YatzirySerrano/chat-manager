@@ -5,7 +5,6 @@ namespace App\Http\Controllers\WebChat;
 use App\Actions\WebChat\UpdateWidgetSettings;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\SecurityHeaders;
-use App\Http\Requests\Admin\WebChatWidgetRequest;
 use App\Models\WebChatWidget;
 use App\Services\WebChat\FrameTicket;
 use App\Services\WebChat\VisitorFiles;
@@ -103,6 +102,8 @@ class WidgetFrameController extends Controller
                 'offline_status_text' => $widget->offline_status_text,
                 'composer_placeholder' => $widget->composer_placeholder,
                 'avatar' => $state === 'unauthorized' ? null : $this->avatar($widget),
+                // The button's own image, inlined (the loader draws it on the host page).
+                'launcher_image' => $state === 'unauthorized' ? null : UpdateWidgetSettings::imageDataUri($widget->launcher_icon_path),
             ],
             'visitor_files' => $widget->allow_visitor_files
                 ? ['enabled' => true, ...$files->summary()]
@@ -223,19 +224,7 @@ class WidgetFrameController extends Controller
      */
     private function avatar(WebChatWidget $widget): ?string
     {
-        if ($widget->avatar_path === null) {
-            return null;
-        }
-
         // From whichever disk holds it (it stays readable after MEDIA_DISK changes).
-        $bytes = UpdateWidgetSettings::avatarBytes($widget->avatar_path);
-
-        if ($bytes === null) {
-            return null;
-        }
-
-        $type = WebChatWidgetRequest::imageTypeOf(substr($bytes, 0, 16));
-
-        return $type === null ? null : 'data:'.$type.';base64,'.base64_encode($bytes);
+        return UpdateWidgetSettings::imageDataUri($widget->avatar_path);
     }
 }

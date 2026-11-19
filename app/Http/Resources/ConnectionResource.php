@@ -4,7 +4,6 @@ namespace App\Http\Resources;
 
 use App\Actions\WebChat\UpdateWidgetSettings;
 use App\Enums\ConnectionHealth;
-use App\Http\Requests\Admin\WebChatWidgetRequest;
 use App\Models\Connection;
 use App\Models\Department;
 use App\Models\WebChatWidget;
@@ -227,6 +226,7 @@ class ConnectionResource extends JsonResource
             'composer_placeholder' => $widget->composer_placeholder,
             'allow_visitor_files' => $widget->allow_visitor_files,
             'avatar_url' => $this->avatarDataUri($widget),
+            'launcher_image_url' => UpdateWidgetSettings::imageDataUri($widget->launcher_icon_path),
             'identity_mode' => $widget->identity_mode->value,
             'prechat' => [
                 'fields' => $prechat['fields'] ?? [],
@@ -244,20 +244,8 @@ class ConnectionResource extends JsonResource
 
     private function avatarDataUri(WebChatWidget $widget): ?string
     {
-        if ($widget->avatar_path === null) {
-            return null;
-        }
-
         // From whichever disk holds it (it stays readable after MEDIA_DISK changes).
-        $bytes = UpdateWidgetSettings::avatarBytes($widget->avatar_path);
-
-        if ($bytes === null) {
-            return null;
-        }
-
-        $type = WebChatWidgetRequest::imageTypeOf(substr($bytes, 0, 16));
-
-        return $type === null ? null : 'data:'.$type.';base64,'.base64_encode($bytes);
+        return UpdateWidgetSettings::imageDataUri($widget->avatar_path);
     }
 
     /**

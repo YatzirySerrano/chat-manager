@@ -72,6 +72,10 @@ enum ConnectionHealth: string
             return self::resolveWhatsAppWeb($connection);
         }
 
+        if ($connection->isTelegram()) {
+            return self::resolveTelegram($connection);
+        }
+
         if (! $connection->hasRequiredCredentials()) {
             return self::NotConfigured;
         }
@@ -157,6 +161,39 @@ enum ConnectionHealth: string
             WhatsAppWebState::Reconnecting, WhatsAppWebState::Disconnected => self::Configured,
             default => self::NotConfigured,
         };
+    }
+
+    /**
+     * A Telegram bot: configured once Telegram accepted its token (getMe),
+     * receiving once the webhook was registered (setWebhook) or an update
+     * arrived, operational with traffic in both directions. A token Telegram
+     * rejected later, or a newer error, wins over past traffic.
+     */
+    private static function resolveTelegram(Connection $connection): self
+    {
+        if (! $connection->isConfigured()) {
+            return self::NotConfigured;
+        }
+
+        if (filled($connection->credentials_error)) {
+            return self::CredentialsInvalid;
+        }
+
+        $lastSuccess = self::latest($connection->credentials_verified_at, $connection->webhook_verified_at, $connection->last_inbound_at, $connection->last_outbound_at);
+
+        if ($connection->last_error_at !== null && ($lastSuccess === null || $connection->last_error_at->greaterThan($lastSuccess))) {
+            return self::Error;
+        }
+
+        if ($connection->last_inbound_at !== null && $connection->last_outbound_at !== null) {
+            return self::Operational;
+        }
+
+        if ($connection->webhook_verified_at !== null || $connection->last_inbound_at !== null) {
+            return self::Receiving;
+        }
+
+        return $connection->credentials_verified_at !== null ? self::CredentialsVerified : self::Configured;
     }
 
     public function label(): string

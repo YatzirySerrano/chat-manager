@@ -7,6 +7,7 @@ use App\Events\Connections\ConnectionStatusChanged;
 use App\Models\Connection;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\Telegram\TelegramBots;
 use App\Services\WhatsAppWeb\WhatsAppWebSessions;
 use Illuminate\Support\Facades\DB;
 
@@ -45,6 +46,11 @@ class DeleteConnection
             // conversations and their history stay.
             if ($locked->isWhatsAppWeb()) {
                 DB::afterCommit(fn () => app(WhatsAppWebSessions::class)->forget($locked));
+            }
+
+            // Telegram: the bot stops calling this server.
+            if ($locked->isTelegram()) {
+                DB::afterCommit(fn () => app(TelegramBots::class)->disconnect($locked));
             }
 
             return $locked;

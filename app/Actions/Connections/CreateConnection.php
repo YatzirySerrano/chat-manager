@@ -18,20 +18,22 @@ use Illuminate\Validation\ValidationException;
  * credentials for WhatsApp; for the web chat, its widget with at least one
  * authorized origin). A web chat connection gets its widget in the same
  * transaction, without origins, so it stays not configured until they are
- * saved.
+ * saved. A Telegram bot is saved with the identity Telegram returned for its
+ * token (`bot`); its webhook is registered by the caller once committed
+ * (TelegramBots::connect), never inside this transaction.
  */
 class CreateConnection
 {
     public function __construct(private AuditLogger $audit) {}
 
     /**
-     * @param  array{attributes: array<string, mixed>, secrets: array<string, string>, department_ids: list<int>}  $data
+     * @param  array{attributes: array<string, mixed>, secrets: array<string, string>, department_ids: list<int>, bot?: array<string, mixed>}  $data
      */
     public function handle(array $data, User $actor): Connection
     {
         return DB::transaction(function () use ($data, $actor): Connection {
             $connection = new Connection([...$data['attributes'], ...$data['secrets']]);
-            $connection->forceFill(['is_active' => false, 'created_by_user_id' => $actor->id]);
+            $connection->forceFill(['is_active' => false, 'created_by_user_id' => $actor->id, ...($data['bot'] ?? [])]);
 
             if ($connection->isWhatsAppWeb()) {
                 $connection->forceFill(['web_session_state' => WhatsAppWebState::Unconfigured]);
@@ -42,6 +44,10 @@ class CreateConnection
             } catch (UniqueConstraintViolationException $exception) {
                 if ($connection->isWebChat()) {
                     throw $exception;
+                }
+
+                if ($connection->isTelegram()) {
+                    throw ValidationException::withMessages(['bot_token' => 'Este bot ya está registrado en otra conexión.']);
                 }
 
                 throw ValidationException::withMessages(['phone_number_id' => 'Este Phone number ID ya está registrado en otra conexión.']);

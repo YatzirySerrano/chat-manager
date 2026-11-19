@@ -29,6 +29,7 @@ use App\Models\User;
 use App\Services\Exports\ReportExporter;
 use App\Services\Meta\ConnectionDiagnostics;
 use App\Services\Meta\MetaApp;
+use App\Services\Telegram\TelegramBots;
 use App\Services\WebChat\VisitorFiles;
 use App\Services\WhatsAppWeb\WhatsAppWebSessions;
 use App\Support\SaveToast;
@@ -153,21 +154,27 @@ class ConnectionController extends Controller
             'connection' => null,
             'diagnostics' => null,
             'whatsappWeb' => null,
+            'telegram' => null,
             ...$this->formOptions($channel, null, $provider),
             'can' => ['update' => true, 'changeStatus' => false, 'verify' => false, 'delete' => false, 'deletePermanently' => false, 'restore' => false, 'syncTemplates' => false, 'viewTemplates' => false, 'moveConversations' => false],
             'moveTargets' => [],
         ]);
     }
 
-    public function store(ConnectionRequest $request, CreateConnection $createConnection): RedirectResponse
+    public function store(ConnectionRequest $request, CreateConnection $createConnection, TelegramBots $telegram): RedirectResponse
     {
         $connection = $createConnection->handle($request->payload(), $request->user());
 
+        // Telegram: the webhook is registered once the bot is saved.
+        $webhookError = $connection->isTelegram() ? $telegram->connect($connection) : null;
+
         Inertia::flash('toast', [
-            'type' => 'success',
-            'message' => $connection->isWhatsAppWeb()
-                ? "Conexión {$connection->name} creada. Ahora vincula el teléfono con el código QR."
-                : "Conexión {$connection->name} creada. Está inactiva hasta que la actives.",
+            'type' => $webhookError === null ? 'success' : 'warning',
+            'message' => match (true) {
+                $connection->isWhatsAppWeb() => "Conexión {$connection->name} creada. Ahora vincula el teléfono con el código QR.",
+                $webhookError !== null => "Conexión {$connection->name} creada, pero falta el webhook. {$webhookError}",
+                default => "Conexión {$connection->name} creada. Está inactiva hasta que la actives.",
+            },
         ]);
 
         return to_route('connections.show', $connection);
@@ -194,6 +201,11 @@ class ConnectionController extends Controller
             // Messenger and Instagram show their authorization instead (meta_account).
             // A phone linked by QR has no Meta checklist either: its session state is "whatsappWeb".
             'diagnostics' => fn () => $connection->channel !== ConnectionChannel::Whatsapp || $connection->isWhatsAppWeb() ? null : app(ConnectionDiagnostics::class)->for($connection, $actor),
+            // Telegram: what Telegram says about the webhook (cached briefly).
+            'telegram' => fn () => $connection->isTelegram() ? [
+                'bot' => ['id' => $connection->external_account_id, 'username' => $connection->external_account_name, 'name' => $connection->verified_name],
+                'webhook' => $connection->isConfigured() && ! $connection->isDeleted() ? app(TelegramBots::class)->status($connection) : null,
+            ] : null,
             // LinkState of the contract (§8); the QR only for people who can manage the connection.
             'whatsappWeb' => fn () => $connection->isWhatsAppWeb()
                 ? [...app(WhatsAppWebSessions::class)->linkState($connection, withQr: $actor->can('manageWebSession', $connection)), 'can_manage' => $actor->can('manageWebSession', $connection)]
@@ -230,9 +242,21 @@ class ConnectionController extends Controller
         ]);
     }
 
-    public function update(ConnectionRequest $request, Connection $connection, UpdateConnection $updateConnection): RedirectResponse
+    public function update(ConnectionRequest $request, Connection $connection, UpdateConnection $updateConnection, TelegramBots $telegram): RedirectResponse
     {
+        $previousToken = $connection->access_token;
         $changed = $updateConnection->handle($connection, $request->payload(), $request->user());
+
+        // A new bot token: the webhook is registered again for it.
+        if ($connection->isTelegram() && $connection->access_token !== $previousToken && ! $connection->isDeleted()) {
+            $webhookError = $telegram->connect($connection);
+
+            if ($webhookError !== null) {
+                Inertia::flash('toast', ['type' => 'warning', 'message' => "Token guardado, pero falta el webhook. {$webhookError}"]);
+
+                return back();
+            }
+        }
 
         SaveToast::flash($changed, 'Conexión actualizada.');
 

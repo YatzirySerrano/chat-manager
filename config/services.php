@@ -33,6 +33,17 @@ return [
     | are stored encrypted per connection, never here. Empty values fall back
     | to the defaults below.
     */
+    /*
+    | Telegram Bot API (one bot per connection, token stored encrypted on the
+    | connection). webhook_url overrides the public base URL Telegram calls
+    | (APP_URL otherwise); it must be HTTPS on port 443, 80, 88 or 8443.
+    */
+    'telegram' => [
+        'base_url' => env('TELEGRAM_API_URL') ?: 'https://api.telegram.org',
+        'timeout' => (int) (env('TELEGRAM_TIMEOUT') ?: 15),
+        'webhook_url' => env('TELEGRAM_WEBHOOK_URL'),
+    ],
+
     'meta' => [
         'graph_version' => env('META_GRAPH_VERSION') ?: 'v26.0',
         'base_url' => env('META_GRAPH_BASE_URL') ?: 'https://graph.facebook.com',

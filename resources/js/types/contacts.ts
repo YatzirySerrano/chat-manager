@@ -10,7 +10,8 @@ export type ContactSourceValue =
     | 'import'
     | 'web_chat'
     | 'messenger'
-    | 'instagram';
+    | 'instagram'
+    | 'telegram';
 
 export type ContactOriginTypeValue =
     | 'unknown'

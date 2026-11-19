@@ -308,6 +308,7 @@ const CHANNELS: ConnectionChannel[] = [
     'whatsapp',
     'messenger',
     'instagram',
+    'telegram',
     'web_chat',
 ];
 

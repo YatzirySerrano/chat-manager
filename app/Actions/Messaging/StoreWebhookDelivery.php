@@ -34,10 +34,13 @@ class StoreWebhookDelivery
     public function handle(Connection $connection, string $body, array $payload): WebhookEvent
     {
         $hash = hash('sha256', $body);
-        // Messenger/Instagram bodies have messaging items instead of changes.
-        $fields = implode(',', MetaMessagingPayload::channelOf($payload['object'] ?? null) !== null
-            ? MetaMessagingPayload::fields($payload)
-            : array_values(array_unique(array_column(MetaInboundPayload::changes($payload), 'field'))));
+        // Messenger/Instagram bodies have messaging items instead of changes;
+        // a Telegram update names its kind by its key (message, edited_message…).
+        $fields = implode(',', match (true) {
+            $connection->isTelegram() => array_values(array_filter(array_map('strval', array_keys($payload)), fn (string $key): bool => $key !== 'update_id')),
+            MetaMessagingPayload::channelOf($payload['object'] ?? null) !== null => MetaMessagingPayload::fields($payload),
+            default => array_values(array_unique(array_column(MetaInboundPayload::changes($payload), 'field'))),
+        });
 
         $event = WebhookEvent::query()->where('connection_id', $connection->id)->where('payload_hash', $hash)->first();
         $dispatch = false;

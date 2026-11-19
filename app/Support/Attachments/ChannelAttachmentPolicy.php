@@ -24,6 +24,8 @@ use Illuminate\Http\UploadedFile;
  *   as download link. Instagram: images PNG/JPEG 8 MB; audio AAC/M4A/WAV and
  *   video MP4/OGG/AVI/MOV/WEBM 25 MB; files PDF only, 25 MB; ZIP as download
  *   link. Neither carries text with a file.
+ * - Telegram (bot uploads): photos JPEG/PNG/WebP 10 MB; audio, video,
+ *   documents and ZIP archives natively up to 50 MB, with caption.
  *
  * The real content type is read from the file's bytes (finfo), never from
  * its name or the browser's claim.
@@ -146,6 +148,7 @@ class ChannelAttachmentPolicy
             ConnectionChannel::WebChat => $this->webChat(),
             ConnectionChannel::Messenger => $this->messenger(),
             ConnectionChannel::Instagram => $this->instagram(),
+            ConnectionChannel::Telegram => $this->telegram(),
         };
     }
 
@@ -338,6 +341,21 @@ class ChannelAttachmentPolicy
         }
 
         return new ChannelAttachmentRules(ConnectionChannel::Instagram, $kinds);
+    }
+
+    /**
+     * Telegram Bot API: a bot uploads photos up to 10 MB and any other file
+     * up to 50 MB; GIFs go as documents, so they are not offered as images.
+     */
+    private function telegram(): ChannelAttachmentRules
+    {
+        return new ChannelAttachmentRules(ConnectionChannel::Telegram, [
+            new AttachmentKind('image', MessageType::Image, 'imágenes', $this->extensionsFor(['image/jpeg', 'image/png', 'image/webp']), 10 * self::MB, true),
+            new AttachmentKind('document', MessageType::Document, 'documentos', $this->extensionsFor(['application/pdf', 'text/plain', 'text/csv', ...self::OFFICE]), 50 * self::MB, true),
+            new AttachmentKind('archive', MessageType::Document, 'archivos ZIP', $this->extensionsFor(['application/zip']), 50 * self::MB, true),
+            new AttachmentKind('audio', MessageType::Audio, 'audios', $this->extensionsFor(['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/wav']), 50 * self::MB, true),
+            new AttachmentKind('video', MessageType::Video, 'videos', $this->extensionsFor(['video/mp4', 'video/quicktime', 'video/webm']), 50 * self::MB, true),
+        ]);
     }
 
     /**

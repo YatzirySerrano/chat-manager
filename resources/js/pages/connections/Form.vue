@@ -5,6 +5,7 @@ import {
     ArrowLeft,
     ArrowRightLeft,
     BadgeCheck,
+    Bot,
     Braces,
     Building2,
     Check,
@@ -50,6 +51,7 @@ import ConnectionDiagnosticsCard from '@/components/connections/ConnectionDiagno
 import MetaAccountCard from '@/components/connections/MetaAccountCard.vue';
 import RegisterNumberDialog from '@/components/connections/RegisterNumberDialog.vue';
 import SectionNav from '@/components/connections/SectionNav.vue';
+import TelegramWebhookPanel from '@/components/connections/TelegramWebhookPanel.vue';
 import { connectionFieldHelp as help } from '@/components/connections/connectionFieldHelp';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
 import SecretInput from '@/components/connections/SecretInput.vue';
@@ -106,6 +108,7 @@ import type {
     ConnectionMessageKind,
     ConnectionChannel,
     ConnectionOption,
+    TelegramState,
 } from '@/types';
 import '@/components/admin/admin.css';
 import '@/components/connections/connections.css';
@@ -132,6 +135,8 @@ const props = defineProps<{
     /** Widget choices and limits (web chat only). */
     widgetOptions: WebChatWidgetOptions | null;
     diagnostics: ConnectionDiagnostics | null;
+    /** Bot and webhook state (Telegram only). */
+    telegram?: TelegramState | null;
     can: {
         update: boolean;
         changeStatus: boolean;
@@ -156,6 +161,8 @@ type ConnectionForm = {
     access_token: string;
     app_secret: string;
     webhook_verify_token: string;
+    /** Telegram only: write-only, blank keeps the saved one. */
+    bot_token: string;
     department_ids: number[];
     default_department_id: number | null;
     welcome_enabled: boolean;
@@ -189,6 +196,8 @@ const isEditing = computed(() => connection.value !== null);
 const channelValue = computed(() => props.channel.value as ConnectionChannel);
 
 const isWebChat = computed(() => props.channel.value === 'web_chat');
+/** A Telegram bot: only its token, pasted from @BotFather. */
+const isTelegram = computed(() => props.channel.value === 'telegram');
 /**
  * WhatsApp through WhatsApp Web (QR): no Meta identifiers, secrets, webhook
  * or templates; a session linked by scanning a code instead.
@@ -245,6 +254,7 @@ const form = useForm<ConnectionForm>({
     access_token: '',
     app_secret: '',
     webhook_verify_token: '',
+    bot_token: '',
     department_ids:
         connection.value?.departments.map((department) => department.id) ?? [],
     default_department_id: connection.value?.default_department_id ?? null,
@@ -327,6 +337,17 @@ const validation = useFormValidation(form, {
             255,
             'El token de verificación no debe contener espacios.',
         ),
+        bot_token: [
+            when(
+                () => isTelegram.value && !isEditing.value,
+                [required('Pega el token que te dio @BotFather.')],
+            ),
+            maxLength(100),
+            pattern(
+                /^\d{5,20}:[A-Za-z0-9_-]{30,64}$/,
+                'El token no tiene el formato de Telegram (números, dos puntos y letras).',
+            ),
+        ],
         welcome_message: message('welcome'),
         away_message: message('away'),
         farewell_message: message('farewell'),
@@ -479,7 +500,8 @@ function triggerFor(definition: {
     kind: ConnectionMessageKind;
     trigger: string;
 }): string {
-    return isWhatsappWeb.value && definition.kind === 'farewell'
+    return (isWhatsappWeb.value || isTelegram.value) &&
+        definition.kind === 'farewell'
         ? 'Al cerrar o resolver la conversación; por inactividad, solo si el cliente escribió en las últimas 24 h.'
         : definition.trigger;
 }
@@ -503,7 +525,7 @@ const enabledMessages = computed(
 const automaticMessagesNote = computed(() =>
     isWhatsappWeb.value
         ? 'Se envían solos, como texto, desde el teléfono vinculado.'
-        : isWebChat.value
+        : isWebChat.value || isTelegram.value
           ? 'Se envían solos, como texto, con la conexión activa.'
           : 'Se envían solos, como texto, dentro de la ventana de 24 h de WhatsApp.',
 );
@@ -512,7 +534,7 @@ const automaticMessagesHelp = computed(() => ({
     ...help.automaticMessages,
     warning: isWhatsappWeb.value
         ? 'Solo como texto, desde el teléfono vinculado y mientras la sesión está conectada. El mensaje de ausencia o bienvenida del departamento tiene prioridad.'
-        : isWebChat.value
+        : isWebChat.value || isTelegram.value
           ? 'Solo como texto y mientras la conexión está activa. El mensaje de ausencia o bienvenida del departamento tiene prioridad.'
           : `${help.automaticMessages.warning} El mensaje de ausencia o bienvenida del departamento tiene prioridad.`,
 }));
@@ -612,6 +634,7 @@ function submit(): void {
                 access_token: '',
                 app_secret: '',
                 webhook_verify_token: '',
+                bot_token: '',
             });
 
             // Then the widget, after the connection (one request at a time).
@@ -631,6 +654,11 @@ function submit(): void {
 
         if (!isWhatsapp.value) {
             META_FIELDS.forEach((field) => delete payload[field]);
+        }
+
+        // Blank keeps the saved token; other channels have none.
+        if (!isTelegram.value || payload.bot_token === '') {
+            delete payload.bot_token;
         }
 
         if (!connection.value) {
@@ -773,7 +801,11 @@ const credentialsUnverified = computed(
 const metaDetails = computed(() => {
     const current = connection.value;
 
-    if (!current || current.checks.credentials.state !== 'verified') {
+    if (
+        !current ||
+        isTelegram.value ||
+        current.checks.credentials.state !== 'verified'
+    ) {
         return [];
     }
 
@@ -812,11 +844,17 @@ const nextSteps = computed(() =>
                 'Escanea el código QR con el teléfono.',
                 'Actívala.',
             ]
-          : [
-                'Guarda la conexión con sus credenciales.',
-                'Verifícalas con Meta y registra el número.',
-                'Actívala.',
-            ],
+          : isTelegram.value
+            ? [
+                  'Pega el token de @BotFather y guarda.',
+                  'El webhook se conecta solo.',
+                  'Actívala.',
+              ]
+            : [
+                  'Guarda la conexión con sus credenciales.',
+                  'Verifícalas con Meta y registra el número.',
+                  'Actívala.',
+              ],
 );
 
 const pageTitle = computed(() =>
@@ -841,6 +879,20 @@ const statusHints = computed(() => {
             !current.has_required_credentials
         ) {
             hints.push({ text: 'Vincula el teléfono para poder activarla.' });
+        }
+
+        return hints;
+    }
+
+    if (isTelegram.value) {
+        if (
+            props.can.changeStatus &&
+            !current.is_active &&
+            !current.has_required_credentials
+        ) {
+            hints.push({
+                text: 'Guarda el token del bot para poder activarla.',
+            });
         }
 
         return hints;
@@ -896,6 +948,9 @@ const sections = computed<{ id: string; label: string; icon: LucideIcon }[]>(
             : []),
         ...(isWhatsapp.value
             ? [{ id: 'credenciales', label: 'Credenciales', icon: KeyRound }]
+            : []),
+        ...(isTelegram.value
+            ? [{ id: 'bot-telegram', label: 'Bot', icon: Bot }]
             : []),
         ...(isWebChat.value && connection.value && widget.value
             ? [
@@ -964,6 +1019,7 @@ const SECTION_FIELDS: Record<string, string[]> = {
     credenciales: [...META_FIELDS].filter(
         (field) => field !== 'display_phone_number',
     ),
+    'bot-telegram': ['bot_token'],
     departamentos: ['department_ids', 'default_department_id'],
     mensajes: [
         'welcome_message',
@@ -1002,9 +1058,11 @@ const flaggedSections = computed(() =>
                         ? `${channel.label} · ${provider.label}`
                         : isWebChat
                           ? 'Chat para tu sitio web.'
-                          : isWhatsappWeb
-                            ? 'WhatsApp normal vinculado por código QR.'
-                            : 'WhatsApp Business por la API oficial de Meta.'
+                          : isTelegram
+                            ? 'Un bot de Telegram creado con @BotFather.'
+                            : isWhatsappWeb
+                              ? 'WhatsApp normal vinculado por código QR.'
+                              : 'WhatsApp Business por la API oficial de Meta.'
                 "
             >
                 <template #eyebrow>
@@ -1032,6 +1090,12 @@ const flaggedSections = computed(() =>
                             </span>
                             {{ channel.label }}
                         </span>
+                        <span
+                            v-if="connection?.telegram_bot?.username"
+                            class="text-sm text-muted-foreground"
+                            data-test="telegram-username"
+                            >@{{ connection.telegram_bot.username }}</span
+                        >
                     </div>
                 </template>
                 <template v-if="connection" #actions>
@@ -1056,6 +1120,10 @@ const flaggedSections = computed(() =>
                 <template v-else-if="isWhatsappWeb">
                     La sesión se cerró; el historial se conserva. Al restaurarla
                     quedará inactiva y habrá que vincular el teléfono de nuevo.
+                </template>
+                <template v-else-if="isTelegram">
+                    El bot dejó de recibir; el historial se conserva. Al
+                    restaurarla quedará inactiva.
                 </template>
                 <template v-else-if="isMeta">
                     No envía ni recibe; el historial se conserva. Al restaurarla
@@ -1181,8 +1249,18 @@ const flaggedSections = computed(() =>
                                 :auto-link="autoLink"
                                 @delete="deletion.ask('delete', connection)"
                             />
+                            <TelegramWebhookPanel
+                                v-if="isTelegram && telegram"
+                                :connection-id="connection.id"
+                                :telegram="telegram"
+                                :can-manage="can.update"
+                                :deleted="connection.is_deleted"
+                            />
                             <ConnectionChecklist
-                                :class="isWhatsappWeb && 'border-t pt-5'"
+                                :class="
+                                    (isWhatsappWeb || isTelegram) &&
+                                    'border-t pt-5'
+                                "
                                 :checks="connection.checks"
                                 :monitoring="connection.monitoring"
                                 :channel="connection.channel.value"
@@ -1442,6 +1520,44 @@ const flaggedSections = computed(() =>
                                 :connection="connection"
                                 :can-manage="can.update"
                             />
+                        </SettingsSection>
+
+                        <SettingsSection
+                            v-if="isTelegram"
+                            id="bot-telegram"
+                            class="scroll-mt-32 xl:scroll-mt-24"
+                            :icon="Bot"
+                            title="Bot de Telegram"
+                            description="Créalo en Telegram con @BotFather y pega aquí su token."
+                        >
+                            <FormField
+                                id="connection-bot-token"
+                                label="Token del bot"
+                                :error="validation.error('bot_token')"
+                                :hint="
+                                    connection
+                                        ? 'Déjalo vacío para conservar el guardado.'
+                                        : 'Se guarda cifrado y no se vuelve a mostrar.'
+                                "
+                            >
+                                <SecretInput
+                                    id="connection-bot-token"
+                                    v-model="form.bot_token"
+                                    :saved="
+                                        connection?.secrets.access_token ??
+                                        false
+                                    "
+                                    :disabled="!can.update"
+                                    :field-attrs="
+                                        validation.field(
+                                            'bot_token',
+                                            'connection-bot-token',
+                                        )
+                                    "
+                                    :maxlength="100"
+                                    placeholder="123456789:AA…"
+                                />
+                            </FormField>
                         </SettingsSection>
 
                         <SettingsSection

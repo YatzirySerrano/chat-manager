@@ -19,7 +19,7 @@ import '@/components/admin/admin.css';
 /**
  * First step of "Nueva conexión": choose the channel and, for WhatsApp, how
  * the number is connected (the Cloud API, or WhatsApp Web by QR when the
- * server enables it). WhatsApp and the web chat open their creation form;
+ * server enables it). WhatsApp, Telegram and the web chat open their creation form;
  * Facebook Messenger and Instagram open the
  * official Meta authorization (requirements + "Autorizar acceso"). When the
  * server has no Meta app configured, those cards say so (the page explains
@@ -67,6 +67,12 @@ const baseChoices: Choice[] = [
         title: 'Chat web',
         description:
             'Un widget de chat para insertar en tu sitio web con un fragmento de código.',
+    },
+    {
+        key: 'telegram',
+        channel: 'telegram',
+        title: 'Telegram',
+        description: 'Un bot de Telegram creado con @BotFather.',
     },
     {
         key: 'messenger',

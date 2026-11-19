@@ -16,7 +16,8 @@ use App\Services\Storage\MediaPaths;
  * file name. Sizes and types follow config/whatsapp.php for WhatsApp and
  * the channel's own limits for Messenger and Instagram (self::META_INBOUND):
  * images up to 8 MB (GIF and WebP included, so stickers and "Like" thumbs
- * are kept), audio, video and files up to 25 MB.
+ * are kept), audio, video and files up to 25 MB. Telegram files follow
+ * self::TELEGRAM_INBOUND (a bot downloads up to 20 MB with getFile).
  *
  * The write goes through MediaDisk: it is verified (result, existence and
  * size) and an unready or failing disk raises StorageUnavailable instead of
@@ -81,6 +82,20 @@ class MediaStorage
             'video' => ['mimes' => ['video/mp4', 'video/quicktime', 'video/webm', 'video/ogg', 'video/x-msvideo'], 'max_bytes' => 25 * self::MB],
             'document' => ['mimes' => ['application/pdf'], 'max_bytes' => 25 * self::MB],
         ],
+    ];
+
+    /**
+     * Media customers may send through a Telegram bot, per message kind (the
+     * Bot API lets a bot download files up to 20 MB).
+     *
+     * @var array<string, array{mimes: list<string>, max_bytes: int}>
+     */
+    private const TELEGRAM_INBOUND = [
+        'image' => ['mimes' => ['image/jpeg', 'image/png', 'image/gif', 'image/webp'], 'max_bytes' => 20 * self::MB],
+        'sticker' => ['mimes' => ['image/jpeg', 'image/png', 'image/webp'], 'max_bytes' => 20 * self::MB],
+        'audio' => ['mimes' => ['audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/wav', 'audio/webm', 'audio/flac', 'audio/x-flac', 'video/mp4', 'video/webm'], 'max_bytes' => 20 * self::MB],
+        'video' => ['mimes' => ['video/mp4', 'video/quicktime', 'video/webm', 'video/3gpp', 'video/x-matroska', 'video/x-msvideo'], 'max_bytes' => 20 * self::MB],
+        'document' => ['mimes' => ['application/pdf', 'text/plain', 'text/csv', ...self::OFFICE, 'application/x-rar', 'application/vnd.rar', 'application/x-7z-compressed', 'application/gzip', 'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'audio/mpeg', 'audio/ogg', 'audio/mp4'], 'max_bytes' => 20 * self::MB],
     ];
 
     /**
@@ -174,9 +189,11 @@ class MediaStorage
      */
     public function rules(string $kind, ?ConnectionChannel $channel = null): array
     {
-        $rules = $channel !== null && isset(self::META_INBOUND[$channel->value])
-            ? (self::META_INBOUND[$channel->value][$kind] ?? null)
-            : config("whatsapp.media.types.{$kind}");
+        $rules = match (true) {
+            $channel === ConnectionChannel::Telegram => self::TELEGRAM_INBOUND[$kind] ?? null,
+            $channel !== null && isset(self::META_INBOUND[$channel->value]) => self::META_INBOUND[$channel->value][$kind] ?? null,
+            default => config("whatsapp.media.types.{$kind}"),
+        };
 
         if (! is_array($rules)) {
             throw new MediaRejected('type_not_allowed', 'Este tipo de mensaje no admite archivos.');

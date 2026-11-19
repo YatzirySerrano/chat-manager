@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Actions\Messaging\ProcessMetaMessagingPayload;
+use App\Actions\Messaging\ProcessTelegramUpdate;
 use App\Actions\Messaging\ProcessWebhookPayload;
 use App\Enums\ConnectionChannel;
 use App\Enums\WebhookEventStatus;
@@ -51,7 +52,7 @@ class ProcessWhatsAppWebhook implements ShouldQueue
         return array_values(array_map('intval', (array) config('whatsapp.webhooks.backoff', [10, 30, 120, 600])));
     }
 
-    public function handle(ProcessWebhookPayload $process, ProcessMetaMessagingPayload $messaging): void
+    public function handle(ProcessWebhookPayload $process, ProcessMetaMessagingPayload $messaging, ProcessTelegramUpdate $telegram): void
     {
         $startedAt = microtime(true);
         $event = WebhookEvent::query()->with('channelConnection')->find($this->webhookEventId);
@@ -73,10 +74,13 @@ class ProcessWhatsAppWebhook implements ShouldQueue
 
         try {
             // Messenger and Instagram events are stored per account by the
-            // app-level webhook (webhooks/meta) and share this queue and log.
-            $summary = in_array($connection->channel, [ConnectionChannel::Messenger, ConnectionChannel::Instagram], true)
-                ? $messaging->handle($connection, $payload)
-                : $process->handle($connection, $payload);
+            // app-level webhook (webhooks/meta), Telegram updates per bot
+            // (webhooks/telegram); all share this queue and log.
+            $summary = match (true) {
+                in_array($connection->channel, [ConnectionChannel::Messenger, ConnectionChannel::Instagram], true) => $messaging->handle($connection, $payload),
+                $connection->isTelegram() => $telegram->handle($connection, $payload),
+                default => $process->handle($connection, $payload),
+            };
         } catch (Throwable $exception) {
             $event->forceFill(['error' => self::describe($exception)])->save();
 

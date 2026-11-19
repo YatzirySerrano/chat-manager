@@ -54,7 +54,7 @@ class ConnectionMonitoring
                     ? ['at' => $attempt['at'], 'outcome' => $attempt['value']['outcome']]
                     : null,
             ],
-            'webhook' => $connection->channel !== ConnectionChannel::Whatsapp || $connection->isWhatsAppWeb() ? null : [
+            'webhook' => ! $connection->isTelegram() && ($connection->channel !== ConnectionChannel::Whatsapp || $connection->isWhatsAppWeb()) ? null : [
                 'verified_at' => $connection->webhook_verified_at?->toIso8601String(),
                 'last_received_at' => $connection->last_webhook_at?->toIso8601String(),
                 'fresh' => self::isFresh($connection->last_webhook_at),

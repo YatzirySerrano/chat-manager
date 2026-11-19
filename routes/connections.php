@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\ConnectionController;
 use App\Http\Controllers\Admin\ConnectionConversationController;
 use App\Http\Controllers\Admin\ConnectionStatusController;
 use App\Http\Controllers\Admin\ConnectionVerificationController;
+use App\Http\Controllers\Admin\TelegramBotController;
 use App\Http\Controllers\Admin\WebChatWidgetController;
 use App\Http\Controllers\Admin\WhatsAppWebSessionController;
 use Illuminate\Support\Facades\Route;
@@ -27,6 +28,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('connections/{connection}/conversations/move', [ConnectionConversationController::class, 'move'])->middleware('throttle:20,1')->name('connections.conversations.move');
     Route::patch('connections/{connection}/status', [ConnectionStatusController::class, 'update'])->name('connections.status.update');
     Route::post('connections/{connection}/verify', [ConnectionVerificationController::class, 'store'])->middleware('throttle:10,1')->name('connections.verify');
+    Route::post('connections/{connection}/telegram/webhook', [TelegramBotController::class, 'reconnect'])->middleware('throttle:10,1')->name('connections.telegram.webhook');
     Route::put('connections/{connection}/widget', [WebChatWidgetController::class, 'update'])->name('connections.widget.update');
     Route::post('connections/{connection}/widget/rotate-key', [WebChatWidgetController::class, 'rotateKey'])->middleware('throttle:10,1')->name('connections.widget.rotate-key');
     Route::post('connections/{connection}/widget/rotate-identity-secret', [WebChatWidgetController::class, 'rotateIdentitySecret'])->middleware('throttle:10,1')->name('connections.widget.rotate-identity-secret');

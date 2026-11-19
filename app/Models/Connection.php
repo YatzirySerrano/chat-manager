@@ -43,17 +43,17 @@ use Illuminate\Support\Str;
  * @property string|null $phone_number_id
  * @property string|null $business_account_id
  * @property string|null $verified_name
- * @property string|null $external_account_id Facebook page id (Messenger) or Instagram professional account id; unique per channel.
- * @property string|null $external_account_name
+ * @property string|null $external_account_id Facebook page id (Messenger), Instagram professional account id or Telegram bot id; unique per channel.
+ * @property string|null $external_account_name Page or account name; the bot's username (without @) for Telegram.
  * @property string|null $external_account_picture Stored path or URL of the account picture.
  * @property list<string>|null $granted_scopes Permissions Meta granted when the account was authorized.
  * @property Carbon|null $token_expires_at Null when the token does not expire (page tokens from a long-lived user token).
  * @property Carbon|null $authorized_at
  * @property int|null $authorized_by_user_id
  * @property string|null $meta_app_id
- * @property string|null $access_token
+ * @property string|null $access_token Meta access token, or the Telegram bot token.
  * @property string|null $app_secret
- * @property string|null $webhook_verify_token
+ * @property string|null $webhook_verify_token Meta verify token, or the secret_token Telegram sends with every update.
  * @property string|null $webhook_key Random opaque identifier of the webhook URL (not a secret; events are signed).
  * @property bool $is_active
  * @property int|null $default_department_id
@@ -304,7 +304,7 @@ class Connection extends Model
         return match ($this->channel) {
             ConnectionChannel::Whatsapp => filled($this->phone_number_id) && filled($this->business_account_id) && filled($this->access_token),
             ConnectionChannel::Messenger, ConnectionChannel::Instagram => filled($this->external_account_id) && filled($this->access_token),
-            ConnectionChannel::WebChat => false,
+            ConnectionChannel::WebChat, ConnectionChannel::Telegram => false,
         };
     }
 
@@ -319,6 +319,14 @@ class Connection extends Model
     public function isWebChat(): bool
     {
         return $this->channel === ConnectionChannel::WebChat;
+    }
+
+    /**
+     * Whether the connection is a Telegram bot (Bot API, token from BotFather).
+     */
+    public function isTelegram(): bool
+    {
+        return $this->channel === ConnectionChannel::Telegram;
     }
 
     /**
@@ -382,6 +390,8 @@ class Connection extends Model
             ConnectionChannel::Whatsapp => $this->hasRequiredCredentials(),
             ConnectionChannel::WebChat => ($widget = $this->loadMissing('webChatWidget')->webChatWidget) !== null && $widget->allowed_origins !== [],
             ConnectionChannel::Messenger, ConnectionChannel::Instagram => $this->hasRequiredCredentials(),
+            // A bot whose token Telegram accepted (getMe) when it was saved.
+            ConnectionChannel::Telegram => filled($this->access_token) && filled($this->external_account_id),
         };
     }
 
@@ -417,6 +427,9 @@ class Connection extends Model
             $this->isWebChat() && ! $this->isConfigured() => "La conexión de {$channel} «{$this->name}» no tiene configurado su widget ni sus dominios autorizados: un administrador debe completarlos antes de enviar mensajes.",
             $this->isWebChat() => null,
             $this->isWhatsAppWeb() => $this->webSessionBlockReason(),
+            $this->isTelegram() && ! $this->isConfigured() => "La conexión de Telegram «{$this->name}» no tiene guardado el token del bot: un administrador debe completarlo antes de enviar mensajes.",
+            $this->isTelegram() && filled($this->credentials_error) => "Telegram rechazó el token del bot de «{$this->name}»: un administrador debe pegar uno vigente desde Conexiones.",
+            $this->isTelegram() => null,
             $this->usesMetaAuthorization() && ! $this->hasRequiredCredentials() => "La conexión de {$channel} «{$this->name}» no tiene una autorización vigente de Meta: un administrador debe volver a autorizarla desde Conexiones antes de enviar mensajes.",
             ! $this->hasRequiredCredentials() => "La conexión de {$channel} «{$this->name}» no tiene guardados sus identificadores o su token de acceso de Meta: un administrador debe completarlos antes de enviar mensajes.",
             filled($this->credentials_error) => "Meta rechazó las credenciales de la conexión de {$channel} «{$this->name}»: un administrador debe corregirlas y verificarlas antes de enviar mensajes.",

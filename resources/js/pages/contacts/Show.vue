@@ -111,6 +111,7 @@ const KNOWN_CHANNELS: ConnectionChannel[] = [
     'whatsapp',
     'messenger',
     'instagram',
+    'telegram',
     'web_chat',
 ];
 

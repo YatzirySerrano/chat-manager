@@ -148,6 +148,7 @@ class MediaPaths
             ConnectionChannel::WebChat => 'Chat web',
             ConnectionChannel::Messenger => 'Messenger',
             ConnectionChannel::Instagram => 'Instagram',
+            ConnectionChannel::Telegram => 'Telegram',
             default => 'WhatsApp',
         };
     }

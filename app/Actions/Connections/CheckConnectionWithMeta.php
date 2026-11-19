@@ -58,7 +58,7 @@ class CheckConnectionWithMeta
         $outcome = match ($connection->channel) {
             ConnectionChannel::Whatsapp => $this->whatsapp($connection),
             ConnectionChannel::Messenger, ConnectionChannel::Instagram => $this->metaAccount($connection),
-            ConnectionChannel::WebChat => self::SKIPPED,
+            ConnectionChannel::WebChat, ConnectionChannel::Telegram => self::SKIPPED,
         };
 
         if ($outcome !== self::SKIPPED) {

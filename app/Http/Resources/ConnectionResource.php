@@ -75,6 +75,11 @@ class ConnectionResource extends JsonResource
                 fn (): array => $this->widgetSettings(),
             ),
             'meta_account' => $this->when($this->usesMetaAuthorization(), fn (): array => $this->metaAccount()),
+            'telegram_bot' => $this->when($this->isTelegram(), fn (): array => [
+                'id' => $this->external_account_id,
+                'username' => $this->external_account_name,
+                'name' => $this->verified_name,
+            ]),
             // WhatsApp Web (QR): real state of the session (null for every other
             // modality). Never the QR nor anything of the session's credentials.
             'whatsapp_web' => $this->whatsAppWebSummary(),
@@ -257,7 +262,11 @@ class ConnectionResource extends JsonResource
      */
     private function describe(ConnectionHealth $health): array
     {
-        $webChat = $this->isWebChat() ? self::webChatHealth($health) : null;
+        $webChat = match (true) {
+            $this->isWebChat() => self::webChatHealth($health),
+            $this->isTelegram() => self::telegramHealth($health),
+            default => null,
+        };
 
         return [
             'value' => $health->value,
@@ -265,6 +274,24 @@ class ConnectionResource extends JsonResource
             'description' => $webChat['description'] ?? $health->description(),
             'tone' => $health->tone(),
         ];
+    }
+
+    /**
+     * Wording of the health of a Telegram bot, which has a token and a
+     * webhook instead of Meta credentials.
+     *
+     * @return array{label: string, description: string}|null
+     */
+    private static function telegramHealth(ConnectionHealth $health): ?array
+    {
+        return match ($health) {
+            ConnectionHealth::NotConfigured => ['label' => 'Sin configurar', 'description' => 'Pega el token del bot que te dio @BotFather.'],
+            ConnectionHealth::Configured, ConnectionHealth::CredentialsVerified => ['label' => 'Token verificado', 'description' => 'Telegram aceptó el token; falta conectar el webhook.'],
+            ConnectionHealth::CredentialsInvalid => ['label' => 'Token inválido', 'description' => 'Telegram rechazó el token del bot. Pega uno vigente.'],
+            ConnectionHealth::Receiving => ['label' => 'Recibiendo', 'description' => 'El webhook está conectado; aún no hay respuestas entregadas.'],
+            ConnectionHealth::Operational => ['label' => 'Operativa', 'description' => 'Se confirmó la recepción y el envío de mensajes.'],
+            default => null,
+        };
     }
 
     /**

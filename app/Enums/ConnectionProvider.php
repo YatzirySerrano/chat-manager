@@ -5,7 +5,8 @@ namespace App\Enums;
 /**
  * API used to operate a connection. WhatsappWeb is the WhatsApp Web
  * protocol of a phone linked by QR (docs/whatsapp-web-qr.md): enabled per
- * server and never the default.
+ * server and never the default. TelegramBot is a Telegram bot operated
+ * through the Bot API with the token BotFather gave.
  */
 enum ConnectionProvider: string
 {
@@ -14,6 +15,7 @@ enum ConnectionProvider: string
     case MetaMessenger = 'meta_messenger';
     case MetaInstagram = 'meta_instagram';
     case WhatsappWeb = 'whatsapp_web';
+    case TelegramBot = 'telegram_bot';
 
     public function label(): string
     {
@@ -23,6 +25,7 @@ enum ConnectionProvider: string
             self::MetaMessenger => 'Messenger Platform (Meta)',
             self::MetaInstagram => 'Instagram Messaging API (Meta)',
             self::WhatsappWeb => 'WhatsApp Web (QR)',
+            self::TelegramBot => 'Telegram Bot API',
         };
     }
 
@@ -34,16 +37,18 @@ enum ConnectionProvider: string
             self::MetaMessenger => ConnectionChannel::Messenger,
             self::MetaInstagram => ConnectionChannel::Instagram,
             self::WhatsappWeb => ConnectionChannel::Whatsapp,
+            self::TelegramBot => ConnectionChannel::Telegram,
         };
     }
 
     /**
      * Whether the connection is operated through a Meta API with Meta
-     * credentials (every provider except the web widget and WhatsApp Web).
+     * credentials (every provider except the web widget, WhatsApp Web and
+     * the Telegram Bot API).
      */
     public function usesMetaApi(): bool
     {
-        return ! in_array($this, [self::WebWidget, self::WhatsappWeb], true);
+        return ! in_array($this, [self::WebWidget, self::WhatsappWeb, self::TelegramBot], true);
     }
 
     /**

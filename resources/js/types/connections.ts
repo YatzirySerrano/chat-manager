@@ -7,7 +7,8 @@ export type ConnectionChannel =
     | 'whatsapp'
     | 'web_chat'
     | 'messenger'
-    | 'instagram';
+    | 'instagram'
+    | 'telegram';
 
 export type WebChatPosition = 'right' | 'left';
 
@@ -161,6 +162,8 @@ export type Connection = {
     web_chat_widget?: WebChatWidgetSettings | null;
     /** Account authorized with Meta (only Messenger and Instagram connections). */
     meta_account?: MetaAccount;
+    /** The bot of a Telegram connection (never its token). */
+    telegram_bot?: TelegramBot;
     /**
      * Session of a WhatsApp Web (QR) connection (provider `whatsapp_web`);
      * absent or null for every other way of connecting.
@@ -219,6 +222,29 @@ export type ConnectionStats = {
 };
 
 export type ConnectionOption = { value: string; label: string };
+
+/** Bot of a Telegram connection, as Telegram returned it (getMe). */
+export type TelegramBot = {
+    id: string | null;
+    username: string | null;
+    name: string | null;
+};
+
+/** What Telegram says about the bot's webhook (getWebhookInfo). */
+export type TelegramWebhookStatus = {
+    checked: boolean;
+    registered: boolean;
+    url_matches: boolean;
+    pending_update_count: number;
+    last_error_message: string | null;
+    last_error_at: string | null;
+    error: string | null;
+};
+
+export type TelegramState = {
+    bot: TelegramBot;
+    webhook: TelegramWebhookStatus | null;
+};
 
 /** Activation checklist of a connection (evidence only, never secrets). */
 /** An operational warning about a connection, in plain language. */

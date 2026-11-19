@@ -275,6 +275,10 @@
     background: oklch(0.6 0.2 5);
 }
 
+.list-channel-telegram {
+    background: oklch(0.66 0.14 235);
+}
+
 .list-channel-web_chat {
     background: var(--primary);
 }

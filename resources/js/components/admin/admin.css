@@ -174,7 +174,7 @@
     }
 
     /* ───────────────────────── Channel identity ─────────────────────────
-  `data-channel-theme="whatsapp|messenger|instagram|web_chat"` on a card sets the
+  `data-channel-theme="whatsapp|messenger|instagram|telegram|web_chat"` on a card sets the
   channel colors; `.channel-tile` and `.channel-wash` inside it use them.
 */
     [data-channel-theme] {
@@ -195,6 +195,11 @@
 
     [data-channel-theme='instagram'] {
         --channel-bg: oklch(0.6 0.22 0);
+        --channel-ink: white;
+    }
+
+    [data-channel-theme='telegram'] {
+        --channel-bg: oklch(0.66 0.14 235);
         --channel-ink: white;
     }
 

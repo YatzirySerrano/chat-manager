@@ -32,7 +32,7 @@ class UpdateConnection
      * Nothing is written (no save, no department sync, no audit entry) when
      * the attributes, the provided secrets and the departments stay the same.
      *
-     * @param  array{attributes: array<string, mixed>, secrets: array<string, string>, department_ids: list<int>}  $data
+     * @param  array{attributes: array<string, mixed>, secrets: array<string, string>, department_ids: list<int>, bot?: array<string, mixed>}  $data
      * @return bool Whether anything changed.
      */
     public function handle(Connection $connection, array $data, User $actor): bool
@@ -57,10 +57,17 @@ class UpdateConnection
                 $connection->forceFill(array_fill_keys(self::VERIFIED_PROFILE, null));
             }
 
+            // A new Telegram token was just accepted by getMe: its bot is the verified identity.
+            if ($credentialsChanged && ($data['bot'] ?? []) !== []) {
+                $connection->forceFill($data['bot']);
+            }
+
             try {
                 $connection->save();
             } catch (UniqueConstraintViolationException) {
-                throw ValidationException::withMessages(['phone_number_id' => 'Este Phone number ID ya está registrado en otra conexión.']);
+                throw ValidationException::withMessages($connection->isTelegram()
+                    ? ['bot_token' => 'Este bot ya está registrado en otra conexión.']
+                    : ['phone_number_id' => 'Este Phone number ID ya está registrado en otra conexión.']);
             }
 
             if ($credentialsChanged) {

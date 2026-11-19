@@ -391,7 +391,11 @@ function credentialsHint(connection: Connection): {
     tone: string;
     title?: string;
 } | null {
-    if (connection.channel.value === 'web_chat' || isWhatsAppWeb(connection)) {
+    if (
+        connection.channel.value === 'web_chat' ||
+        connection.channel.value === 'telegram' ||
+        isWhatsAppWeb(connection)
+    ) {
         return null;
     }
 
@@ -435,6 +439,12 @@ function phoneLabel(connection: Connection): string {
         return origins.length === 1
             ? origins[0]
             : `${origins[0]} y ${origins.length - 1} más`;
+    }
+
+    if (connection.telegram_bot) {
+        return connection.telegram_bot.username
+            ? `@${connection.telegram_bot.username}`
+            : 'Sin bot conectado';
     }
 
     if (isWhatsAppWeb(connection)) {

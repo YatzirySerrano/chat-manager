@@ -15,6 +15,7 @@ use App\Enums\MessageStatus;
 use App\Enums\MessageType;
 use App\Events\Messaging\MessageRecorded;
 use App\Jobs\DownloadInboundMedia;
+use App\Jobs\DownloadTelegramMedia;
 use App\Jobs\DownloadWhatsAppWebMedia;
 use App\Jobs\SendAwayInOpenConversation;
 use App\Jobs\SendChatbotKeywordReply;
@@ -34,6 +35,7 @@ use App\Services\Conversations\ConversationRouter;
 use App\Services\Conversations\QueueRules;
 use App\Services\Conversations\ResponseClock;
 use App\Services\Meta\MediaFileName;
+use App\Services\Telegram\TelegramBotClient;
 use App\Services\WhatsAppWeb\WhatsAppWebAttachments;
 use App\Support\InboundContactRegistration;
 use App\Support\InboundMessage;
@@ -64,10 +66,12 @@ use Illuminate\Support\Str;
  *    the customer uploaded to this platform (web chat, content source
  *    self::UPLOADED) is registered pending too, but no download is queued:
  *    the caller stores it right after the receipt (ReceiveVisitorMessage).
+ *    A Telegram file keeps its file_id encrypted on the attachment and is
+ *    downloaded by DownloadTelegramMedia.
  *
- * Every channel (WhatsApp, Messenger, Instagram, web chat) enters through
- * here; the provider message id is unique across channels (wamid, Meta
- * "mid", web.in.*), see MetaMessagingPayload::messageId().
+ * Every channel (WhatsApp, Messenger, Instagram, web chat, Telegram) enters
+ * through here; the provider message id is unique across channels (wamid,
+ * Meta "mid", web.in.*, tg.*), see MetaMessagingPayload::messageId().
  *
  * A repeated delivery of an already stored message is answered before the
  * directory is touched, so duplicates never update the contact's
@@ -151,8 +155,9 @@ class ReceiveInboundMessage
                 ], fn (mixed $value): bool => $value !== null) : null,
                 'profile_name' => $inbound->sender->profileName,
                 // PSID / IGSID: scoped to this page or Instagram account, so
-                // replies of this conversation go back to this exact id.
-                'sender_external_id' => in_array($connection->channel, [ConnectionChannel::Messenger, ConnectionChannel::Instagram], true) ? $inbound->sender->externalId : null,
+                // replies of this conversation go back to this exact id; the
+                // Telegram user id is the bot's private chat with the person.
+                'sender_external_id' => in_array($connection->channel, [ConnectionChannel::Messenger, ConnectionChannel::Instagram, ConnectionChannel::Telegram], true) ? $inbound->sender->externalId : null,
             ], fn (mixed $value): bool => $value !== null),
         ]);
         $message->forceFill(['sent_at' => $sentAt])->save();
@@ -208,10 +213,13 @@ class ReceiveInboundMessage
         }
 
         if ($attachment !== null && $attachment->status === AttachmentStatus::Pending && ($inbound->content['source'] ?? null) !== self::UPLOADED) {
-            // A WhatsApp Web file is fetched from the private service, never from Meta.
-            $attachment->provider_reference !== null
-                ? DownloadWhatsAppWebMedia::dispatch($attachment->id)->afterCommit()
-                : DownloadInboundMedia::dispatch($attachment->id)->afterCommit();
+            // A WhatsApp Web file is fetched from the private service and a
+            // Telegram file from the Bot API, never from Meta.
+            match (true) {
+                $connection->isTelegram() => DownloadTelegramMedia::dispatch($attachment->id)->afterCommit(),
+                $attachment->provider_reference !== null => DownloadWhatsAppWebMedia::dispatch($attachment->id)->afterCommit(),
+                default => DownloadInboundMedia::dispatch($attachment->id)->afterCommit(),
+            };
         }
 
         return new InboundMessageReceipt($registration, $conversation->refresh(), $message, $outcome);
@@ -295,6 +303,12 @@ class ReceiveInboundMessage
             return WhatsAppWebAttachments::create($message, $inbound->content ?? [], $descriptor);
         }
 
+        // Telegram: the file_id is kept encrypted on the attachment (it is
+        // useless without the bot token, but never needs to reach the browser).
+        if (($inbound->content['source'] ?? null) === 'telegram') {
+            return self::telegramAttachment($message, $inbound->content ?? [], $descriptor ?? (is_array($inbound->content['descriptor'] ?? null) ? $inbound->content['descriptor'] : null));
+        }
+
         $uploaded = ($inbound->content['source'] ?? null) === self::UPLOADED;
 
         // WhatsApp announces a media id; Messenger and Instagram a URL of
@@ -319,6 +333,42 @@ class ReceiveInboundMessage
             'size_bytes' => $uploaded && is_int($inbound->content['file_size'] ?? null) ? $inbound->content['file_size'] : null,
             'sha256' => is_string($inbound->content['sha256'] ?? null) && strlen($inbound->content['sha256']) <= 64 ? $inbound->content['sha256'] : null,
             'status' => AttachmentStatus::Pending,
+        ])->save();
+
+        return $attachment;
+    }
+
+    /**
+     * The attachment of a Telegram file: pending with its descriptor, or
+     * unavailable when Telegram sent no file_id or announced a file larger
+     * than a bot may download (20 MB).
+     *
+     * @param  array<array-key, mixed>  $content
+     * @param  array<array-key, mixed>|null  $descriptor
+     */
+    private static function telegramAttachment(Message $message, array $content, ?array $descriptor): MessageAttachment
+    {
+        $size = is_int($descriptor['file_size'] ?? null) ? $descriptor['file_size'] : null;
+        $missing = match (true) {
+            ! is_string($descriptor['file_id'] ?? null) => 'expired',
+            $size !== null && $size > TelegramBotClient::DOWNLOAD_MAX_BYTES => 'too_large',
+            default => null,
+        };
+
+        $attachment = new MessageAttachment;
+        $attachment->forceFill([
+            'message_id' => $message->id,
+            'whatsapp_media_id' => null,
+            'provider_reference' => $missing === null ? $descriptor : null,
+            'disk' => (string) config('filesystems.media_disk', 'local'),
+            'path' => null,
+            'mime_type' => WhatsAppWebAttachments::mime($content['mime_type'] ?? null),
+            'file_name' => is_string($content['filename'] ?? null) ? MediaFileName::sanitize($content['filename']) : null,
+            'width' => is_int($content['width'] ?? null) && is_int($content['height'] ?? null) ? $content['width'] : null,
+            'height' => is_int($content['width'] ?? null) && is_int($content['height'] ?? null) ? $content['height'] : null,
+            'size_bytes' => $size,
+            'status' => $missing === null ? AttachmentStatus::Pending : AttachmentStatus::Unavailable,
+            'error_code' => $missing,
         ])->save();
 
         return $attachment;

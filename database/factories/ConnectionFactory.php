@@ -177,6 +177,33 @@ class ConnectionFactory extends Factory
         return $this->metaAccount(ConnectionChannel::Instagram, ConnectionProvider::MetaInstagram, now()->addDays(60));
     }
 
+    /**
+     * An active Telegram bot connection: its bot token (verified with getMe),
+     * the bot's id and username, and the webhook registered with a secret.
+     */
+    public function telegram(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'channel' => ConnectionChannel::Telegram,
+            'provider' => ConnectionProvider::TelegramBot,
+            'display_phone_number' => null,
+            'phone_number_id' => null,
+            'business_account_id' => null,
+            'access_token' => '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw',
+            'app_secret' => null,
+            'webhook_verify_token' => 'telegram-secret-token-value',
+            'is_active' => true,
+        ])->afterMaking(function (Connection $connection): void {
+            $connection->forceFill([
+                'external_account_id' => (string) fake()->unique()->numerify('12345####'),
+                'external_account_name' => 'tienda_bot',
+                'verified_name' => 'Tienda',
+                'credentials_verified_at' => now()->subDay(),
+                'webhook_verified_at' => now()->subDay(),
+            ]);
+        });
+    }
+
     private function metaAccount(ConnectionChannel $channel, ConnectionProvider $provider, mixed $expiresAt): static
     {
         return $this->state(fn (array $attributes) => [

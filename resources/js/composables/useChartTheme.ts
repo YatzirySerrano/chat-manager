@@ -53,6 +53,7 @@ const channelTokens: Record<ConnectionChannel, string> = {
     whatsapp: 'var(--chart-cat-3)',
     messenger: 'var(--chart-cat-7)',
     instagram: 'var(--chart-cat-5)',
+    telegram: 'var(--chart-cat-2)',
 };
 
 export function channelColor(channel: ConnectionChannel | null): string {

@@ -74,7 +74,7 @@ class ReconcileStuckDeliveries
             $message->forceFill([
                 'status' => MessageStatus::Failed,
                 'error_code' => self::CODE,
-                'error_message' => 'No se pudo confirmar si WhatsApp recibió el mensaje. Verifica con el cliente antes de reintentarlo: podría recibirlo dos veces.',
+                'error_message' => 'No se pudo confirmar si '.($conversation->channelConnection?->channel->label() ?? 'WhatsApp').' recibió el mensaje. Verifica con el cliente antes de reintentarlo: podría recibirlo dos veces.',
                 'failed_at' => now(),
             ])->save();
 

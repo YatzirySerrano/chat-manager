@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { Globe, MessageCircle } from '@lucide/vue';
+import { Globe, MessageCircle, Send } from '@lucide/vue';
 import type { ConnectionChannel } from '@/types';
 
 /**
  * Icon of a connection channel. Lucide has no brand icons, so Messenger and
  * Instagram use simple outline glyphs drawn like the rest of the icon set
- * (24×24, currentColor stroke); size and color come from the class.
+ * (24×24, currentColor stroke); Telegram is the paper plane. Size and color
+ * come from the class.
  */
 defineProps<{ channel: ConnectionChannel }>();
 </script>
@@ -13,6 +14,7 @@ defineProps<{ channel: ConnectionChannel }>();
 <template>
     <MessageCircle v-if="channel === 'whatsapp'" />
     <Globe v-else-if="channel === 'web_chat'" />
+    <Send v-else-if="channel === 'telegram'" />
     <svg
         v-else-if="channel === 'messenger'"
         xmlns="http://www.w3.org/2000/svg"

@@ -18,6 +18,8 @@ enum ContactSource: string
     case Messenger = 'messenger';
     /** Registered automatically from an Instagram direct message. */
     case Instagram = 'instagram';
+    /** Registered automatically from a Telegram bot message. */
+    case Telegram = 'telegram';
 
     public function label(): string
     {
@@ -28,6 +30,7 @@ enum ContactSource: string
             self::WebChat => 'Creado al escribir por Chat web',
             self::Messenger => 'Creado al escribir por Messenger',
             self::Instagram => 'Creado al escribir por Instagram',
+            self::Telegram => 'Creado al escribir por Telegram',
         };
     }
 

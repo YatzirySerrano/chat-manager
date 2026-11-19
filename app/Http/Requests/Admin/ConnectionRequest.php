@@ -8,6 +8,8 @@ use App\Enums\ConnectionProvider;
 use App\Enums\RecordState;
 use App\Models\Connection;
 use App\Models\Department;
+use App\Services\Telegram\TelegramBotClient;
+use App\Services\Telegram\TelegramException;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -18,7 +20,9 @@ use Illuminate\Validation\Validator;
  * write-only: a blank value keeps the stored one. The channel is chosen when
  * the connection is created and never changes; the Meta identifiers and
  * secrets only exist for WhatsApp (a web chat connection is configured
- * through its widget, see WebChatWidgetRequest).
+ * through its widget, see WebChatWidgetRequest). A Telegram connection only
+ * has its bot token (`bot_token`, write-only): it is checked with getMe while
+ * validating, and the bot's id, username and name are saved with it.
  */
 class ConnectionRequest extends FormRequest
 {
@@ -48,6 +52,18 @@ class ConnectionRequest extends FormRequest
      */
     public const META_FIELDS = ['display_phone_number', 'phone_number_id', 'business_account_id', 'meta_app_id', 'access_token', 'app_secret', 'webhook_verify_token'];
 
+    /**
+     * Shape of a token from BotFather: the bot id, a colon and 35 characters.
+     */
+    public const TELEGRAM_TOKEN_PATTERN = '/^\d{5,20}:[A-Za-z0-9_-]{30,64}$/';
+
+    /**
+     * The bot Telegram returned for the token sent (after()).
+     *
+     * @var array{id: string, username: string|null, first_name: string}|null
+     */
+    private ?array $telegramBot = null;
+
     public function authorize(): bool
     {
         $connection = $this->route('connection');
@@ -61,7 +77,7 @@ class ConnectionRequest extends FormRequest
     {
         $trimmed = [];
 
-        foreach (['name', 'display_phone_number', 'phone_number_id', 'business_account_id', 'meta_app_id', ...array_keys(ConnectionSecrets::FIELDS)] as $field) {
+        foreach (['name', 'display_phone_number', 'phone_number_id', 'business_account_id', 'meta_app_id', 'bot_token', ...array_keys(ConnectionSecrets::FIELDS)] as $field) {
             if (is_string($this->input($field))) {
                 $trimmed[$field] = trim($this->input($field));
             }
@@ -167,6 +183,10 @@ class ConnectionRequest extends FormRequest
                 "{$kind}_message" => ['nullable', 'string', 'max:'.self::MESSAGE_MAX_LENGTH, "required_if_accepted:{$kind}_enabled"],
             ])->all(),
             'reopen_window_minutes' => ['nullable', 'integer', 'min:1', 'max:'.self::REOPEN_WINDOW_MAX_MINUTES],
+            // Required to create a Telegram connection; blank keeps the stored one.
+            'bot_token' => $this->channel() !== ConnectionChannel::Telegram
+                ? ['prohibited']
+                : [$connection instanceof Connection ? 'nullable' : 'required', 'string', 'max:100', 'regex:'.self::TELEGRAM_TOKEN_PATTERN],
         ];
 
         if (! $this->hasMetaFields()) {
@@ -206,6 +226,7 @@ class ConnectionRequest extends FormRequest
     public function after(): array
     {
         return [
+            fn (Validator $validator) => $this->checkTelegramBot($validator),
             function (Validator $validator): void {
                 if ($validator->errors()->has('phone_number_id') || ! $this->filled('phone_number_id')) {
                     return;
@@ -254,6 +275,49 @@ class ConnectionRequest extends FormRequest
     }
 
     /**
+     * A new bot token must be one Telegram accepts (getMe) and of a bot no
+     * other connection has (a deleted one keeps it reserved, to restore it).
+     * Runs only when everything else is valid, so a form with other errors
+     * never calls Telegram.
+     */
+    private function checkTelegramBot(Validator $validator): void
+    {
+        if ($this->channel() !== ConnectionChannel::Telegram || ! $this->filled('bot_token') || $validator->errors()->isNotEmpty()) {
+            return;
+        }
+
+        try {
+            $bot = app(TelegramBotClient::class)->getMe((string) $this->input('bot_token'));
+        } catch (TelegramException $exception) {
+            $validator->errors()->add('bot_token', match ($exception->kind) {
+                TelegramException::UNAUTHORIZED => 'Telegram no reconoce este token. Cópialo de nuevo desde @BotFather.',
+                TelegramException::UNREACHABLE, TelegramException::AMBIGUOUS, TelegramException::TRANSIENT, TelegramException::RATE_LIMITED => 'No se pudo comprobar el token con Telegram. Intenta de nuevo en un momento.',
+                default => $exception->getMessage(),
+            });
+
+            return;
+        }
+
+        $connection = $this->route('connection');
+        $ignoreId = $connection instanceof Connection ? $connection->id : null;
+        $taken = Connection::query()
+            ->where('channel', ConnectionChannel::Telegram)
+            ->where('external_account_id', $bot['id'])
+            ->when($ignoreId !== null, fn ($query) => $query->whereKeyNot($ignoreId))
+            ->first(['id', 'name', 'deleted_at']);
+
+        if ($taken !== null) {
+            $validator->errors()->add('bot_token', $taken->isDeleted()
+                ? "Este bot pertenece a la conexión eliminada «{$taken->name}». Restáurala en lugar de crearla de nuevo."
+                : "Este bot ya está en la conexión «{$taken->name}».");
+
+            return;
+        }
+
+        $this->telegramBot = $bot;
+    }
+
+    /**
      * Get custom messages for validator errors.
      *
      * @return array<string, string>
@@ -269,6 +333,9 @@ class ConnectionRequest extends FormRequest
             'access_token.regex' => 'El token de acceso no debe contener espacios.',
             'app_secret.regex' => 'El secreto de la app de Meta (App secret) no debe contener espacios.',
             'webhook_verify_token.regex' => 'El token de verificación no debe contener espacios.',
+            'bot_token.required' => 'Pega el token que te dio @BotFather.',
+            'bot_token.regex' => 'El token no tiene el formato de Telegram (números, dos puntos y letras).',
+            'bot_token.prohibited' => 'El token de bot solo existe en las conexiones de Telegram.',
             'default_department_id.in' => 'El departamento predeterminado debe ser uno de los departamentos autorizados.',
             '*.required_if_accepted' => 'Escribe el mensaje o desactívalo.',
             'channel.prohibited' => 'El canal de una conexión no se puede cambiar. Crea una conexión nueva para otro canal.',
@@ -296,6 +363,7 @@ class ConnectionRequest extends FormRequest
             'access_token' => 'token de acceso',
             'app_secret' => 'app secret',
             'webhook_verify_token' => 'token de verificación del webhook',
+            'bot_token' => 'token del bot',
             'department_ids' => 'departamentos autorizados',
             'department_ids.*' => 'departamento',
             'default_department_id' => 'departamento predeterminado',
@@ -315,7 +383,10 @@ class ConnectionRequest extends FormRequest
      * Creating also fills the channel and its provider; a web chat
      * connection never fills Meta identifiers or secrets.
      *
-     * @return array{attributes: array<string, mixed>, secrets: array<string, string>, department_ids: list<int>}
+     * A Telegram bot whose token was sent also fills `bot`: its identity
+     * as Telegram returned it, saved with the token.
+     *
+     * @return array{attributes: array<string, mixed>, secrets: array<string, string>, department_ids: list<int>, bot?: array<string, mixed>}
      */
     public function payload(): array
     {
@@ -341,7 +412,21 @@ class ConnectionRequest extends FormRequest
             'meta_app_id' => $this->nullableString('meta_app_id'),
         ] : [];
 
+        $bot = [];
+
+        if ($channel === ConnectionChannel::Telegram && $this->telegramBot !== null && $this->filled('bot_token')) {
+            $secrets['access_token'] = (string) $this->input('bot_token');
+            $bot = [
+                'external_account_id' => $this->telegramBot['id'],
+                'external_account_name' => $this->telegramBot['username'],
+                'verified_name' => mb_substr($this->telegramBot['first_name'], 0, 255),
+                'credentials_verified_at' => now(),
+                'credentials_error' => null,
+            ];
+        }
+
         return [
+            ...($bot === [] ? [] : ['bot' => $bot]),
             'attributes' => [
                 ...$creation,
                 'name' => $this->string('name')->value(),

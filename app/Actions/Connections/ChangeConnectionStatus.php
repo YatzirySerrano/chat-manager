@@ -7,6 +7,7 @@ use App\Events\Connections\ConnectionStatusChanged;
 use App\Models\Connection;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\Telegram\TelegramBots;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -42,6 +43,7 @@ class ChangeConnectionStatus
                     'is_active' => match (true) {
                         $connection->isWebChat() => 'Para activar el chat web configura primero su widget con al menos un dominio autorizado.',
                         $connection->isWhatsAppWeb() => 'Para activar la conexión vincula primero el teléfono: genera el código QR y escanéalo desde WhatsApp.',
+                        $connection->isTelegram() => 'Para activar la conexión pega primero el token del bot.',
                         $connection->usesMetaAuthorization() => "Para activar la conexión de {$connection->channel->label()} autoriza primero la cuenta con Meta.",
                         default => 'Para activar la conexión guarda primero el Phone number ID, el WABA ID y el token de acceso.',
                     },
@@ -50,6 +52,12 @@ class ChangeConnectionStatus
 
             $connection->forceFill(['is_active' => $active])->save();
             ConnectionStatusChanged::dispatch($connection->id, $active ? 'activated' : 'deactivated');
+
+            // Telegram: the webhook follows the activation (Telegram keeps the
+            // updates of a bot without webhook for up to 24 hours).
+            if ($connection->isTelegram()) {
+                DB::afterCommit(fn () => $active ? app(TelegramBots::class)->connect($connection) : app(TelegramBots::class)->disconnect($connection));
+            }
 
             $this->audit->record(
                 $active ? AuditAction::ConnectionActivated : AuditAction::ConnectionDeactivated,

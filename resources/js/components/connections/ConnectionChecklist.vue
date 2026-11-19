@@ -108,6 +108,10 @@ const configurationDetail = computed(() => {
             return complete
                 ? 'El widget tiene al menos un dominio autorizado.'
                 : 'Autoriza al menos un dominio y guarda el widget.';
+        case 'telegram':
+            return complete
+                ? 'Token del bot guardado y aceptado por Telegram.'
+                : 'Falta el token del bot.';
         default:
             return complete
                 ? 'La cuenta está autorizada con Meta.'
@@ -191,15 +195,24 @@ const items = computed<Check[]>(() => {
                 : webhook.last_received_at
                   ? 'history'
                   : 'muted',
-            detail: webhook.verified_at
-                ? `Meta confirmó la dirección ${formatRelative(webhook.verified_at)}.${
-                      webhook.last_received_at
-                          ? ` Último aviso recibido ${formatRelative(webhook.last_received_at)}.`
-                          : ' Aún no llega ningún aviso.'
-                  }`
-                : webhook.last_received_at
-                  ? `Último aviso recibido ${formatRelative(webhook.last_received_at)}.`
-                  : 'Meta aún no confirma la dirección para avisarnos de mensajes. Pega la URL y el token de verificación en tu app de Meta (ver Diagnóstico).',
+            detail:
+                props.channel === 'telegram'
+                    ? webhook.verified_at
+                        ? `Telegram aceptó el webhook ${formatRelative(webhook.verified_at)}.${
+                              webhook.last_received_at
+                                  ? ` Último aviso ${formatRelative(webhook.last_received_at)}.`
+                                  : ''
+                          }`
+                        : 'Webhook sin conectar. Usa «Volver a conectar webhook».'
+                    : webhook.verified_at
+                      ? `Meta confirmó la dirección ${formatRelative(webhook.verified_at)}.${
+                            webhook.last_received_at
+                                ? ` Último aviso recibido ${formatRelative(webhook.last_received_at)}.`
+                                : ' Aún no llega ningún aviso.'
+                        }`
+                      : webhook.last_received_at
+                        ? `Último aviso recibido ${formatRelative(webhook.last_received_at)}.`
+                        : 'Meta aún no confirma la dirección para avisarnos de mensajes. Pega la URL y el token de verificación en tu app de Meta (ver Diagnóstico).',
             title: webhook.last_received_at
                 ? formatDateTime(webhook.last_received_at)
                 : webhook.verified_at
@@ -268,11 +281,13 @@ const items = computed<Check[]>(() => {
                 ? `${capitalize(formatRelative(checks.last_outbound_at))}: ${
                       props.channel === 'web_chat'
                           ? 'se entregó una respuesta al visitante.'
-                          : isWhatsAppWeb.value
-                            ? 'WhatsApp recibió un mensaje.'
-                            : 'Meta aceptó un mensaje.'
+                          : props.channel === 'telegram'
+                            ? 'Telegram aceptó un mensaje.'
+                            : isWhatsAppWeb.value
+                              ? 'WhatsApp recibió un mensaje.'
+                              : 'Meta aceptó un mensaje.'
                   }`
-                : props.channel === 'web_chat'
+                : props.channel === 'web_chat' || props.channel === 'telegram'
                   ? 'Aún no se ha entregado ninguna respuesta.'
                   : isWhatsAppWeb.value
                     ? 'Aún no se ha enviado ningún mensaje por esta sesión.'

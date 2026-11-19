@@ -78,7 +78,7 @@ class AiAssistant
     ) {}
 
     /**
-     * Connections the assistant may answer: web chat and WhatsApp Web (QR).
+     * Connections the assistant may answer: web chat, WhatsApp Web (QR) and Telegram.
      * Meta's channels (WhatsApp Cloud API, Messenger, Instagram) are not
      * offered yet.
      */

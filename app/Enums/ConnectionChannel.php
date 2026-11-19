@@ -11,6 +11,7 @@ enum ConnectionChannel: string
     case WebChat = 'web_chat';
     case Messenger = 'messenger';
     case Instagram = 'instagram';
+    case Telegram = 'telegram';
 
     public function label(): string
     {
@@ -19,13 +20,14 @@ enum ConnectionChannel: string
             self::WebChat => 'Chat web',
             self::Messenger => 'Facebook Messenger',
             self::Instagram => 'Instagram',
+            self::Telegram => 'Telegram',
         };
     }
 
     /**
      * Whether the provider limits free-form replies to the 24 hour customer
      * service window (WhatsApp, Messenger and Instagram do; the web chat,
-     * which the platform hosts, does not).
+     * which the platform hosts, and Telegram bots do not).
      */
     public function usesCustomerServiceWindow(): bool
     {
@@ -43,12 +45,13 @@ enum ConnectionChannel: string
 
     /**
      * Whether a connection of this channel is created from the connection
-     * form. Messenger and Instagram connections are only created by
-     * authorizing the account with Meta (OAuth), never by typing credentials.
+     * form (a Telegram bot with the token BotFather gave). Messenger and
+     * Instagram connections are only created by authorizing the account with
+     * Meta (OAuth), never by typing credentials.
      */
     public function isCreatedFromForm(): bool
     {
-        return in_array($this, [self::Whatsapp, self::WebChat], true);
+        return in_array($this, [self::Whatsapp, self::WebChat, self::Telegram], true);
     }
 
     /**
@@ -86,6 +89,7 @@ enum ConnectionChannel: string
             self::WebChat => ContactSource::WebChat,
             self::Messenger => ContactSource::Messenger,
             self::Instagram => ContactSource::Instagram,
+            self::Telegram => ContactSource::Telegram,
         };
     }
 
@@ -96,6 +100,7 @@ enum ConnectionChannel: string
             self::WebChat => ConnectionProvider::WebWidget,
             self::Messenger => ConnectionProvider::MetaMessenger,
             self::Instagram => ConnectionProvider::MetaInstagram,
+            self::Telegram => ConnectionProvider::TelegramBot,
         };
     }
 
@@ -110,6 +115,7 @@ enum ConnectionChannel: string
             self::WebChat => 'Visitante web '.mb_substr($externalId, -6),
             self::Messenger => 'Usuario de Messenger '.mb_substr($externalId, -6),
             self::Instagram => 'Usuario de Instagram '.mb_substr($externalId, -6),
+            self::Telegram => 'Usuario de Telegram '.mb_substr($externalId, -6),
         };
     }
 

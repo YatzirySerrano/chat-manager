@@ -64,6 +64,7 @@ final class ReportPalette
         'whatsapp' => '#15936A',
         'messenger' => '#6250D6',
         'instagram' => '#D55181',
+        'telegram' => '#EB6834',
     ];
 
     /**

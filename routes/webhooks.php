@@ -3,6 +3,7 @@
 use App\Http\Controllers\Webhooks\MetaDataCallbackController;
 use App\Http\Controllers\Webhooks\MetaMediaController;
 use App\Http\Controllers\Webhooks\MetaWebhookController;
+use App\Http\Controllers\Webhooks\TelegramWebhookController;
 use App\Http\Controllers\Webhooks\WhatsAppWebhookController;
 use Illuminate\Support\Facades\Route;
 
@@ -21,6 +22,16 @@ Route::middleware('throttle:whatsapp-webhooks')->group(function () {
         ->where('webhookKey', '[A-Za-z0-9]{32,64}')
         ->name('webhooks.whatsapp.receive');
 });
+
+/*
+| Telegram bot webhooks: one random URL per bot connection, authenticated by
+| the secret_token Telegram sends in X-Telegram-Bot-Api-Secret-Token and
+| rate limited per URL like the WhatsApp ones.
+*/
+Route::post('webhooks/telegram/{webhookKey}', [TelegramWebhookController::class, 'receive'])
+    ->where('webhookKey', '[A-Za-z0-9]{32,64}')
+    ->middleware('throttle:whatsapp-webhooks')
+    ->name('webhooks.telegram.receive');
 
 /*
 | App-level webhook and callbacks of the Meta app used by Facebook Messenger

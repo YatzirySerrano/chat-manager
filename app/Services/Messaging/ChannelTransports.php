@@ -6,6 +6,7 @@ use App\Enums\ConnectionChannel;
 use App\Models\Connection;
 use App\Services\Meta\MetaMessagingTransport;
 use App\Services\Meta\WhatsAppTransport;
+use App\Services\Telegram\TelegramTransport;
 use App\Services\WebChat\WebChatTransport;
 use App\Services\WhatsAppWeb\WhatsAppWebTransport;
 
@@ -17,7 +18,8 @@ use App\Services\WhatsAppWeb\WhatsAppWebTransport;
  * Instagram use the Meta Send API (MetaMessagingTransport). A WhatsApp
  * connection whose provider is "whatsapp_web" (a phone linked by QR) uses
  * the private WhatsApp Web service instead (WhatsAppWebTransport): the
- * modality is decided per connection, never by one global value.
+ * modality is decided per connection, never by one global value. Telegram
+ * uses the Bot API with the bot's token (TelegramTransport).
  */
 class ChannelTransports
 {
@@ -33,6 +35,7 @@ class ChannelTransports
         return match ($connection->channel) {
             ConnectionChannel::Whatsapp => app(WhatsAppTransport::class),
             ConnectionChannel::WebChat => app(WebChatTransport::class),
+            ConnectionChannel::Telegram => app(TelegramTransport::class),
             ConnectionChannel::Messenger, ConnectionChannel::Instagram => app(MetaMessagingTransport::class, ['channel' => $connection->channel]),
         };
     }

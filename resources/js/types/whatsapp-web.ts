@@ -56,6 +56,11 @@ export type LinkState = {
     reconnects: number;
     /** Readable text in Spanish, or null. */
     last_error: string | null;
+    /**
+     * A disconnect or logout stored while the service did not answer; it is
+     * sent to the service as soon as it is back.
+     */
+    pending_action: 'disconnect' | 'logout' | null;
     actions: WhatsAppWebActions;
 };
 

@@ -286,6 +286,7 @@ tail -n 50 /var/www/mensajes/storage/logs/laravel.log | grep -i whatsapp
 | `401` en el log del servicio           | Secretos distintos o reloj del servidor desfasado más de 60 s.                                             |
 | «Sesión cerrada» sin haberla cerrado   | WhatsApp revocó la sesión (otro dispositivo, inactividad del teléfono, restricción). Vincula de nuevo.     |
 | «Reconectando» por mucho tiempo         | Sin red hacia WhatsApp o el servicio caído: revisa los comandos del §7.1. Reintenta solo, sin QR.          |
+| «Falta avisar al servicio» en la ficha | Se desconectó o se cerró la sesión con el servicio caído: quedó guardado en ChatManager y `whatsapp-web:sync` se lo envía al volver. |
 | Archivos «no disponibles»              | Superan el límite, el NAS no respondía o WhatsApp ya caducó la descarga.                                   |
 | Archivos «en camino» que nunca llegan  | Ningún worker atiende la cola `media`: `sudo supervisorctl status` debe mostrar `chatmanager-queue-media`. |
 | No aparece historial tras vincular     | El número se vinculó con una versión anterior o con `WAWEB_SYNC_HISTORY=false`: cerrar sesión y vincular.  |

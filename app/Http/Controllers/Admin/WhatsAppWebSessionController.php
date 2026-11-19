@@ -30,7 +30,8 @@ use Illuminate\Validation\ValidationException;
  *   session and keeps every conversation.
  *
  * None of them deletes conversations or history. A service that does not
- * answer is a 503 with the reason, never an invented state.
+ * answer is a 503 with the reason, never an invented state, except when
+ * ending a session: that is stored at once and sent to the service later.
  */
 class WhatsAppWebSessionController extends Controller
 {
@@ -66,7 +67,7 @@ class WhatsAppWebSessionController extends Controller
 
     public function disconnect(Request $request, Connection $connection): JsonResponse
     {
-        return $this->run($request, $connection, fn (User $actor) => $this->sessions->disconnect($connection, $actor));
+        return $this->run($request, $connection, fn (User $actor) => $this->sessions->disconnect($connection, $actor), ending: true);
     }
 
     public function reconnect(Request $request, Connection $connection): JsonResponse
@@ -76,17 +77,21 @@ class WhatsAppWebSessionController extends Controller
 
     public function logout(Request $request, Connection $connection): JsonResponse
     {
-        return $this->run($request, $connection, fn (User $actor) => $this->sessions->logout($connection, $actor));
+        return $this->run($request, $connection, fn (User $actor) => $this->sessions->logout($connection, $actor), ending: true);
     }
 
     /**
+     * Ending a session (disconnect, logout) is always possible, even with the
+     * modality disabled or the service down: it is stored here and sent to
+     * the service when it answers again (WhatsAppWebSessions::flushPending).
+     *
      * @param  callable(User): mixed  $action
      */
-    private function run(Request $request, Connection $connection, callable $action): JsonResponse
+    private function run(Request $request, Connection $connection, callable $action, bool $ending = false): JsonResponse
     {
         Gate::authorize('manageWebSession', $connection);
 
-        if (! $this->sessions->isEnabled()) {
+        if (! $ending && ! $this->sessions->isEnabled()) {
             return response()->json(['message' => 'WhatsApp Web (QR) no está habilitado en este servidor.'], 503);
         }
 

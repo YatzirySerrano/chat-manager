@@ -10,7 +10,9 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\WhatsAppWeb\WhatsAppWebSessions;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -270,6 +272,84 @@ test('a service that does not answer is reported as unavailable and no state is 
         ->assertJsonPath('state', 'connected')
         ->assertJsonPath('service_available', false)
         ->assertJsonPath('can_send', false);
+});
+
+test('a session can be disconnected while the service does not answer and the stop is sent when it is back', function () {
+    $connection = Connection::factory()->whatsAppWeb()->create();
+    $sessions = app(WhatsAppWebSessions::class);
+    Http::fake(fn () => throw new ConnectionException('cURL error 7: Failed to connect to 127.0.0.1 port 3410'));
+
+    $this->actingAs($this->admin)
+        ->postJson(route('connections.whatsapp-web.disconnect', $connection))
+        ->assertOk()
+        ->assertJsonPath('state', 'disconnected')
+        ->assertJsonPath('pending_action', 'disconnect')
+        ->assertJsonPath('can_send', false)
+        ->assertJsonPath('actions.logout', true);
+
+    $connection->refresh();
+
+    expect($connection->isConfigured())->toBeTrue()
+        ->and($connection->web_session_error_code)->toBe(WhatsAppWebSessions::PENDING_STOP);
+
+    // A report of the service meanwhile never brings the session back.
+    $sessions->apply($connection, WhatsAppWebFixtures::session($connection, 'connected', ['phone' => '5215512345678']));
+    expect($connection->refresh()->webSessionState())->toBe(WhatsAppWebState::Disconnected);
+
+    $stop = $this->service.'/v1/sessions/'.$connection->id.'/stop';
+    Http::swap(new HttpFactory);
+    Http::preventStrayRequests();
+    Http::fake([$stop => Http::response(WhatsAppWebFixtures::session($connection, 'disconnected', ['phone' => '5215512345678']))]);
+
+    expect($sessions->sync($connection))->toBeTrue();
+    Http::assertSent(fn (Request $request): bool => $request->url() === $stop);
+
+    $connection->refresh();
+
+    expect($connection->webSessionState())->toBe(WhatsAppWebState::Disconnected)
+        ->and($connection->web_session_error_code)->toBeNull()
+        ->and($connection->isConfigured())->toBeTrue();
+});
+
+test('the device can be signed out while the service does not answer, so another phone can be linked later', function () {
+    $connection = Connection::factory()->whatsAppWeb()->create(['web_session_state' => WhatsAppWebState::Reconnecting]);
+    Http::fake(fn () => throw new ConnectionException('cURL error 7: Failed to connect to 127.0.0.1 port 3410'));
+
+    $this->actingAs($this->admin)
+        ->postJson(route('connections.whatsapp-web.logout', $connection))
+        ->assertOk()
+        ->assertJsonPath('state', 'logged_out')
+        ->assertJsonPath('phone', null)
+        ->assertJsonPath('pending_action', 'logout')
+        ->assertJsonPath('actions.link', true);
+
+    expect($connection->refresh()->isConfigured())->toBeFalse()
+        ->and(AuditLog::query()->where('action', AuditAction::ConnectionWebLoggedOut)->count())->toBe(1);
+
+    $logout = $this->service.'/v1/sessions/'.$connection->id.'/logout';
+    Http::swap(new HttpFactory);
+    Http::preventStrayRequests();
+    Http::fake([$logout => Http::response(WhatsAppWebFixtures::session($connection, 'logged_out'))]);
+
+    expect(app(WhatsAppWebSessions::class)->sync($connection))->toBeTrue();
+    Http::assertSent(fn (Request $request): bool => $request->url() === $logout);
+
+    expect($connection->refresh()->web_session_error_code)->toBeNull()
+        ->and($connection->webSessionState())->toBe(WhatsAppWebState::LoggedOut);
+});
+
+test('ending a session works even with the modality disabled on this server', function () {
+    config(['whatsapp_web.enabled' => false, 'whatsapp_web.secret' => '']);
+    $connection = Connection::factory()->whatsAppWeb()->create();
+    Http::fake();
+
+    $this->actingAs($this->admin)
+        ->postJson(route('connections.whatsapp-web.disconnect', $connection))
+        ->assertOk()
+        ->assertJsonPath('state', 'disconnected')
+        ->assertJsonPath('pending_action', 'disconnect');
+
+    Http::assertNothingSent();
 });
 
 test('without the shared secret nothing can be linked', function () {

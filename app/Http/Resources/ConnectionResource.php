@@ -265,6 +265,7 @@ class ConnectionResource extends JsonResource
         $webChat = match (true) {
             $this->isWebChat() => self::webChatHealth($health),
             $this->isTelegram() => self::telegramHealth($health),
+            $this->isWhatsAppWeb() => self::whatsAppWebHealth($health),
             default => null,
         };
 
@@ -290,6 +291,25 @@ class ConnectionResource extends JsonResource
             ConnectionHealth::CredentialsInvalid => ['label' => 'Token inválido', 'description' => 'Telegram rechazó el token del bot. Pega uno vigente.'],
             ConnectionHealth::Receiving => ['label' => 'Recibiendo', 'description' => 'El webhook está conectado; aún no hay respuestas entregadas.'],
             ConnectionHealth::Operational => ['label' => 'Operativa', 'description' => 'Se confirmó la recepción y el envío de mensajes.'],
+            default => null,
+        };
+    }
+
+    /**
+     * Wording of the health of a WhatsApp Web (QR) connection, which has a
+     * linked phone instead of Meta credentials: its health is the state of
+     * the session (ConnectionHealth::resolveWhatsAppWeb).
+     *
+     * @return array{label: string, description: string}|null
+     */
+    private static function whatsAppWebHealth(ConnectionHealth $health): ?array
+    {
+        return match ($health) {
+            ConnectionHealth::NotConfigured => ['label' => 'Sin vincular', 'description' => 'Ningún teléfono está vinculado. Genera un código QR y escanéalo desde WhatsApp.'],
+            ConnectionHealth::Configured => ['label' => 'Sesión sin conectar', 'description' => 'El teléfono sigue vinculado, pero la sesión está detenida o recuperándose: mientras tanto no se envía ni se recibe por este número.'],
+            ConnectionHealth::Receiving => ['label' => 'Conectada', 'description' => 'La sesión está conectada; aún no se confirmó el envío y la recepción de mensajes.'],
+            ConnectionHealth::Operational => ['label' => 'Operativa', 'description' => 'La sesión está conectada y se confirmó la recepción y el envío de mensajes.'],
+            ConnectionHealth::Error => ['label' => 'Con error', 'description' => 'La sesión de WhatsApp Web no está disponible. Revisa el estado de la sesión más abajo.'],
             default => null,
         };
     }

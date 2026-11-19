@@ -40,7 +40,13 @@ use Throwable;
  * - forget: remove everything when the connection is deleted.
  *
  * Nothing here invents a state: what is stored is what the service said,
- * and a service that cannot be reached is reported as such. The QR only
+ * and a service that cannot be reached is reported as such. The one
+ * exception is ending a session: disconnecting or signing the device out
+ * never depends on the service answering. When it does not, the decision is
+ * stored at once (ChatManager stops using the session) and remembered as
+ * pending (`web_session_error_code` = pending_stop / pending_logout); the
+ * next synchronization tells the service, and meanwhile no report of the
+ * service brings the session back. The QR only
  * lives in the cache until it expires; it is never stored in the database,
  * logged or sent to anyone who cannot manage the connection.
  */
@@ -49,6 +55,12 @@ class WhatsAppWebSessions
     private const QR_CACHE_PREFIX = 'whatsapp-web:qr:';
 
     private const ALIVE_CACHE_KEY = 'whatsapp-web:alive';
+
+    /** A stop decided while the service did not answer, not yet sent to it. */
+    public const PENDING_STOP = 'pending_stop';
+
+    /** A logout decided while the service did not answer, not yet sent to it. */
+    public const PENDING_LOGOUT = 'pending_logout';
 
     public function __construct(
         private WhatsAppWebClient $client,
@@ -94,12 +106,18 @@ class WhatsAppWebSessions
             throw ValidationException::withMessages(['session' => 'Ya hay un teléfono vinculado a esta conexión. Cierra la sesión del dispositivo antes de vincular otro.']);
         }
 
+        // A device signed out while the service was down is signed out
+        // there first, so a new link never reuses the old credentials.
+        if (! $this->flushPending($connection)) {
+            throw ValidationException::withMessages(['session' => 'El servicio de WhatsApp Web no responde en este servidor. Un administrador debe revisar que esté en ejecución.']);
+        }
+
         $payload = $this->call(fn (): array => $this->client->start($connection->id, 'link'));
 
         $connection->forceFill(['web_session_link_user_id' => $actor->id])->save();
         $this->audit->record(AuditAction::ConnectionWebLinkRequested, $connection, [], $actor);
 
-        return $this->apply($connection, $payload);
+        return $this->apply($connection, $payload, command: true);
     }
 
     /**
@@ -113,29 +131,51 @@ class WhatsAppWebSessions
             throw ValidationException::withMessages(['session' => 'Esta conexión ya tiene un teléfono vinculado: no necesita un código QR.']);
         }
 
+        if (! $this->flushPending($connection)) {
+            throw ValidationException::withMessages(['session' => 'El servicio de WhatsApp Web no responde en este servidor. Un administrador debe revisar que esté en ejecución.']);
+        }
+
         $payload = $this->call(fn (): array => $this->client->start($connection->id, 'link'));
 
         if ($connection->web_session_link_user_id === null) {
             $connection->forceFill(['web_session_link_user_id' => $actor->id])->save();
         }
 
-        return $this->apply($connection, $payload);
+        return $this->apply($connection, $payload, command: true);
     }
 
     /**
      * Stop the session on purpose. A linked phone stays linked; a link in
-     * progress is cancelled.
+     * progress is cancelled. A service that does not answer never prevents
+     * it: the stop is stored now and sent when the service is back.
      */
     public function disconnect(Connection $connection, User $actor): Connection
     {
         $this->assertManageable($connection);
 
         $wasLinked = $connection->isConfigured();
-        $payload = $this->call(fn (): array => $this->client->stop($connection->id));
+        $deferred = false;
 
-        $this->audit->record(AuditAction::ConnectionWebDisconnected, $connection, ['cancelled_link' => ! $wasLinked], $actor);
+        try {
+            $payload = $this->client->stop($connection->id);
+        } catch (WhatsAppWebException $exception) {
+            if ($exception->kind === WhatsAppWebException::UNKNOWN_SESSION) {
+                // Nothing runs in the service: the session is stopped already.
+                $payload = [];
+            } elseif (self::deferrable($exception)) {
+                $payload = ['pending' => self::PENDING_STOP];
+                $deferred = true;
+            } else {
+                throw ValidationException::withMessages(['session' => $exception->getMessage()]);
+            }
+        }
 
-        return $this->apply($connection, $payload, 'requested');
+        $this->audit->record(AuditAction::ConnectionWebDisconnected, $connection, ['cancelled_link' => ! $wasLinked, 'deferred' => $deferred], $actor);
+
+        // What the service answered; "stopped" when it could not answer.
+        $payload['state'] ??= WhatsAppWebState::Disconnected->value;
+
+        return $this->apply($connection, $payload, 'requested', command: true);
     }
 
     /**
@@ -162,31 +202,39 @@ class WhatsAppWebSessions
 
         $this->audit->record(AuditAction::ConnectionWebReconnectRequested, $connection, [], $actor);
 
-        return $this->apply($connection, $payload);
+        return $this->apply($connection, $payload, command: true);
     }
 
     /**
      * Close the session of the linked device. The conversations and their
-     * history are kept; a new QR is needed to use the number again.
+     * history are kept; a new QR is needed to use the number again. A
+     * service that does not answer never prevents it: the connection stops
+     * using the number now and the service signs the device out when it is
+     * back (until then the phone may still list it as a linked device).
      */
     public function logout(Connection $connection, User $actor): Connection
     {
         $this->assertManageable($connection);
 
+        $deferred = false;
+
         try {
             $payload = $this->client->logout($connection->id);
         } catch (WhatsAppWebException $exception) {
-            if ($exception->kind !== WhatsAppWebException::UNKNOWN_SESSION) {
+            if ($exception->kind === WhatsAppWebException::UNKNOWN_SESSION) {
+                // Nothing to close in the service: the session is gone already.
+                $payload = [];
+            } elseif (self::deferrable($exception)) {
+                $payload = ['pending' => self::PENDING_LOGOUT];
+                $deferred = true;
+            } else {
                 throw ValidationException::withMessages(['session' => $exception->getMessage()]);
             }
-
-            // Nothing to close in the service: the session is gone already.
-            $payload = ['state' => WhatsAppWebState::LoggedOut->value];
         }
 
-        $this->audit->record(AuditAction::ConnectionWebLoggedOut, $connection, ['phone' => $connection->web_session_phone], $actor);
+        $this->audit->record(AuditAction::ConnectionWebLoggedOut, $connection, ['phone' => $connection->web_session_phone, 'deferred' => $deferred], $actor);
 
-        return $this->apply($connection, [...$payload, 'state' => WhatsAppWebState::LoggedOut->value], 'requested');
+        return $this->apply($connection, [...$payload, 'state' => WhatsAppWebState::LoggedOut->value], 'requested', command: true);
     }
 
     /**
@@ -233,6 +281,11 @@ class WhatsAppWebSessions
             return false;
         }
 
+        // A stop or logout decided while the service was down is sent first.
+        if (self::pendingOf($connection) !== null) {
+            return $this->flushPending($connection);
+        }
+
         try {
             $payload = $this->client->session($connection->id);
         } catch (WhatsAppWebException $exception) {
@@ -258,10 +311,13 @@ class WhatsAppWebSessions
      *
      * A live payload (asked to the service right now) always wins over the
      * stored state; an event older than the last stored report is ignored.
+     * While a stop or a logout is pending (decided with the service down),
+     * only ChatManager's own actions ($command) or a report that agrees with
+     * it change the session.
      *
-     * @param  array<array-key, mixed>  $payload
+     * @param  array<array-key, mixed>  $payload  `pending` (pending_stop / pending_logout) marks a decision not yet sent to the service.
      */
-    public function apply(Connection $connection, array $payload, ?string $reason = null, bool $live = false): Connection
+    public function apply(Connection $connection, array $payload, ?string $reason = null, bool $live = false, bool $command = false): Connection
     {
         $state = WhatsAppWebState::tryFrom(is_string($payload['state'] ?? null) ? $payload['state'] : '');
 
@@ -275,11 +331,25 @@ class WhatsAppWebSessions
         $activateFor = null;
         $lost = false;
 
-        $updated = DB::transaction(function () use ($connection, $payload, $state, $eventAt, $reason, $live, &$activateFor, &$lost): ?Connection {
+        $pending = $command && in_array($payload['pending'] ?? null, [self::PENDING_STOP, self::PENDING_LOGOUT], true) ? $payload['pending'] : null;
+
+        $updated = DB::transaction(function () use ($connection, $payload, $state, $eventAt, $reason, $live, $command, $pending, &$activateFor, &$lost): ?Connection {
             $current = Connection::query()->whereKey($connection->id)->lockForUpdate()->first();
 
             if ($current === null || $current->isDeleted()) {
                 return null;
+            }
+
+            // A stop or logout not yet sent to the service: what the service
+            // reports meanwhile never brings the session back.
+            $stored = self::pendingOf($current);
+
+            if ($stored !== null && ! $command) {
+                if (! self::satisfies($stored, $state)) {
+                    return $current;
+                }
+
+                $reason = 'requested';
             }
 
             // A report older than the last one stored never moves the session back.
@@ -340,6 +410,12 @@ class WhatsAppWebSessions
                 $message = self::explain($state, $reason, $errorCode, is_string($error['message'] ?? null) ? $error['message'] : null);
                 $attributes['web_session_error_code'] = $message === null ? null : ($errorCode ?? $reason);
                 $attributes['web_session_error'] = $message;
+            }
+
+            // Kept until the service is told (flushPending).
+            if ($pending !== null) {
+                $attributes['web_session_error_code'] = $pending;
+                $attributes['web_session_error'] = null;
             }
 
             // The pending request for a link ends when the link does.
@@ -425,6 +501,12 @@ class WhatsAppWebSessions
             'last_outbound_at' => $connection->last_outbound_at?->toIso8601String(),
             'reconnects' => $connection->web_session_reconnects,
             'last_error' => $state === WhatsAppWebState::Connected ? null : $connection->web_session_error,
+            // A stop or logout stored while the service did not answer, not yet sent to it.
+            'pending_action' => match (self::pendingOf($connection)) {
+                self::PENDING_STOP => 'disconnect',
+                self::PENDING_LOGOUT => 'logout',
+                default => null,
+            },
             'actions' => [
                 'link' => $manageable && ! $linked && ! $state->isTransitional(),
                 'refresh' => $manageable && ! $linked && in_array($state, [WhatsAppWebState::Starting, WhatsAppWebState::QrPending], true),
@@ -531,6 +613,67 @@ class WhatsAppWebSessions
         } catch (WhatsAppWebException $exception) {
             throw ValidationException::withMessages(['session' => $exception->getMessage()]);
         }
+    }
+
+    /**
+     * Send the stop or logout decided while the service was down. Returns
+     * whether nothing is left pending (the service answered, or there was
+     * nothing to send).
+     */
+    private function flushPending(Connection $connection): bool
+    {
+        $pending = self::pendingOf($connection);
+
+        if ($pending === null) {
+            return true;
+        }
+
+        $state = $pending === self::PENDING_LOGOUT ? WhatsAppWebState::LoggedOut : WhatsAppWebState::Disconnected;
+
+        try {
+            $payload = $pending === self::PENDING_LOGOUT ? $this->client->logout($connection->id) : $this->client->stop($connection->id);
+        } catch (WhatsAppWebException $exception) {
+            if (! in_array($exception->kind, [WhatsAppWebException::UNKNOWN_SESSION, WhatsAppWebException::NOT_LINKED], true)) {
+                return false;
+            }
+
+            // The service holds nothing for it: nothing left to end.
+            $payload = [];
+        }
+
+        $this->apply($connection, [...$payload, 'state' => $state->value], 'requested', live: true, command: true);
+
+        return true;
+    }
+
+    /**
+     * The stop or logout of the connection still waiting for the service.
+     */
+    public static function pendingOf(Connection $connection): ?string
+    {
+        $code = $connection->web_session_error_code;
+
+        return in_array($code, [self::PENDING_STOP, self::PENDING_LOGOUT], true) ? $code : null;
+    }
+
+    /**
+     * Whether a state reported by the service agrees with a pending decision.
+     */
+    private static function satisfies(string $pending, WhatsAppWebState $state): bool
+    {
+        return $pending === self::PENDING_LOGOUT
+            ? in_array($state, [WhatsAppWebState::LoggedOut, WhatsAppWebState::Unconfigured], true)
+            : in_array($state, [WhatsAppWebState::Disconnected, WhatsAppWebState::LoggedOut, WhatsAppWebState::Unconfigured], true);
+    }
+
+    /**
+     * Whether ending a session may be stored now and sent later: the
+     * service is off, unreachable or failing, so it is not serving the
+     * session either.
+     */
+    private static function deferrable(WhatsAppWebException $exception): bool
+    {
+        return $exception->isServiceDown() || in_array($exception->kind, [WhatsAppWebException::FAILED, WhatsAppWebException::AMBIGUOUS], true);
     }
 
     private function assertManageable(Connection $connection): void

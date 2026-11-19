@@ -232,14 +232,21 @@ function onCancelLink(): void {
 
 async function confirmEnding(): Promise<void> {
     const action = confirmKind.value;
-    const done = await runAction(
-        action,
-        action === 'disconnect'
-            ? 'Sesión desconectada. Conserva su vinculación.'
-            : 'Sesión cerrada en el dispositivo.',
-    );
+    const done = await runAction(action);
 
     if (done) {
+        // With the service down the decision is stored and sent later.
+        const deferred = state.value?.pending_action === action;
+
+        toast.success(
+            action === 'disconnect'
+                ? deferred
+                    ? 'Sesión desconectada en ChatManager. Se le avisará al servicio de WhatsApp Web cuando vuelva a responder.'
+                    : 'Sesión desconectada. Conserva su vinculación.'
+                : deferred
+                  ? 'Sesión cerrada en ChatManager. El dispositivo se cerrará en WhatsApp cuando el servicio vuelva a responder.'
+                  : 'Sesión cerrada en el dispositivo.',
+        );
         linkOpen.value = false;
     }
 
@@ -311,6 +318,29 @@ watch(
         >
             La plataforma no respondió. Se vuelve a intentar sola en unos
             segundos.
+        </StatusNote>
+
+        <StatusNote
+            v-else-if="
+                state && state.pending_action && !state.service_available
+            "
+            tone="warning"
+            :icon="ServerOff"
+            :title="
+                state.pending_action === 'logout'
+                    ? 'Sesión cerrada en ChatManager; falta avisar al servicio'
+                    : 'Sesión desconectada en ChatManager; falta avisar al servicio'
+            "
+            live="polite"
+        >
+            El servicio de WhatsApp Web no responde, así que el cambio se guardó
+            aquí y se le enviará en cuanto vuelva. Este número ya no envía ni
+            recibe por ChatManager.
+            <template v-if="state.pending_action === 'logout'">
+                Hasta entonces el teléfono puede seguir mostrando ChatManager en
+                «Dispositivos vinculados»; puedes quitarlo desde ahí si lo
+                prefieres.
+            </template>
         </StatusNote>
 
         <StatusNote

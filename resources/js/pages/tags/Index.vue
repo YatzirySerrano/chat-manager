@@ -500,7 +500,7 @@ function usageLabel(
                         class="grid gap-1.5"
                     >
                         <div
-                            class="flex items-baseline justify-between gap-3 text-sm"
+                            class="flex items-start justify-between gap-3 text-sm"
                         >
                             <span class="flex min-w-0 items-baseline gap-2">
                                 <span
@@ -508,9 +508,11 @@ function usageLabel(
                                     aria-hidden="true"
                                     >{{ position + 1 }}</span
                                 >
-                                <span class="min-w-0 truncate font-medium">{{
-                                    item.name
-                                }}</span>
+                                <!-- Long names wrap instead of being cut. -->
+                                <span
+                                    class="min-w-0 font-medium text-pretty break-words"
+                                    >{{ item.name }}</span
+                                >
                             </span>
                             <span
                                 class="shrink-0 font-display font-semibold tabular-nums"

@@ -9,6 +9,7 @@ use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Models\WebChatSession;
 use App\Services\WebChat\VisitorCursor;
+use App\Services\WebChat\VisitorSessions;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -17,8 +18,9 @@ use Illuminate\Support\Facades\URL;
 /**
  * A message of the visitor's conversation as the widget shows it. Only what
  * the visitor may see: the text, who wrote it (the agent's name, never an
- * id) and the files the agent sent, through short-lived signed URLs bound to
- * the session. Never notes, events, metadata, error codes or user ids.
+ * id) and the files of the message (the ones the agent sent and the ones
+ * the visitor uploaded), through short-lived signed URLs bound to the
+ * session. Never notes, events, metadata, error codes or user ids.
  * Expects 'sender' and 'attachments' loaded.
  *
  * @mixin Message
@@ -39,6 +41,7 @@ class VisitorMessageResource extends JsonResource
     {
         $inbound = $this->direction === MessageDirection::Inbound;
         $session = $request->attributes->get('webchat_session');
+        $session = $session instanceof WebChatSession ? $session : null;
 
         return [
             'cursor' => app(VisitorCursor::class)->encode($this->id),
@@ -46,7 +49,7 @@ class VisitorMessageResource extends JsonResource
             'author' => $inbound ? 'visitor' : ($this->sender_user_id !== null ? 'agent' : 'system'),
             'agent_name' => ! $inbound && $this->sender_user_id !== null ? app(ProtectedAccounts::class)->nameForRequest($this->sender, $request) : null,
             'body' => $this->body,
-            'attachments' => $inbound || ! $session instanceof WebChatSession ? [] : $this->attachments
+            'attachments' => $session === null || ($inbound && ! str_starts_with((string) $this->whatsapp_message_id, VisitorSessions::WIDGET_PREFIX)) ? [] : $this->attachments
                 ->filter(fn (MessageAttachment $attachment): bool => $attachment->status === AttachmentStatus::Available && filled($attachment->path))
                 ->map(fn (MessageAttachment $attachment): array => [
                     'name' => $attachment->file_name ?? 'archivo',

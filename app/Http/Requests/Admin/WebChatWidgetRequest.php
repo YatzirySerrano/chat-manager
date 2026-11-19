@@ -18,7 +18,10 @@ use Illuminate\Validation\Validator;
 /**
  * Widget settings of a web chat connection. Authorized origins are exact
  * scheme://host[:port] values (https, except for local development hosts),
- * stored normalized; the accent color must keep white text readable.
+ * stored normalized; the accent color must keep white text readable. The
+ * colors of the conversation (background and bubbles) are optional #rrggbb
+ * values: empty keeps the widget's own look, and their contrast is the
+ * administrator's choice (the form only warns when it is very low).
  */
 class WebChatWidgetRequest extends FormRequest
 {
@@ -53,7 +56,7 @@ class WebChatWidgetRequest extends FormRequest
     {
         $trimmed = [];
 
-        foreach (['title', 'subtitle', 'welcome_text', 'offline_text', 'launcher_label', 'accent_color'] as $field) {
+        foreach (['title', 'subtitle', 'welcome_text', 'offline_text', 'launcher_label', 'accent_color', 'online_text', 'offline_status_text', 'composer_placeholder', ...WebChatWidget::COLORS] as $field) {
             if (is_string($this->input($field))) {
                 $trimmed[$field] = trim($this->input($field));
             }
@@ -78,7 +81,24 @@ class WebChatWidgetRequest extends FormRequest
      */
     public function rules(): array
     {
+        $colors = array_fill_keys(WebChatWidget::COLORS, ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/']);
+
         return [
+            ...$colors,
+            'allow_visitor_files' => ['sometimes', 'boolean'],
+            'launcher_shape' => ['sometimes', 'string', Rule::in(WebChatWidget::LAUNCHER_SHAPES)],
+            'launcher_icon' => ['sometimes', 'string', Rule::in(WebChatWidget::LAUNCHER_ICONS)],
+            'launcher_size' => ['sometimes', 'string', Rule::in(WebChatWidget::LAUNCHER_SIZES)],
+            'launcher_offset_x' => ['sometimes', 'integer', 'min:0', 'max:'.WebChatWidget::MAX_LAUNCHER_OFFSET],
+            'launcher_offset_y' => ['sometimes', 'integer', 'min:0', 'max:'.WebChatWidget::MAX_LAUNCHER_OFFSET],
+            'launcher_pulse' => ['sometimes', 'boolean'],
+            'launcher_width' => ['nullable', 'integer', 'min:'.WebChatWidget::LAUNCHER_WIDTH['min'], 'max:'.WebChatWidget::LAUNCHER_WIDTH['max']],
+            'launcher_font_size' => ['sometimes', 'string', Rule::in(WebChatWidget::LAUNCHER_SIZES)],
+            'panel_width' => ['sometimes', 'integer', 'min:'.WebChatWidget::PANEL_WIDTH['min'], 'max:'.WebChatWidget::PANEL_WIDTH['max']],
+            'panel_height' => ['sometimes', 'integer', 'min:'.WebChatWidget::PANEL_HEIGHT['min'], 'max:'.WebChatWidget::PANEL_HEIGHT['max']],
+            'online_text' => ['nullable', 'string', 'max:40'],
+            'offline_status_text' => ['nullable', 'string', 'max:40'],
+            'composer_placeholder' => ['nullable', 'string', 'max:80'],
             'allowed_origins' => ['required', 'array', 'min:1', 'max:'.self::MAX_ORIGINS],
             'allowed_origins.*' => ['required', 'string', 'max:255', $this->originRule()],
             'title' => ['required', 'string', 'min:1', 'max:60'],
@@ -143,7 +163,14 @@ class WebChatWidgetRequest extends FormRequest
      */
     public function messages(): array
     {
+        $colors = [];
+
+        foreach (WebChatWidget::COLORS as $color) {
+            $colors[$color.'.regex'] = 'Escribe el color en formato hexadecimal, por ejemplo #F3F4F6, o déjalo vacío para usar el predeterminado.';
+        }
+
         return [
+            ...$colors,
             'allowed_origins.required' => 'Autoriza al menos un dominio donde se insertará el chat.',
             'allowed_origins.min' => 'Autoriza al menos un dominio donde se insertará el chat.',
             'allowed_origins.max' => 'Puedes autorizar hasta '.self::MAX_ORIGINS.' dominios.',
@@ -170,6 +197,27 @@ class WebChatWidgetRequest extends FormRequest
             'offline_text' => 'mensaje fuera de línea',
             'position' => 'posición',
             'accent_color' => 'color de acento',
+            'background_color' => 'fondo de la conversación',
+            'visitor_bubble_color' => 'burbuja del visitante',
+            'visitor_text_color' => 'texto del visitante',
+            'agent_bubble_color' => 'burbuja del agente',
+            'agent_text_color' => 'texto del agente',
+            'allow_visitor_files' => 'archivos de los visitantes',
+            'launcher_color' => 'color del botón',
+            'launcher_icon_color' => 'color del ícono',
+            'launcher_shape' => 'forma del botón',
+            'launcher_icon' => 'ícono del botón',
+            'launcher_size' => 'tamaño del botón',
+            'launcher_offset_x' => 'distancia del borde lateral',
+            'launcher_offset_y' => 'distancia del borde inferior',
+            'launcher_pulse' => 'animación del botón',
+            'launcher_width' => 'ancho del botón',
+            'launcher_font_size' => 'tamaño del texto del botón',
+            'panel_width' => 'ancho de la ventana',
+            'panel_height' => 'alto de la ventana',
+            'online_text' => 'texto «en línea»',
+            'offline_status_text' => 'texto «fuera de línea»',
+            'composer_placeholder' => 'texto de la caja de mensaje',
             'launcher_enabled' => 'botón flotante',
             'launcher_label' => 'texto del botón',
             'avatar' => 'imagen',
@@ -204,6 +252,9 @@ class WebChatWidgetRequest extends FormRequest
                 'accent_color' => strtolower($this->string('accent_color')->value()),
                 'launcher_enabled' => $this->boolean('launcher_enabled'),
                 'launcher_label' => $this->nullableString('launcher_label'),
+                ...$this->colors(),
+                // Older clients that do not send it keep the current value.
+                ...$this->optionalSettings(),
                 'identity_mode' => $this->enum('identity_mode', WebChatIdentityMode::class),
                 'prechat' => [
                     'fields' => array_values(array_filter(
@@ -219,6 +270,68 @@ class WebChatWidgetRequest extends FormRequest
             'avatar' => $avatar instanceof UploadedFile ? $avatar : null,
             'remove_avatar' => $this->boolean('remove_avatar'),
         ];
+    }
+
+    /**
+     * Settings older clients may not send: they keep their stored value.
+     *
+     * @return array<string, mixed>
+     */
+    private function optionalSettings(): array
+    {
+        $settings = [];
+
+        foreach (['allow_visitor_files', 'launcher_pulse'] as $flag) {
+            if ($this->has($flag)) {
+                $settings[$flag] = $this->boolean($flag);
+            }
+        }
+
+        foreach (['online_text', 'offline_status_text', 'composer_placeholder'] as $text) {
+            if ($this->exists($text)) {
+                $settings[$text] = $this->nullableString($text);
+            }
+        }
+
+        if ($this->exists('launcher_width')) {
+            $settings['launcher_width'] = $this->filled('launcher_width') ? $this->integer('launcher_width') : null;
+        }
+
+        foreach (['launcher_shape', 'launcher_icon', 'launcher_size', 'launcher_font_size'] as $choice) {
+            if ($this->filled($choice)) {
+                $settings[$choice] = $this->string($choice)->value();
+            }
+        }
+
+        foreach (['launcher_offset_x', 'launcher_offset_y', 'panel_width', 'panel_height'] as $offset) {
+            if ($this->filled($offset)) {
+                $settings[$offset] = $this->integer($offset);
+            }
+        }
+
+        return $settings;
+    }
+
+    /**
+     * The optional colors, lowercase, or null when left empty. A client that
+     * does not send them at all (an older form) keeps the stored ones.
+     *
+     * @return array<string, string|null>
+     */
+    private function colors(): array
+    {
+        $colors = [];
+
+        foreach (WebChatWidget::COLORS as $color) {
+            if (! $this->exists($color)) {
+                continue;
+            }
+
+            $value = $this->nullableString($color);
+            $colors[$color] = $value !== null ? strtolower($value) : null;
+        }
+
+        return $colors;
     }
 
     /**

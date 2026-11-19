@@ -217,7 +217,7 @@ const automation = computed(() => {
                 aria-hidden="true"
             />
             <span>
-                <strong>Piloto controlado</strong> · solo se envían mensajes a
+                <strong>Piloto controlado</strong> · solo a
                 {{ diagnostics.transport.pilot_recipients }}
                 destinatario(s) autorizados (WHATSAPP_PILOT_RECIPIENTS); los
                 demás fallan sin llegar a Meta.
@@ -350,23 +350,30 @@ const automation = computed(() => {
                 {{ automation.schedule }}. {{ automation.now }}
             </p>
             <p>{{ automation.greeting }}</p>
-            <p class="text-muted-foreground">
-                <template v-if="connection.messages.away.in_open_conversations">
-                    El saludo se envía cuando el cliente inicia una conversación
-                    nueva o reabre una cerrada. Además, fuera de horario, quien
-                    vuelve a escribir en una conversación abierta recibe el
-                    mensaje fuera de horario una sola vez por periodo. La
-                    despedida, al cerrarla, solo dentro de la ventana de 24
-                    horas.
-                </template>
-                <template v-else>
-                    El saludo (bienvenida o fuera de horario) se envía una vez
-                    por conversación: cuando el cliente inicia una nueva o
-                    reabre una cerrada, nunca en una que sigue abierta. La
-                    despedida, al cerrarla, solo dentro de la ventana de 24
-                    horas.
-                </template>
-            </p>
+            <details class="text-muted-foreground">
+                <summary class="w-fit cursor-pointer select-none">
+                    Cuándo se envían
+                </summary>
+                <p class="mt-1">
+                    <template
+                        v-if="connection.messages.away.in_open_conversations"
+                    >
+                        El saludo se envía cuando el cliente inicia una
+                        conversación nueva o reabre una cerrada. Además, fuera
+                        de horario, quien vuelve a escribir en una conversación
+                        abierta recibe el mensaje fuera de horario una sola vez
+                        por periodo. La despedida, al cerrarla, solo dentro de
+                        la ventana de 24 horas.
+                    </template>
+                    <template v-else>
+                        El saludo (bienvenida o fuera de horario) se envía una
+                        vez por conversación: cuando el cliente inicia una nueva
+                        o reabre una cerrada, nunca en una que sigue abierta. La
+                        despedida, al cerrarla, solo dentro de la ventana de 24
+                        horas.
+                    </template>
+                </p>
+            </details>
             <p class="text-muted-foreground">{{ automation.recent }}</p>
             <p
                 v-if="diagnostics.automation.last_failure"

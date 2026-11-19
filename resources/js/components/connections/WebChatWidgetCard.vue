@@ -15,6 +15,7 @@ import { useClipboard } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import WebChatColorField from '@/components/connections/WebChatColorField.vue';
 import type { WebChatPreviewAppearance } from '@/components/connections/WebChatPreview.vue';
 import FormField from '@/components/FormField.vue';
 import FormSection from '@/components/FormSection.vue';
@@ -37,6 +38,13 @@ import {
     rotateKey,
     update as updateWidget,
 } from '@/routes/connections/widget';
+import {
+    LAUNCHER_WIDTH,
+    MAX_LAUNCHER_OFFSET,
+    PANEL_HEIGHT,
+    PANEL_WIDTH,
+    readableOn,
+} from '@/widget/launcher';
 import type {
     ConnectionOption,
     WebChatAvailabilityMode,
@@ -56,6 +64,8 @@ export type WebChatWidgetOptions = {
         min_contrast: number;
         session_idle_days: number;
     };
+    /** What visitors may upload (absent on older servers). */
+    visitorFiles?: { max_mb: string; video_max_mb: string };
 };
 
 /**
@@ -63,7 +73,11 @@ export type WebChatWidgetOptions = {
  * appearance, visitor identification, pre-chat form and availability, plus
  * the rotation of the public key and of the identity secret. It saves on
  * its own endpoint, apart from the connection form that contains it, and
- * reports the unsaved appearance so the preview can follow it live.
+ * reports the unsaved appearance so the preview can follow it live:
+ * texts, the colors of the conversation, the floating button (colors,
+ * shape, icon, size, width, text, corner and offsets) and the size of the
+ * chat window. Empty colors keep the widget's own; a very low contrast is
+ * only warned about (the choice is the administrator's).
  */
 const props = defineProps<{
     connectionId: number;
@@ -86,6 +100,27 @@ type WidgetForm = {
     accent_color: string;
     launcher_enabled: boolean;
     launcher_label: string;
+    background_color: string;
+    visitor_bubble_color: string;
+    visitor_text_color: string;
+    agent_bubble_color: string;
+    agent_text_color: string;
+    launcher_color: string;
+    launcher_icon_color: string;
+    launcher_shape: WebChatWidgetSettings['launcher_shape'];
+    launcher_icon: WebChatWidgetSettings['launcher_icon'];
+    launcher_size: WebChatWidgetSettings['launcher_size'];
+    launcher_font_size: WebChatWidgetSettings['launcher_font_size'];
+    launcher_width: number | null;
+    launcher_offset_x: number | null;
+    launcher_offset_y: number | null;
+    launcher_pulse: boolean;
+    panel_width: number | null;
+    panel_height: number | null;
+    online_text: string;
+    offline_status_text: string;
+    composer_placeholder: string;
+    allow_visitor_files: boolean;
     avatar: File | null;
     remove_avatar: boolean;
     identity_mode: WebChatIdentityMode;
@@ -112,6 +147,27 @@ function initialValues(widget: WebChatWidgetSettings): WidgetForm {
         accent_color: widget.accent_color,
         launcher_enabled: widget.launcher_enabled,
         launcher_label: widget.launcher_label ?? '',
+        background_color: widget.background_color ?? '',
+        visitor_bubble_color: widget.visitor_bubble_color ?? '',
+        visitor_text_color: widget.visitor_text_color ?? '',
+        agent_bubble_color: widget.agent_bubble_color ?? '',
+        agent_text_color: widget.agent_text_color ?? '',
+        launcher_color: widget.launcher_color ?? '',
+        launcher_icon_color: widget.launcher_icon_color ?? '',
+        launcher_shape: widget.launcher_shape ?? 'circle',
+        launcher_icon: widget.launcher_icon ?? 'chat',
+        launcher_size: widget.launcher_size ?? 'medium',
+        launcher_font_size: widget.launcher_font_size ?? 'medium',
+        launcher_width: widget.launcher_width ?? null,
+        launcher_offset_x: widget.launcher_offset_x ?? 0,
+        launcher_offset_y: widget.launcher_offset_y ?? 0,
+        launcher_pulse: widget.launcher_pulse ?? false,
+        panel_width: widget.panel_width ?? PANEL_WIDTH.default,
+        panel_height: widget.panel_height ?? PANEL_HEIGHT.default,
+        online_text: widget.online_text ?? '',
+        offline_status_text: widget.offline_status_text ?? '',
+        composer_placeholder: widget.composer_placeholder ?? '',
+        allow_visitor_files: widget.allow_visitor_files ?? true,
         avatar: null,
         remove_avatar: false,
         identity_mode: widget.identity_mode,
@@ -181,6 +237,27 @@ function normalizeOrigin(value: string): string {
     }
 }
 
+function luminanceOf(hex: string): number {
+    const channels = [1, 3, 5].map((start) => {
+        const value = parseInt(hex.slice(start, start + 2), 16) / 255;
+
+        return value <= 0.03928
+            ? value / 12.92
+            : ((value + 0.055) / 1.055) ** 2.4;
+    });
+
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+/** WCAG contrast ratio between two #rrggbb colors. */
+function contrastBetween(first: string, second: string): number {
+    const [light, dark] = [luminanceOf(first), luminanceOf(second)].sort(
+        (a, b) => b - a,
+    );
+
+    return (light + 0.05) / (dark + 0.05);
+}
+
 /** WCAG contrast ratio between a #rrggbb color and white. */
 function contrastWithWhite(hex: string): number {
     const channels = [1, 3, 5].map((start) => {
@@ -203,6 +280,115 @@ const contrast = computed(() =>
         ? contrastWithWhite(form.accent_color)
         : null,
 );
+
+const COLOR_FIELDS = [
+    'background_color',
+    'visitor_bubble_color',
+    'visitor_text_color',
+    'agent_bubble_color',
+    'agent_text_color',
+    'launcher_color',
+    'launcher_icon_color',
+] as const;
+
+type ColorField = (typeof COLOR_FIELDS)[number];
+
+/** The color a field stands for: the one chosen, or what the widget uses. */
+function colorOf(field: ColorField): string | null {
+    const value = form[field].trim();
+
+    return HEX_COLOR.test(value) ? value.toLowerCase() : null;
+}
+
+const accent = computed(() =>
+    HEX_COLOR.test(form.accent_color)
+        ? form.accent_color.toLowerCase()
+        : props.widget.accent_color,
+);
+
+/** What each color shows while it is left empty (light theme). */
+const fallbacks = computed<Record<ColorField, string>>(() => {
+    const visitorBubble = colorOf('visitor_bubble_color') ?? accent.value;
+    const agentBubble = colorOf('agent_bubble_color') ?? '#f3f4f6';
+    const launcher = colorOf('launcher_color') ?? accent.value;
+
+    return {
+        background_color: '#ffffff',
+        visitor_bubble_color: accent.value,
+        visitor_text_color: readableOn(visitorBubble),
+        agent_bubble_color: '#f3f4f6',
+        agent_text_color:
+            colorOf('agent_bubble_color') !== null
+                ? readableOn(agentBubble)
+                : '#111827',
+        launcher_color: accent.value,
+        launcher_icon_color: readableOn(launcher),
+    };
+});
+
+/** Pairs whose contrast is very low (under 3:1): only a warning. */
+const lowContrast = computed(() => {
+    const pairs: [string, ColorField, ColorField][] = [
+        [
+            'mensajes del visitante',
+            'visitor_bubble_color',
+            'visitor_text_color',
+        ],
+        ['mensajes del agente', 'agent_bubble_color', 'agent_text_color'],
+        ['botón flotante', 'launcher_color', 'launcher_icon_color'],
+    ];
+
+    return pairs
+        .map(([label, bubble, text]) => ({
+            label,
+            ratio: contrastBetween(
+                colorOf(bubble) ?? fallbacks.value[bubble],
+                colorOf(text) ?? fallbacks.value[text],
+            ),
+        }))
+        .filter((pair) => pair.ratio < 3);
+});
+
+const COLOR_RULE = pattern(HEX_COLOR, 'Usa formato #RRGGBB o déjalo vacío.');
+
+const SHAPE_OPTIONS: { value: WidgetForm['launcher_shape']; label: string }[] =
+    [
+        { value: 'circle', label: 'Círculo' },
+        { value: 'rounded', label: 'Cuadrado redondeado' },
+        { value: 'pill', label: 'Píldora con texto' },
+    ];
+
+const ICON_OPTIONS: { value: WidgetForm['launcher_icon']; label: string }[] = [
+    { value: 'chat', label: 'Globo de chat' },
+    { value: 'message', label: 'Mensaje con teléfono' },
+    { value: 'headset', label: 'Audífonos' },
+    { value: 'help', label: 'Ayuda' },
+];
+
+const SIZE_OPTIONS: { value: WidgetForm['launcher_size']; label: string }[] = [
+    { value: 'small', label: 'Chico' },
+    { value: 'medium', label: 'Mediano' },
+    { value: 'large', label: 'Grande' },
+];
+
+const WIDTH_OPTIONS = [
+    { value: 'auto', label: 'Automático' },
+    { value: 'fixed', label: 'Fijo' },
+];
+
+/** Automatic width (fits the text) or a fixed one. */
+const widthMode = computed<string>({
+    get: () => (form.launcher_width === null ? 'auto' : 'fixed'),
+    set: (mode: string) => {
+        form.launcher_width = mode === 'auto' ? null : 160;
+    },
+});
+
+const isPill = computed(() => form.launcher_shape === 'pill');
+
+function numberOrNull(value: string | number): number | null {
+    return value === '' ? null : Number(value);
+}
 
 const originRule: FieldRule = (value) =>
     typeof value === 'string' ? originProblem(value) : null;
@@ -230,6 +416,25 @@ const validation = useFormValidation(form, {
                         : null,
             ],
             'prechat.privacy_notice': [maxLength(500)],
+            online_text: [maxLength(40)],
+            offline_status_text: [maxLength(40)],
+            composer_placeholder: [maxLength(80)],
+            launcher_width: [
+                integerBetween(LAUNCHER_WIDTH.min, LAUNCHER_WIDTH.max),
+            ],
+            launcher_offset_x: [integerBetween(0, MAX_LAUNCHER_OFFSET)],
+            launcher_offset_y: [integerBetween(0, MAX_LAUNCHER_OFFSET)],
+            panel_width: [
+                required('Indica el ancho de la ventana.'),
+                integerBetween(PANEL_WIDTH.min, PANEL_WIDTH.max),
+            ],
+            panel_height: [
+                required('Indica el alto de la ventana.'),
+                integerBetween(PANEL_HEIGHT.min, PANEL_HEIGHT.max),
+            ],
+            ...Object.fromEntries(
+                COLOR_FIELDS.map((field) => [field, [COLOR_RULE]]),
+            ),
             session_idle_days: [
                 required('Indica cuántos días dura una sesión sin actividad.'),
                 integerBetween(1, props.options.limits.session_idle_days),
@@ -363,18 +568,61 @@ function removeAvatar(): void {
     avatarPreview.value = null;
 }
 
+function bounded(
+    value: number | null,
+    bounds: { min: number; max: number },
+    fallback: number,
+): number {
+    return value === null || !Number.isFinite(value)
+        ? fallback
+        : Math.min(bounds.max, Math.max(bounds.min, Math.round(value)));
+}
+
 const appearance = computed<WebChatPreviewAppearance>(() => ({
     title: form.title,
     subtitle: form.subtitle || null,
     welcome_text: form.welcome_text || null,
     offline_text: form.offline_text || null,
-    accent_color: HEX_COLOR.test(form.accent_color)
-        ? form.accent_color
-        : props.widget.accent_color,
+    online_text: form.online_text.trim() || null,
+    offline_status_text: form.offline_status_text.trim() || null,
+    composer_placeholder: form.composer_placeholder.trim() || null,
+    accent_color: accent.value,
     position: form.position,
     launcher_enabled: form.launcher_enabled,
     launcher_label: form.launcher_label || null,
     avatar: avatarPreview.value,
+    background_color: colorOf('background_color'),
+    visitor_bubble_color: colorOf('visitor_bubble_color'),
+    visitor_text_color: colorOf('visitor_text_color'),
+    agent_bubble_color: colorOf('agent_bubble_color'),
+    agent_text_color: colorOf('agent_text_color'),
+    launcher_color: colorOf('launcher_color'),
+    launcher_icon_color: colorOf('launcher_icon_color'),
+    launcher_shape: form.launcher_shape,
+    launcher_icon: form.launcher_icon,
+    launcher_size: form.launcher_size,
+    launcher_font_size: form.launcher_font_size,
+    launcher_width:
+        form.launcher_width === null
+            ? null
+            : bounded(form.launcher_width, LAUNCHER_WIDTH, 160),
+    launcher_offset: {
+        x: bounded(
+            form.launcher_offset_x,
+            { min: 0, max: MAX_LAUNCHER_OFFSET },
+            0,
+        ),
+        y: bounded(
+            form.launcher_offset_y,
+            { min: 0, max: MAX_LAUNCHER_OFFSET },
+            0,
+        ),
+    },
+    launcher_pulse: form.launcher_pulse,
+    panel: {
+        width: bounded(form.panel_width, PANEL_WIDTH, PANEL_WIDTH.default),
+        height: bounded(form.panel_height, PANEL_HEIGHT, PANEL_HEIGHT.default),
+    },
 }));
 
 watch(
@@ -663,6 +911,64 @@ const fieldError = (path: string): string | undefined =>
                         placeholder="¡Hola! ¿En qué podemos ayudarte?"
                     />
                 </FormField>
+                <div
+                    class="col-span-full grid [grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))] gap-3"
+                >
+                    <FormField
+                        id="widget-online-text"
+                        label="Estado en línea"
+                        :error="fieldError('online_text')"
+                    >
+                        <Input
+                            id="widget-online-text"
+                            v-model="form.online_text"
+                            v-bind="
+                                validation.field(
+                                    'online_text',
+                                    'widget-online-text',
+                                )
+                            "
+                            maxlength="40"
+                            placeholder="En línea"
+                        />
+                    </FormField>
+                    <FormField
+                        id="widget-offline-status"
+                        label="Estado fuera de línea"
+                        :error="fieldError('offline_status_text')"
+                    >
+                        <Input
+                            id="widget-offline-status"
+                            v-model="form.offline_status_text"
+                            v-bind="
+                                validation.field(
+                                    'offline_status_text',
+                                    'widget-offline-status',
+                                )
+                            "
+                            maxlength="40"
+                            placeholder="Fuera de línea"
+                        />
+                    </FormField>
+                    <FormField
+                        id="widget-placeholder"
+                        label="Caja de mensaje"
+                        :error="fieldError('composer_placeholder')"
+                    >
+                        <Input
+                            id="widget-placeholder"
+                            v-model="form.composer_placeholder"
+                            v-bind="
+                                validation.field(
+                                    'composer_placeholder',
+                                    'widget-placeholder',
+                                )
+                            "
+                            maxlength="80"
+                            placeholder="Escribe tu mensaje…"
+                        />
+                    </FormField>
+                </div>
                 <FormField
                     id="widget-accent"
                     label="Color de acento"
@@ -696,54 +1002,6 @@ const fieldError = (path: string): string | undefined =>
                         />
                     </div>
                 </FormField>
-                <FormField
-                    id="widget-position"
-                    label="Posición"
-                    :error="fieldError('position')"
-                >
-                    <AppSelect
-                        id="widget-position"
-                        v-model="form.position"
-                        :options="options.positions"
-                        :disabled="!canUpdate"
-                    />
-                </FormField>
-                <FormField
-                    id="widget-launcher-label"
-                    label="Texto del botón (opcional)"
-                    :error="fieldError('launcher_label')"
-                >
-                    <Input
-                        id="widget-launcher-label"
-                        v-model="form.launcher_label"
-                        v-bind="
-                            validation.field(
-                                'launcher_label',
-                                'widget-launcher-label',
-                            )
-                        "
-                        maxlength="40"
-                        placeholder="¿Necesitas ayuda?"
-                        :disabled="!form.launcher_enabled"
-                    />
-                </FormField>
-                <div class="grid gap-2">
-                    <span class="text-sm font-medium" aria-hidden="true"
-                        >Botón flotante</span
-                    >
-                    <div
-                        class="flex min-h-9 items-center justify-between gap-3 rounded-md border px-3 py-1.5"
-                    >
-                        <label for="widget-launcher" class="text-sm"
-                            >Mostrar botón flotante</label
-                        >
-                        <Switch
-                            id="widget-launcher"
-                            v-model="form.launcher_enabled"
-                            :disabled="!canUpdate"
-                        />
-                    </div>
-                </div>
                 <FormField
                     id="widget-avatar"
                     label="Imagen (opcional)"
@@ -786,6 +1044,342 @@ const fieldError = (path: string): string | undefined =>
                         </div>
                     </div>
                 </FormField>
+
+                <h4 class="widget-group-title">Colores de la conversación</h4>
+                <div class="widget-color-grid col-span-full">
+                    <WebChatColorField
+                        id="widget-background-color"
+                        v-model="form.background_color"
+                        label="Fondo"
+                        :fallback="fallbacks.background_color"
+                        :error="fieldError('background_color')"
+                        :disabled="!canUpdate"
+                    />
+                    <WebChatColorField
+                        id="widget-visitor-bubble"
+                        v-model="form.visitor_bubble_color"
+                        label="Burbuja visitante"
+                        :fallback="fallbacks.visitor_bubble_color"
+                        :swatches="ACCENT_SWATCHES"
+                        :error="fieldError('visitor_bubble_color')"
+                        :disabled="!canUpdate"
+                    />
+                    <WebChatColorField
+                        id="widget-visitor-text"
+                        v-model="form.visitor_text_color"
+                        label="Texto visitante"
+                        :fallback="fallbacks.visitor_text_color"
+                        :error="fieldError('visitor_text_color')"
+                        :disabled="!canUpdate"
+                    />
+                    <WebChatColorField
+                        id="widget-agent-bubble"
+                        v-model="form.agent_bubble_color"
+                        label="Burbuja agente"
+                        :fallback="fallbacks.agent_bubble_color"
+                        :error="fieldError('agent_bubble_color')"
+                        :disabled="!canUpdate"
+                    />
+                    <WebChatColorField
+                        id="widget-agent-text"
+                        v-model="form.agent_text_color"
+                        label="Texto agente"
+                        :fallback="fallbacks.agent_text_color"
+                        :error="fieldError('agent_text_color')"
+                        :disabled="!canUpdate"
+                    />
+                </div>
+
+                <h4 class="widget-group-title">Botón flotante</h4>
+                <div
+                    class="col-span-full flex min-h-9 flex-wrap items-center gap-x-6 gap-y-2"
+                >
+                    <label
+                        for="widget-launcher"
+                        class="inline-flex items-center gap-2 text-sm"
+                    >
+                        <Switch
+                            id="widget-launcher"
+                            v-model="form.launcher_enabled"
+                            :disabled="!canUpdate"
+                        />
+                        Mostrar botón
+                    </label>
+                    <label
+                        for="widget-launcher-pulse"
+                        class="inline-flex items-center gap-2 text-sm"
+                        title="El botón late hasta que el visitante abre el chat o mientras tiene mensajes sin leer."
+                    >
+                        <Switch
+                            id="widget-launcher-pulse"
+                            v-model="form.launcher_pulse"
+                            :disabled="!canUpdate || !form.launcher_enabled"
+                        />
+                        Animación de atención
+                    </label>
+                </div>
+                <div class="widget-color-grid col-span-full">
+                    <WebChatColorField
+                        id="widget-launcher-color"
+                        v-model="form.launcher_color"
+                        label="Color del botón"
+                        :fallback="fallbacks.launcher_color"
+                        :swatches="ACCENT_SWATCHES"
+                        :error="fieldError('launcher_color')"
+                        :disabled="!canUpdate"
+                    />
+                    <WebChatColorField
+                        id="widget-launcher-icon-color"
+                        v-model="form.launcher_icon_color"
+                        label="Color del ícono"
+                        :fallback="fallbacks.launcher_icon_color"
+                        :error="fieldError('launcher_icon_color')"
+                        :disabled="!canUpdate"
+                    />
+                    <FormField
+                        id="widget-launcher-icon"
+                        label="Ícono"
+                        :error="fieldError('launcher_icon')"
+                    >
+                        <AppSelect
+                            id="widget-launcher-icon"
+                            v-model="form.launcher_icon"
+                            :options="ICON_OPTIONS"
+                            :disabled="!canUpdate"
+                        />
+                    </FormField>
+                    <FormField
+                        id="widget-launcher-shape"
+                        label="Forma"
+                        :error="fieldError('launcher_shape')"
+                    >
+                        <AppSelect
+                            id="widget-launcher-shape"
+                            v-model="form.launcher_shape"
+                            :options="SHAPE_OPTIONS"
+                            :disabled="!canUpdate"
+                        />
+                    </FormField>
+                    <FormField
+                        id="widget-launcher-size"
+                        label="Tamaño"
+                        :error="fieldError('launcher_size')"
+                    >
+                        <AppSelect
+                            id="widget-launcher-size"
+                            v-model="form.launcher_size"
+                            :options="SIZE_OPTIONS"
+                            :disabled="!canUpdate"
+                        />
+                    </FormField>
+                    <FormField
+                        id="widget-position"
+                        label="Posición"
+                        :error="fieldError('position')"
+                    >
+                        <AppSelect
+                            id="widget-position"
+                            v-model="form.position"
+                            :options="options.positions"
+                            :disabled="!canUpdate"
+                        />
+                    </FormField>
+                    <FormField
+                        id="widget-offset-x"
+                        label="Margen lateral (px)"
+                        :error="fieldError('launcher_offset_x')"
+                    >
+                        <Input
+                            id="widget-offset-x"
+                            :model-value="form.launcher_offset_x ?? ''"
+                            v-bind="
+                                validation.field(
+                                    'launcher_offset_x',
+                                    'widget-offset-x',
+                                )
+                            "
+                            type="number"
+                            min="0"
+                            :max="MAX_LAUNCHER_OFFSET"
+                            step="1"
+                            @update:model-value="
+                                (value: string | number) =>
+                                    (form.launcher_offset_x =
+                                        numberOrNull(value))
+                            "
+                        />
+                    </FormField>
+                    <FormField
+                        id="widget-offset-y"
+                        label="Margen inferior (px)"
+                        :error="fieldError('launcher_offset_y')"
+                    >
+                        <Input
+                            id="widget-offset-y"
+                            :model-value="form.launcher_offset_y ?? ''"
+                            v-bind="
+                                validation.field(
+                                    'launcher_offset_y',
+                                    'widget-offset-y',
+                                )
+                            "
+                            type="number"
+                            min="0"
+                            :max="MAX_LAUNCHER_OFFSET"
+                            step="1"
+                            @update:model-value="
+                                (value: string | number) =>
+                                    (form.launcher_offset_y =
+                                        numberOrNull(value))
+                            "
+                        />
+                    </FormField>
+                </div>
+                <div v-if="isPill" class="widget-color-grid col-span-full">
+                    <FormField
+                        id="widget-launcher-label"
+                        label="Texto del botón"
+                        :error="fieldError('launcher_label')"
+                        class="col-span-2 max-sm:col-span-full"
+                    >
+                        <Input
+                            id="widget-launcher-label"
+                            v-model="form.launcher_label"
+                            v-bind="
+                                validation.field(
+                                    'launcher_label',
+                                    'widget-launcher-label',
+                                )
+                            "
+                            maxlength="40"
+                            placeholder="¿Te ayudamos?"
+                            :disabled="!form.launcher_enabled"
+                        />
+                    </FormField>
+                    <FormField
+                        id="widget-launcher-font"
+                        label="Tamaño del texto"
+                        :error="fieldError('launcher_font_size')"
+                    >
+                        <AppSelect
+                            id="widget-launcher-font"
+                            v-model="form.launcher_font_size"
+                            :options="SIZE_OPTIONS"
+                            :disabled="!canUpdate"
+                        />
+                    </FormField>
+                    <FormField
+                        id="widget-launcher-width-mode"
+                        label="Ancho"
+                        :error="fieldError('launcher_width')"
+                    >
+                        <div class="flex gap-1.5">
+                            <AppSelect
+                                id="widget-launcher-width-mode"
+                                v-model="widthMode"
+                                :options="WIDTH_OPTIONS"
+                                :disabled="!canUpdate"
+                                class="min-w-0 flex-1"
+                            />
+                            <Input
+                                v-if="form.launcher_width !== null"
+                                id="widget-launcher-width"
+                                :model-value="form.launcher_width"
+                                v-bind="
+                                    validation.field(
+                                        'launcher_width',
+                                        'widget-launcher-width',
+                                    )
+                                "
+                                type="number"
+                                :min="LAUNCHER_WIDTH.min"
+                                :max="LAUNCHER_WIDTH.max"
+                                step="1"
+                                class="w-20"
+                                aria-label="Ancho fijo en píxeles"
+                                @update:model-value="
+                                    (value: string | number) =>
+                                        (form.launcher_width =
+                                            value === '' ? 0 : Number(value))
+                                "
+                            />
+                        </div>
+                    </FormField>
+                </div>
+
+                <p
+                    v-if="lowContrast.length > 0"
+                    class="col-span-full flex items-start gap-1.5 text-xs text-warning-soft-foreground"
+                    role="status"
+                >
+                    <TriangleAlert
+                        class="mt-px size-3.5 shrink-0"
+                        aria-hidden="true"
+                    />
+                    <span
+                        >Contraste bajo en
+                        {{
+                            lowContrast
+                                .map(
+                                    (pair) =>
+                                        `${pair.label} (${pair.ratio.toFixed(1)}:1)`,
+                                )
+                                .join(', ')
+                        }}: podría leerse con dificultad.</span
+                    >
+                </p>
+
+                <h4 class="widget-group-title">Ventana del chat</h4>
+                <div class="widget-color-grid col-span-full">
+                    <FormField
+                        id="widget-panel-width"
+                        :label="`Ancho (${PANEL_WIDTH.min}–${PANEL_WIDTH.max} px)`"
+                        :error="fieldError('panel_width')"
+                    >
+                        <Input
+                            id="widget-panel-width"
+                            :model-value="form.panel_width ?? ''"
+                            v-bind="
+                                validation.field(
+                                    'panel_width',
+                                    'widget-panel-width',
+                                )
+                            "
+                            type="number"
+                            :min="PANEL_WIDTH.min"
+                            :max="PANEL_WIDTH.max"
+                            step="10"
+                            @update:model-value="
+                                (value: string | number) =>
+                                    (form.panel_width = numberOrNull(value))
+                            "
+                        />
+                    </FormField>
+                    <FormField
+                        id="widget-panel-height"
+                        :label="`Alto (${PANEL_HEIGHT.min}–${PANEL_HEIGHT.max} px)`"
+                        :error="fieldError('panel_height')"
+                    >
+                        <Input
+                            id="widget-panel-height"
+                            :model-value="form.panel_height ?? ''"
+                            v-bind="
+                                validation.field(
+                                    'panel_height',
+                                    'widget-panel-height',
+                                )
+                            "
+                            type="number"
+                            :min="PANEL_HEIGHT.min"
+                            :max="PANEL_HEIGHT.max"
+                            step="10"
+                            @update:model-value="
+                                (value: string | number) =>
+                                    (form.panel_height = numberOrNull(value))
+                            "
+                        />
+                    </FormField>
+                </div>
             </section>
         </FormSection>
 
@@ -1038,6 +1632,28 @@ const fieldError = (path: string): string | undefined =>
                         "
                     />
                 </FormField>
+                <div class="grid gap-2">
+                    <span class="text-sm font-medium" aria-hidden="true"
+                        >Archivos de visitantes</span
+                    >
+                    <div
+                        class="flex min-h-9 items-center justify-between gap-3 rounded-md border px-3 py-1.5"
+                        :title="
+                            options.visitorFiles
+                                ? `Imágenes, PDF, Office y audio hasta ${options.visitorFiles.max_mb} MB; videos hasta ${options.visitorFiles.video_max_mb} MB.`
+                                : undefined
+                        "
+                    >
+                        <label for="widget-visitor-files" class="text-sm"
+                            >Permitir que el visitante envíe archivos</label
+                        >
+                        <Switch
+                            id="widget-visitor-files"
+                            v-model="form.allow_visitor_files"
+                            :disabled="!canUpdate"
+                        />
+                    </div>
+                </div>
                 <FormField
                     id="widget-offline"
                     label="Mensaje fuera de línea (opcional)"
@@ -1153,3 +1769,23 @@ const fieldError = (path: string): string | undefined =>
         />
     </div>
 </template>
+
+<style scoped>
+.widget-group-title {
+    grid-column: 1 / -1;
+    margin-top: 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+}
+
+.widget-color-grid {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+}
+</style>

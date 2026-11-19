@@ -260,6 +260,8 @@ export type ConversationFilters = {
     connection: number | null;
     /** ConnectionChannel value, or null for every channel. */
     channel: ConnectionChannel | null;
+    /** «web»: the «Mensajes web» inbox (web chat only); «main»: every other channel. */
+    space: 'web' | 'main';
     search: string;
     search_in: ConversationSearchScope;
     /** The message search has no word it can look for (short words, stopwords). */

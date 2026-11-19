@@ -39,6 +39,10 @@ import { createTokenStorage } from './storage';
  * page only through the postMessage protocol, and only with its parent at
  * the host origin the server validated.
  *
+ * The visitor may also send files (paperclip, when the widget allows it):
+ * each one is uploaded with its own client id (POST session/files, with
+ * progress) and shows in the thread like a text message.
+ *
  * cm:reset (the host's ChatManager('logout')) ends the session and starts
  * over. With identity_mode = required a stored session is only resumed
  * after the host identifies its user again on this page load, and through
@@ -107,6 +111,13 @@ let hostWork: Promise<void> = Promise.resolve();
 const SURFACE = { light: '#ffffff', dark: '#030712' } as const;
 /** Readable text and focus color on that background (gray-800, gray-100). */
 const FALLBACK_INK = { light: '#1f2937', dark: '#f3f4f6' } as const;
+/** The agent's bubble of each theme (gray-100 / gray-900, gray-800 / gray-100). */
+const AGENT_BUBBLE = {
+    light: { bg: '#f3f4f6', fg: '#111827' },
+    dark: { bg: '#1f2937', fg: '#f3f4f6' },
+} as const;
+/** Timestamps and names on the page (gray-500, gray-400). */
+const MUTED = { light: '#6b7280', dark: '#9ca3af' } as const;
 
 const darkQuery =
     typeof window.matchMedia === 'function'
@@ -145,16 +156,51 @@ function contrastRatio(first: string, second: string): number {
  * border (--cm-ring, 3:1) it is only used when it contrasts enough with the
  * background of the visitor's theme, otherwise a neutral ink is.
  */
+function readableOn(hex: string): string {
+    return luminanceOf(hex) > 0.4 ? '#111827' : '#ffffff';
+}
+
+/**
+ * The colors of the conversation the administrator chose (each one null
+ * keeps the theme's own): the background, the visitor's bubbles (the accent
+ * by default) and the agent's; a text color left empty is picked readable
+ * on its bubble. With a custom background the muted texts follow it.
+ */
 const themeStyle = computed(() => {
-    const accent = appearance.value.accent_color;
+    const a = appearance.value;
+    const accent = a.accent_color;
     const theme = prefersDark.value ? 'dark' : 'light';
-    const contrast = contrastRatio(accent, SURFACE[theme]);
+    const surface = a.background_color ?? SURFACE[theme];
+    const contrast = contrastRatio(accent, surface);
+    const ink =
+        a.background_color !== null
+            ? readableOn(a.background_color) === '#ffffff'
+                ? FALLBACK_INK.dark
+                : FALLBACK_INK.light
+            : FALLBACK_INK[theme];
+    const visitorBg = a.visitor_bubble_color ?? accent;
+    const agentBg = a.agent_bubble_color ?? AGENT_BUBBLE[theme].bg;
 
     return {
         '--cm-accent': accent,
-        '--cm-accent-fg': luminanceOf(accent) > 0.4 ? '#111827' : '#ffffff',
-        '--cm-accent-text': contrast >= 4.5 ? accent : FALLBACK_INK[theme],
-        '--cm-ring': contrast >= 3 ? accent : FALLBACK_INK[theme],
+        '--cm-accent-fg': readableOn(accent),
+        '--cm-accent-text': contrast >= 4.5 ? accent : ink,
+        '--cm-ring': contrast >= 3 ? accent : ink,
+        '--cm-bg': surface,
+        '--cm-muted':
+            a.background_color !== null
+                ? readableOn(a.background_color) === '#ffffff'
+                    ? MUTED.dark
+                    : '#4b5563'
+                : MUTED[theme],
+        '--cm-visitor-bg': visitorBg,
+        '--cm-visitor-fg': a.visitor_text_color ?? readableOn(visitorBg),
+        '--cm-agent-bg': agentBg,
+        '--cm-agent-fg':
+            a.agent_text_color ??
+            (a.agent_bubble_color !== null
+                ? readableOn(agentBg)
+                : AGENT_BUBBLE[theme].fg),
     };
 });
 
@@ -175,7 +221,9 @@ const statusText = computed(() => {
         return `Te atiende ${agent}`;
     }
 
-    return availability.value.online ? 'En línea' : 'Fuera de línea';
+    return availability.value.online
+        ? (appearance.value.online_text ?? 'En línea')
+        : (appearance.value.offline_status_text ?? 'Fuera de línea');
 });
 
 const offlineText = computed(
@@ -203,6 +251,16 @@ function announceReady(): void {
             launcher_enabled: appearance.value.launcher_enabled,
             launcher_label: appearance.value.launcher_label,
             avatar: appearance.value.avatar,
+            launcher_color: appearance.value.launcher_color,
+            launcher_icon_color: appearance.value.launcher_icon_color,
+            launcher_shape: appearance.value.launcher_shape,
+            launcher_icon: appearance.value.launcher_icon,
+            launcher_size: appearance.value.launcher_size,
+            launcher_offset: { ...appearance.value.launcher_offset },
+            launcher_pulse: appearance.value.launcher_pulse,
+            launcher_width: appearance.value.launcher_width,
+            launcher_font_size: appearance.value.launcher_font_size,
+            panel: { ...appearance.value.panel },
         },
     });
 }
@@ -466,6 +524,7 @@ function ticketExpired(): boolean {
 }
 
 function resetThread(): void {
+    messages.value.forEach(releasePreview);
     messages.value = [];
     lastCursor = null;
     lastDelivered = null;
@@ -860,7 +919,12 @@ async function deliver(entry: ThreadMessage): Promise<void> {
     delete errors[entry.clientId!];
 
     try {
-        const stored = await api.send(entry.clientId!, entry.body ?? '');
+        const upload = entry.upload;
+        const stored = upload
+            ? await api.sendFile(entry.clientId!, upload.file, (fraction) => {
+                  upload.progress = fraction;
+              })
+            : await api.send(entry.clientId!, entry.body ?? '');
         const duplicate = messages.value.find(
             (m) => m.cursor === stored.cursor && m !== entry,
         );
@@ -874,6 +938,11 @@ async function deliver(entry: ThreadMessage): Promise<void> {
             });
         }
 
+        if (upload) {
+            releasePreview(entry);
+            entry.upload = undefined;
+        }
+
         sortThread();
         online.value = true;
         void refreshSession();
@@ -883,6 +952,15 @@ async function deliver(entry: ThreadMessage): Promise<void> {
         if (error instanceof ApiError) {
             if (error.code === 'widget_unavailable') {
                 errors[entry.clientId!] = 'el chat no está disponible ahora';
+            } else if (error.code === 'files_disabled') {
+                errors[entry.clientId!] = 'este chat no admite archivos';
+            } else if (entry.upload && error.status === 413) {
+                errors[entry.clientId!] = 'el archivo es demasiado grande';
+            } else if (entry.upload && error.status === 422) {
+                errors[entry.clientId!] = error.message;
+            } else if (entry.upload && error.status >= 500) {
+                errors[entry.clientId!] =
+                    'no se pudo guardar el archivo, inténtalo en unos minutos';
             } else if (error.status === 429) {
                 errors[entry.clientId!] =
                     'estás enviando muy rápido, espera un momento';
@@ -917,6 +995,42 @@ function send(body: string): void {
     messages.value.push(entry);
     scrollToEnd();
     void deliver(messages.value[messages.value.length - 1]);
+}
+
+/** A file the visitor chose (ChatComposer already checked type and size). */
+function sendFile(file: File): void {
+    if (!session.value) {
+        return;
+    }
+
+    const showsPreview = file.type.startsWith('image/');
+    const entry = reactive<ThreadMessage>({
+        cursor: '',
+        direction: 'inbound',
+        author: 'visitor',
+        agent_name: null,
+        body: null,
+        attachments: [],
+        created_at: new Date().toISOString(),
+        clientId: newClientMessageId(),
+        localStatus: 'sending',
+        order: Number.MAX_SAFE_INTEGER,
+        upload: {
+            file,
+            progress: 0,
+            previewUrl: showsPreview ? URL.createObjectURL(file) : null,
+        },
+    }) as ThreadMessage;
+
+    messages.value.push(entry);
+    scrollToEnd();
+    void deliver(messages.value[messages.value.length - 1]);
+}
+
+function releasePreview(entry: ThreadMessage): void {
+    if (entry.upload?.previewUrl) {
+        URL.revokeObjectURL(entry.upload.previewUrl);
+    }
 }
 
 function retry(message: ThreadMessage): void {
@@ -1120,11 +1234,11 @@ function reload(): void {
             </p>
             <div
                 ref="scroller"
-                class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-3"
+                class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-(--cm-bg) px-4 py-3"
             >
                 <p
                     v-if="appearance.welcome_text"
-                    class="mb-3 max-w-[85%] rounded-2xl rounded-bl-md bg-gray-100 px-3.5 py-2 text-[15px] leading-snug wrap-anywhere whitespace-pre-line text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                    class="mb-3 max-w-[85%] rounded-2xl rounded-bl-md bg-(--cm-agent-bg) px-3.5 py-2 text-[15px] leading-snug wrap-anywhere whitespace-pre-line text-(--cm-agent-fg)"
                 >
                     {{ appearance.welcome_text }}
                 </p>
@@ -1144,7 +1258,7 @@ function reload(): void {
                 </ol>
                 <p
                     v-if="conversationClosed"
-                    class="mt-3 text-center text-xs text-gray-500 dark:text-gray-400"
+                    class="mt-3 text-center text-xs text-(--cm-muted)"
                 >
                     La conversación terminó. Escribe si necesitas algo más.
                 </p>
@@ -1154,7 +1268,10 @@ function reload(): void {
                 v-model="draft"
                 :max-length="config.message_max_length"
                 :disabled="preview || !session"
+                :placeholder="appearance.composer_placeholder"
+                :files="config.visitor_files ?? null"
                 @send="send"
+                @attach="sendFile"
             />
         </template>
 

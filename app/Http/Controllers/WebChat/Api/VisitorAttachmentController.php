@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Models\MessageAttachment;
 use App\Models\WebChatSession;
 use App\Services\WebChat\VisitorSessions;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -16,11 +17,14 @@ use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Files the agents sent to a visitor, behind short-lived signed URLs
+ * Files of a visitor's conversation (the ones the agents sent and the ones
+ * the visitor uploaded from the widget, "web.in.*"; never other inbound
+ * media), behind short-lived signed URLs
  * (VisitorMessageResource) bound to the visitor's session ("s"). The
- * session must still be usable and the file must belong to an outbound
- * message the session can see; anything else is the same 404. Images open
- * inline; every other type downloads. The browser never guesses the type
+ * session must still be usable and the file must belong to a message the
+ * session can see; anything else is the same 404. Images, audio and video
+ * are served inline with their real type (so the widget can show and play
+ * them); every other type downloads. The browser never guesses the type
  * and the file is sandboxed, so it cannot run scripts.
  */
 class VisitorAttachmentController extends Controller
@@ -28,7 +32,11 @@ class VisitorAttachmentController extends Controller
     use ServesStoredAttachments;
 
     /** @var list<string> */
-    private const INLINE = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    private const INLINE = [
+        'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+        'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/wav', 'audio/webm',
+        'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime',
+    ];
 
     public function show(Request $request, VisitorSessions $sessions, string $attachment): Response
     {
@@ -39,7 +47,9 @@ class VisitorAttachmentController extends Controller
         $file = MessageAttachment::query()
             ->whereKey((int) $attachment)
             ->where('status', AttachmentStatus::Available)
-            ->whereIn('message_id', $sessions->visibleMessages($session)->select('id')->where('direction', MessageDirection::Outbound))
+            ->whereIn('message_id', $sessions->visibleMessages($session)->select('id')->where(fn (Builder $own) => $own
+                ->where('direction', MessageDirection::Outbound)
+                ->orWhere('whatsapp_message_id', 'like', VisitorSessions::WIDGET_PREFIX.'%')))
             ->first();
 
         abort_if($file === null || $file->path === null || $file->path === '', 404);

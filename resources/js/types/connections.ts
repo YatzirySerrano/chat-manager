@@ -32,6 +32,29 @@ export type WebChatWidgetSettings = {
     accent_color: string;
     launcher_enabled: boolean;
     launcher_label: string | null;
+    /** Optional colors (#rrggbb); null keeps the widget's own. */
+    background_color: string | null;
+    visitor_bubble_color: string | null;
+    visitor_text_color: string | null;
+    agent_bubble_color: string | null;
+    agent_text_color: string | null;
+    launcher_color: string | null;
+    launcher_icon_color: string | null;
+    launcher_shape: 'circle' | 'rounded' | 'pill';
+    launcher_icon: 'chat' | 'message' | 'headset' | 'help';
+    launcher_size: 'small' | 'medium' | 'large';
+    launcher_offset_x: number;
+    launcher_offset_y: number;
+    launcher_pulse: boolean;
+    /** Fixed width of the button in px; null fits its content. */
+    launcher_width: number | null;
+    launcher_font_size: 'small' | 'medium' | 'large';
+    panel_width: number;
+    panel_height: number;
+    online_text: string | null;
+    offline_status_text: string | null;
+    composer_placeholder: string | null;
+    allow_visitor_files: boolean;
     avatar_url: string | null;
     identity_mode: WebChatIdentityMode;
     prechat: {

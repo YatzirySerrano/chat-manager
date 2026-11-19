@@ -1,24 +1,18 @@
 <script setup lang="ts">
 import { useEventListener, watchDebounced } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref } from 'vue';
+import { launcherIconSvg, launcherMetrics } from '@/widget/launcher';
+import type { Appearance } from '@/widget/protocol';
 
 /**
  * Live preview of the web chat widget: the real frame served by the
  * application in preview mode, updated while the form is edited by sending
  * it the unsaved appearance through postMessage. Messages only go to, and
  * are only accepted from, the application's own origin (the frame's).
+ * Below it, the floating button as the loader draws it on the site (same
+ * shared metrics and icons, resources/js/widget/launcher.ts).
  */
-export type WebChatPreviewAppearance = {
-    title: string;
-    subtitle: string | null;
-    welcome_text: string | null;
-    offline_text: string | null;
-    accent_color: string;
-    position: 'right' | 'left';
-    launcher_enabled: boolean;
-    launcher_label: string | null;
-    avatar: string | null;
-};
+export type WebChatPreviewAppearance = Appearance;
 
 const props = defineProps<{
     frameUrl: string;
@@ -95,6 +89,34 @@ watchDebounced(() => props.appearance, sendAppearance, {
 });
 
 onBeforeUnmount(() => clearTimeout(unavailableTimer));
+
+const launcher = computed(() => {
+    const a = props.appearance;
+    const metrics = launcherMetrics(a.accent_color, a, a.launcher_label);
+
+    return {
+        metrics,
+        icon: launcherIconSvg(a.launcher_icon),
+        style: {
+            background: metrics.background,
+            color: metrics.color,
+            height: `${metrics.height}px`,
+            minWidth: `${metrics.height}px`,
+            width: metrics.width !== null ? `${metrics.width}px` : 'auto',
+            borderRadius: `${metrics.radius}px`,
+            fontSize: `${metrics.fontSize}px`,
+            padding: metrics.showLabel ? '0 16px' : '0',
+            '--cm-icon': `${metrics.iconSize}px`,
+            '--cm-pulse': metrics.background,
+        },
+        // The offsets, scaled to the small stage (at most 24 px).
+        corner: {
+            bottom: `${8 + Math.round(a.launcher_offset.y / 5)}px`,
+            [a.position === 'left' ? 'left' : 'right']:
+                `${8 + Math.round(a.launcher_offset.x / 5)}px`,
+        },
+    };
+});
 </script>
 
 <template>
@@ -109,7 +131,7 @@ onBeforeUnmount(() => clearTimeout(unavailableTimer));
             >
         </div>
         <div
-            class="relative h-[32rem] overflow-hidden rounded-lg border bg-muted/40"
+            class="relative h-[30rem] overflow-hidden rounded-lg border bg-muted/40"
         >
             <iframe
                 ref="iframe"
@@ -144,9 +166,72 @@ onBeforeUnmount(() => clearTimeout(unavailableTimer));
                 página.
             </p>
         </div>
-        <p class="text-xs text-muted-foreground">
-            Así verán el chat tus visitantes. Los mensajes de la vista previa no
-            se envían a nadie.
-        </p>
+        <div
+            class="relative h-24 overflow-hidden rounded-lg border bg-muted/40"
+            data-testid="web-chat-launcher-preview"
+        >
+            <span class="absolute top-2 left-2.5 text-xs text-muted-foreground"
+                >Botón en tu sitio</span
+            >
+            <span
+                class="absolute top-2 right-2.5 text-xs text-muted-foreground tabular-nums"
+                :title="`Ventana del chat: ${appearance.panel.width} × ${appearance.panel.height} px`"
+                >{{ appearance.panel.width }} ×
+                {{ appearance.panel.height }}</span
+            >
+            <span
+                v-if="appearance.launcher_enabled"
+                class="cm-launcher absolute inline-flex max-w-[calc(100%-16px)] items-center justify-center gap-2 font-semibold whitespace-nowrap shadow-lg"
+                :class="{ 'cm-launcher-pulse': appearance.launcher_pulse }"
+                :style="{ ...launcher.style, ...launcher.corner }"
+                aria-hidden="true"
+            >
+                <!-- Static SVG markup from the widget's own icon set. -->
+                <span class="contents" v-html="launcher.icon" />
+                <span v-if="launcher.metrics.showLabel" class="truncate">{{
+                    appearance.launcher_label
+                }}</span>
+            </span>
+            <span
+                v-else
+                class="absolute inset-x-0 bottom-3 text-center text-xs text-muted-foreground"
+                >Sin botón flotante</span
+            >
+        </div>
     </div>
 </template>
+
+<style scoped>
+.cm-launcher :deep(svg) {
+    width: var(--cm-icon);
+    height: var(--cm-icon);
+    flex: none;
+}
+
+.cm-launcher-pulse::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    animation: cm-preview-pulse 2s ease-out infinite;
+    pointer-events: none;
+}
+
+@keyframes cm-preview-pulse {
+    0% {
+        box-shadow: 0 0 0 0 var(--cm-pulse);
+        opacity: 0.55;
+    }
+
+    100% {
+        box-shadow: 0 0 0 14px var(--cm-pulse);
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cm-launcher-pulse::after {
+        animation: none;
+    }
+}
+</style>

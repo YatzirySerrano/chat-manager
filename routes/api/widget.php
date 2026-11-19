@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\WebChat\Api\VisitorAttachmentController;
 use App\Http\Controllers\WebChat\Api\VisitorBroadcastingAuthController;
+use App\Http\Controllers\WebChat\Api\VisitorFileController;
 use App\Http\Controllers\WebChat\Api\VisitorIdentityController;
 use App\Http\Controllers\WebChat\Api\VisitorMessageController;
 use App\Http\Controllers\WebChat\Api\VisitorReceiptController;
@@ -38,6 +39,8 @@ Route::prefix('widget')->name('widget.')->group(function (): void {
         Route::post('identity', [VisitorIdentityController::class, 'store'])->middleware('throttle:webchat-sessions')->name('identity.store');
         Route::get('messages', [VisitorMessageController::class, 'index'])->middleware('throttle:webchat-reads')->name('messages.index');
         Route::post('messages', [VisitorMessageController::class, 'store'])->middleware('throttle:webchat-messages')->name('messages.store');
+        // A file counts as a message too, with its own (lower) limit on top.
+        Route::post('files', [VisitorFileController::class, 'store'])->middleware(['throttle:webchat-messages', 'throttle:webchat-files'])->name('files.store');
         Route::post('receipts', [VisitorReceiptController::class, 'store'])->middleware('throttle:webchat-reads')->name('receipts.store');
     });
 });

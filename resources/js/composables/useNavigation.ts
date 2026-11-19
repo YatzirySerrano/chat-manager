@@ -24,6 +24,7 @@ import {
     Tags,
     UserCog,
     Users,
+    MonitorSmartphone,
 } from '@lucide/vue';
 import { computed } from 'vue';
 import { useFeatures } from '@/composables/useFeatures';
@@ -47,6 +48,7 @@ import { index as usersIndex } from '@/routes/admin/users';
 import { index as connectionsIndex } from '@/routes/connections';
 import { index as contactsIndex } from '@/routes/contacts';
 import { index as conversationsIndex } from '@/routes/conversations';
+import { index as webMessagesIndex } from '@/routes/web-messages';
 import { index as departmentsIndex } from '@/routes/departments';
 import { index as integrationTokensIndex } from '@/routes/integrations/tokens';
 import { index as quickRepliesIndex } from '@/routes/quick-replies';
@@ -107,9 +109,17 @@ export function useNavigation() {
         if (can('conversations.view')) {
             attention.push({
                 title: 'Conversaciones',
-                description: 'Pendientes, atención y seguimiento',
+                description: 'WhatsApp, Messenger e Instagram',
                 href: conversationsIndex(),
                 icon: MessagesSquare,
+            });
+
+            // The web chat has its own inbox, apart from WhatsApp and Meta.
+            attention.push({
+                title: 'Mensajes web',
+                description: 'Chat de tu página web',
+                href: webMessagesIndex(),
+                icon: MonitorSmartphone,
             });
         }
 

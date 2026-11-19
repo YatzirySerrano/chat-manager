@@ -59,7 +59,10 @@ use Illuminate\Support\Str;
  *    its download (DownloadInboundMedia), never inside this transaction:
  *    a WhatsApp media id, the CDN URL of a Messenger/Instagram attachment,
  *    or the descriptor of a WhatsApp Web (QR) file, which is kept encrypted
- *    on the attachment and downloaded by DownloadWhatsAppWebMedia.
+ *    on the attachment and downloaded by DownloadWhatsAppWebMedia. A file
+ *    the customer uploaded to this platform (web chat, content source
+ *    self::UPLOADED) is registered pending too, but no download is queued:
+ *    the caller stores it right after the receipt (ReceiveVisitorMessage).
  *
  * Every channel (WhatsApp, Messenger, Instagram, web chat) enters through
  * here; the provider message id is unique across channels (wamid, Meta
@@ -78,6 +81,9 @@ use Illuminate\Support\Str;
  */
 class ReceiveInboundMessage
 {
+    /** Content source of a file uploaded to this platform by the customer (web chat). */
+    public const UPLOADED = 'upload';
+
     public function __construct(
         private RegisterInboundContact $registerContact,
         private ConversationLifecycle $lifecycle,
@@ -194,7 +200,7 @@ class ReceiveInboundMessage
             SendChatbotKeywordReply::dispatch($conversation->id, $message->id)->afterCommit();
         }
 
-        if ($attachment !== null && $attachment->status === AttachmentStatus::Pending) {
+        if ($attachment !== null && $attachment->status === AttachmentStatus::Pending && ($inbound->content['source'] ?? null) !== self::UPLOADED) {
             // A WhatsApp Web file is fetched from the private service, never from Meta.
             $attachment->provider_reference !== null
                 ? DownloadWhatsAppWebMedia::dispatch($attachment->id)->afterCommit()
@@ -282,9 +288,12 @@ class ReceiveInboundMessage
             return WhatsAppWebAttachments::create($message, $inbound->content ?? [], $descriptor);
         }
 
+        $uploaded = ($inbound->content['source'] ?? null) === self::UPLOADED;
+
         // WhatsApp announces a media id; Messenger and Instagram a URL of
-        // Meta's CDN, kept in the message content for the download job.
-        if ((! is_string($mediaId) || $mediaId === '') && $sourceUrl === null) {
+        // Meta's CDN, kept in the message content for the download job. An
+        // uploaded file is already here, waiting to be stored by the caller.
+        if (! $uploaded && (! is_string($mediaId) || $mediaId === '') && $sourceUrl === null) {
             return null;
         }
 
@@ -294,12 +303,13 @@ class ReceiveInboundMessage
         $attachment = new MessageAttachment;
         $attachment->forceFill([
             'message_id' => $message->id,
-            'whatsapp_media_id' => is_string($mediaId) && $mediaId !== '' ? Str::limit($mediaId, 128, '') : null,
+            'whatsapp_media_id' => ! $uploaded && is_string($mediaId) && $mediaId !== '' ? Str::limit($mediaId, 128, '') : null,
             'provider_reference' => null,
             'disk' => (string) config('filesystems.media_disk', 'local'),
             'path' => null,
             'mime_type' => $mime,
             'file_name' => $fileName,
+            'size_bytes' => $uploaded && is_int($inbound->content['file_size'] ?? null) ? $inbound->content['file_size'] : null,
             'sha256' => is_string($inbound->content['sha256'] ?? null) && strlen($inbound->content['sha256']) <= 64 ? $inbound->content['sha256'] : null,
             'status' => AttachmentStatus::Pending,
         ])->save();

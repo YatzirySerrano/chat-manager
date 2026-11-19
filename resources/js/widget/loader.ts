@@ -1,4 +1,9 @@
 import { createJQueryAdapter } from './jquery';
+import {
+    DEFAULT_LAUNCHER_STYLE,
+    launcherIconSvg,
+    launcherMetrics,
+} from './launcher';
 import { envelope, isEnvelope, readLauncherAppearance } from './protocol';
 import type { FrameToHostType, LauncherAppearance } from './protocol';
 import type {
@@ -78,48 +83,41 @@ function warn(message: string): void {
     }
 }
 
-/** Text color (#fff or #111827) readable on the accent color. */
-function contrastOf(hex: string): string {
-    const value = parseInt(hex.slice(1), 16);
-    const channels = [value >> 16, (value >> 8) & 255, value & 255].map(
-        (channel) => {
-            const c = channel / 255;
-
-            return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-        },
-    );
-    const luminance =
-        0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
-
-    return luminance > 0.4 ? '#111827' : '#ffffff';
-}
-
-function styles(zIndex: number, x: number, y: number): string {
-    const bottom = `calc(max(16px, env(safe-area-inset-bottom)) + ${y}px)`;
-    const end = `calc(max(16px, env(safe-area-inset-right)) + ${x}px)`;
-    const start = `calc(max(16px, env(safe-area-inset-left)) + ${x}px)`;
+/**
+ * Styles of the closed shadow root. Everything the widget's settings change
+ * (colors, size, shape, font, offsets, window size) arrives as custom
+ * properties set on the wrapper by render(), so the sheet itself is static:
+ * --a/--f button colors, --h height, --r radius, --w width, --i icon size,
+ * --t text size, --x/--y offsets, --pw/--ph window size.
+ */
+function styles(zIndex: number): string {
+    const bottom =
+        'calc(max(16px, env(safe-area-inset-bottom)) + var(--y,0px))';
+    const end = 'calc(max(16px, env(safe-area-inset-right)) + var(--x,0px))';
+    const start = 'calc(max(16px, env(safe-area-inset-left)) + var(--x,0px))';
 
     return `:host{all:initial!important;display:block!important;position:fixed!important;inset:auto!important;width:0!important;height:0!important;margin:0!important;padding:0!important;border:0!important;transform:none!important;filter:none!important;opacity:1!important;visibility:visible!important;overflow:visible!important;z-index:${zIndex}!important}
 *,*::before,*::after{box-sizing:border-box}
-.l{position:fixed;inset-block-end:${bottom};inset-inline-end:${end};display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:56px;height:56px;margin:0;padding:0 16px;border:0;border-radius:28px;background:var(--a,#2563eb);color:var(--f,#fff);font:600 15px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:normal;text-transform:none;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.22);transition:transform .15s ease;-webkit-tap-highlight-color:transparent}
+.l{position:fixed;inset-block-end:${bottom};inset-inline-end:${end};display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:var(--h,56px);width:var(--w,auto);max-width:calc(100vw - 32px);height:var(--h,56px);margin:0;padding:0;border:0;border-radius:var(--r,28px);background:var(--a,#2563eb);color:var(--f,#fff);font:600 var(--t,15px)/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:normal;text-transform:none;white-space:nowrap;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.22);transition:transform .15s ease;-webkit-tap-highlight-color:transparent}
+.l.t{padding:0 16px}
+.l>span:not(.b){overflow:hidden;text-overflow:ellipsis}
 .l:hover{transform:translateY(-1px)}
 .l:focus-visible{outline:3px solid var(--a,#2563eb);outline-offset:3px}
-.l svg{width:24px;height:24px;flex:none}
-.l[hidden],.b[hidden]{display:none}
+.l svg{width:var(--i,24px);height:var(--i,24px);flex:none}
+.l[hidden],.b[hidden],.l>span[hidden]{display:none}
+.u .l::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:0 0 0 0 var(--a,#2563eb);animation:cm-pulse 2s ease-out infinite;pointer-events:none}
+@keyframes cm-pulse{0%{box-shadow:0 0 0 0 var(--a,#2563eb);opacity:.55}100%{box-shadow:0 0 0 14px var(--a,#2563eb);opacity:0}}
 .b{position:absolute;top:-4px;inset-inline-end:-4px;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#dc2626;color:#fff;font:700 12px/20px system-ui,sans-serif;text-align:center}
-.p{position:fixed;inset-block-end:calc(${bottom} + 68px);inset-inline-end:${end};width:380px;max-width:calc(100vw - 32px);height:min(600px,calc(100vh - 120px));height:min(600px,calc(100dvh - 120px));border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 12px 48px rgba(0,0,0,.28);display:none}
-.n .p{inset-block-end:${bottom};height:min(600px,calc(100dvh - 48px))}
+.p{position:fixed;inset-block-end:calc(${bottom} + var(--h,56px) + 12px);inset-inline-end:${end};width:var(--pw,380px);max-width:calc(100vw - 32px);height:min(var(--ph,600px),calc(100vh - 120px));height:min(var(--ph,600px),calc(100dvh - 120px));border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 12px 48px rgba(0,0,0,.28);display:none}
+.n .p{inset-block-end:${bottom};height:min(var(--ph,600px),calc(100dvh - 48px))}
 .s .l,.s .p{inset-inline-end:auto;inset-inline-start:${start}}
 .o .p{display:block}
 .p iframe{display:block;width:100%;height:100%;border:0;margin:0;padding:0;background:transparent}
 @media (prefers-color-scheme:dark){.p{background:#030712}}
-@media (max-width:480px){.p,.n .p{inset:0;width:100%;max-width:none;height:100%;height:100dvh;border-radius:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);background:linear-gradient(var(--a,#2563eb) 50%,#fff 50%)}.o .l{display:none}}
-@media (max-width:480px) and (prefers-color-scheme:dark){.p,.n .p{background:linear-gradient(var(--a,#2563eb) 50%,#030712 50%)}}
-@media (prefers-reduced-motion:reduce){.l{transition:none}.l:hover{transform:none}}`;
+@media (max-width:480px){.p,.n .p{inset:0;width:100%;max-width:none;height:100%;height:100dvh;border-radius:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);background:linear-gradient(var(--c,#2563eb) 50%,#fff 50%)}.o .l{display:none}}
+@media (max-width:480px) and (prefers-color-scheme:dark){.p,.n .p{background:linear-gradient(var(--c,#2563eb) 50%,#030712 50%)}}
+@media (prefers-reduced-motion:reduce){.l{transition:none}.l:hover{transform:none}.u .l::after{animation:none}}`;
 }
-
-const ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
 
 let instance: (WidgetInstance & { destroyed: boolean }) | null = null;
 
@@ -156,8 +154,15 @@ function init(options: WidgetOptions): WidgetInstance | null {
         typeof options.zIndex === 'number' && isFinite(options.zIndex)
             ? Math.round(options.zIndex)
             : 2147483000;
-    const offsetX = Number(options.offset?.x) || 0;
-    const offsetY = Number(options.offset?.y) || 0;
+    // An offset given by the host page wins over the widget's settings.
+    const hostOffsetX = Number.isFinite(Number(options.offset?.x))
+        ? Number(options.offset?.x)
+        : null;
+    const hostOffsetY = Number.isFinite(Number(options.offset?.y))
+        ? Number(options.offset?.y)
+        : null;
+    let iconName: string | null = null;
+    let everOpened = false;
 
     let opened = false;
     let ready = false;
@@ -171,22 +176,23 @@ function init(options: WidgetOptions): WidgetInstance | null {
     const wrapper = document.createElement('div');
     const launcher = document.createElement('button');
     const badge = document.createElement('span');
+    const icon = document.createElement('span');
     const label = document.createElement('span');
     const panel = document.createElement('div');
     const iframe = document.createElement('iframe');
 
-    style.textContent = styles(zIndex, offsetX, offsetY);
+    style.textContent = styles(zIndex);
     wrapper.className = 'w';
     launcher.type = 'button';
     launcher.className = 'l';
     launcher.hidden = true;
-    launcher.innerHTML = ICON;
+    icon.style.display = 'contents';
     launcher.setAttribute('aria-expanded', 'false');
     launcher.setAttribute('aria-controls', 'cm-panel');
     badge.className = 'b';
     badge.hidden = true;
     badge.setAttribute('aria-hidden', 'true');
-    launcher.append(label, badge);
+    launcher.append(icon, label, badge);
     panel.className = 'p';
     panel.id = 'cm-panel';
     iframe.title = 'Chat';
@@ -224,7 +230,15 @@ function init(options: WidgetOptions): WidgetInstance | null {
 
     function render(): void {
         const title = appearance?.title ?? 'Chat';
-        const text = appearance?.launcher_label ?? '';
+        const look = appearance ?? DEFAULT_LAUNCHER_STYLE;
+        const metrics = launcherMetrics(
+            appearance?.accent_color ?? '#2563eb',
+            look,
+            appearance?.launcher_label ?? null,
+        );
+        const text = metrics.showLabel
+            ? (appearance?.launcher_label ?? '')
+            : '';
         const position = options.position ?? appearance?.position ?? 'right';
         const showLauncher =
             ready && (options.launcher ?? appearance?.launcher_enabled ?? true);
@@ -233,7 +247,16 @@ function init(options: WidgetOptions): WidgetInstance | null {
             'w' +
             (opened ? ' o' : '') +
             (position === 'left' ? ' s' : '') +
-            (showLauncher ? '' : ' n');
+            (showLauncher ? '' : ' n') +
+            (look.launcher_pulse && !opened && (!everOpened || unread > 0)
+                ? ' u'
+                : '');
+        launcher.className = text !== '' ? 'l t' : 'l';
+
+        if (iconName !== look.launcher_icon) {
+            iconName = look.launcher_icon;
+            icon.innerHTML = launcherIconSvg(look.launcher_icon);
+        }
         launcher.hidden = !showLauncher;
         launcher.setAttribute('aria-expanded', String(opened));
         launcher.setAttribute(
@@ -248,13 +271,24 @@ function init(options: WidgetOptions): WidgetInstance | null {
         badge.hidden = unread === 0 || opened;
         iframe.title = 'Chat: ' + title;
 
-        if (appearance) {
-            wrapper.style.setProperty('--a', appearance.accent_color);
-            wrapper.style.setProperty(
-                '--f',
-                contrastOf(appearance.accent_color),
-            );
-        }
+        const vars: Record<string, string> = {
+            '--a': metrics.background,
+            '--f': metrics.color,
+            '--c': appearance?.accent_color ?? '#2563eb',
+            '--h': `${metrics.height}px`,
+            '--r': `${metrics.radius}px`,
+            '--w': metrics.width !== null ? `${metrics.width}px` : 'auto',
+            '--i': `${metrics.iconSize}px`,
+            '--t': `${metrics.fontSize}px`,
+            '--x': `${hostOffsetX ?? look.launcher_offset.x}px`,
+            '--y': `${hostOffsetY ?? look.launcher_offset.y}px`,
+            '--pw': `${look.panel.width}px`,
+            '--ph': `${look.panel.height}px`,
+        };
+
+        Object.keys(vars).forEach((name) =>
+            wrapper.style.setProperty(name, vars[name]),
+        );
     }
 
     function open(): void {
@@ -263,6 +297,7 @@ function init(options: WidgetOptions): WidgetInstance | null {
         }
 
         opened = true;
+        everOpened = true;
         unread = 0;
         render();
         post('cm:open');

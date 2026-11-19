@@ -194,6 +194,15 @@ class AppServiceProvider extends ServiceProvider
             return $limits;
         });
 
+        // Files from visitors (on top of the message limits): each one is
+        // stored on the media disk, so they are capped lower.
+        RateLimiter::for('webchat-files', fn (Request $request): array => [
+            Limit::perMinute($perMinute('webchat.visitor_files.per_session_per_minute', 6))
+                ->by('webchat-files-session:'.$session($request)),
+            Limit::perMinute($perMinute('webchat.visitor_files.per_ip_per_minute', 20))
+                ->by('webchat-files-ip:'.$ipHash($request)),
+        ]);
+
         RateLimiter::for('webchat-reads', fn (Request $request): Limit => Limit::perMinute($perMinute('webchat.limits.reads_per_minute', 60))
             ->by('webchat-reads:'.$session($request)));
 

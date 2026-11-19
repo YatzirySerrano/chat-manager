@@ -97,7 +97,7 @@ class MergeConnections extends Command
 
         foreach ($sources as $source) {
             try {
-                $ids = $list->query($source, [])->pluck('conversations.id')->map(fn (mixed $id): int => (int) $id)->all();
+                $ids = array_values($list->query($source, [])->pluck('conversations.id')->map(fn (mixed $id): int => (int) $id)->all());
                 $result = $move->handle($source, $target, $ids, (bool) $this->option('show-archived'), $actor);
             } catch (ValidationException $exception) {
                 $this->error("#{$source->id} «{$source->name}»: ".collect($exception->errors())->flatten()->first());

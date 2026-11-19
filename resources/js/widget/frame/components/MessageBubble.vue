@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { Download, RotateCw } from '@lucide/vue';
+import { Download, FileText, RotateCw } from '@lucide/vue';
 import { computed } from 'vue';
 import type { LocalStatus, ThreadMessage } from '../../types';
 
 /**
  * One message of the thread. The visitor's own messages show their
  * delivery state (Enviando, Enviado, Entregado, Leído, or Fallido with its
- * reason and "Reintentar"); the agent's show the agent's name and the files they sent,
- * which download through short-lived signed links.
+ * reason and "Reintentar"); the agent's show the agent's name. Files (sent
+ * by either side) open through short-lived signed links: images are shown,
+ * audio and video play in place, anything else downloads. A file the
+ * visitor is uploading shows its name and a progress bar. The bubble colors
+ * come from the widget's settings (--cm-visitor-*, --cm-agent-*).
  */
 const props = defineProps<{
     message: ThreadMessage;
@@ -38,6 +41,17 @@ const time = computed(() => {
     });
 });
 
+/** The upload in progress, while the server has not stored it yet. */
+const uploading = computed(() =>
+    props.message.upload && props.message.attachments.length === 0
+        ? props.message.upload
+        : null,
+);
+
+const uploadPercent = computed(() =>
+    Math.round((uploading.value?.progress ?? 0) * 100),
+);
+
 function size(bytes: number | null): string {
     if (!bytes) {
         return '';
@@ -46,6 +60,20 @@ function size(bytes: number | null): string {
     return bytes >= 1048576
         ? `${(bytes / 1048576).toFixed(1)} MB`
         : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function kindOf(mime: string | null): 'image' | 'video' | 'audio' | 'file' {
+    const type = (mime ?? '').toLowerCase();
+
+    if (type.startsWith('image/')) {
+        return 'image';
+    }
+
+    if (type.startsWith('video/')) {
+        return 'video';
+    }
+
+    return type.startsWith('audio/') ? 'audio' : 'file';
 }
 </script>
 
@@ -57,7 +85,7 @@ function size(bytes: number | null): string {
     >
         <p
             v-if="!mine && message.agent_name"
-            class="px-1 text-xs text-gray-500 dark:text-gray-400"
+            class="px-1 text-xs text-(--cm-muted)"
         >
             {{ message.agent_name }}
         </p>
@@ -65,11 +93,49 @@ function size(bytes: number | null): string {
             class="max-w-[85%] min-w-0 rounded-2xl px-3.5 py-2 text-[15px] leading-snug wrap-anywhere whitespace-pre-wrap"
             :class="
                 mine
-                    ? 'rounded-br-md bg-(--cm-accent) text-(--cm-accent-fg)'
-                    : 'rounded-bl-md bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+                    ? 'rounded-br-md bg-(--cm-visitor-bg) text-(--cm-visitor-fg)'
+                    : 'rounded-bl-md bg-(--cm-agent-bg) text-(--cm-agent-fg)'
             "
         >
             <template v-if="message.body">{{ message.body }}</template>
+            <div
+                v-if="uploading"
+                class="grid min-w-48 gap-1.5"
+                :class="{ 'mt-2': message.body }"
+            >
+                <img
+                    v-if="
+                        uploading.previewUrl &&
+                        uploading.file.type.startsWith('image/')
+                    "
+                    :src="uploading.previewUrl"
+                    :alt="uploading.file.name"
+                    class="max-h-48 rounded-lg object-cover opacity-80"
+                />
+                <span class="flex min-w-0 items-center gap-2 text-sm">
+                    <FileText class="size-4 shrink-0" aria-hidden="true" />
+                    <span class="min-w-0 truncate">{{
+                        uploading.file.name
+                    }}</span>
+                    <span class="shrink-0 text-xs opacity-80">{{
+                        size(uploading.file.size)
+                    }}</span>
+                </span>
+                <span
+                    v-if="status === 'sending'"
+                    class="block h-1.5 overflow-hidden rounded-full bg-current/20"
+                    role="progressbar"
+                    :aria-valuenow="uploadPercent"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    :aria-label="`Subiendo ${uploading.file.name}`"
+                >
+                    <span
+                        class="block h-full rounded-full bg-current transition-[width]"
+                        :style="{ width: `${uploadPercent}%` }"
+                    />
+                </span>
+            </div>
             <ul
                 v-if="message.attachments.length > 0"
                 class="grid grid-cols-1 gap-2"
@@ -81,7 +147,7 @@ function size(bytes: number | null): string {
                     class="min-w-0"
                 >
                     <a
-                        v-if="attachment.mime_type?.startsWith('image/')"
+                        v-if="kindOf(attachment.mime_type) === 'image'"
                         :href="attachment.url"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -94,6 +160,23 @@ function size(bytes: number | null): string {
                             loading="lazy"
                         />
                     </a>
+                    <video
+                        v-else-if="kindOf(attachment.mime_type) === 'video'"
+                        :src="attachment.url"
+                        controls
+                        preload="metadata"
+                        playsinline
+                        class="max-h-60 w-full rounded-lg bg-black"
+                        :aria-label="attachment.name"
+                    />
+                    <audio
+                        v-else-if="kindOf(attachment.mime_type) === 'audio'"
+                        :src="attachment.url"
+                        controls
+                        preload="metadata"
+                        class="w-60 max-w-full"
+                        :aria-label="attachment.name"
+                    />
                     <a
                         v-else
                         :href="attachment.url"
@@ -116,9 +199,7 @@ function size(bytes: number | null): string {
                 </li>
             </ul>
         </div>
-        <p
-            class="flex items-center gap-1.5 px-1 text-xs text-gray-500 dark:text-gray-400"
-        >
+        <p class="flex items-center gap-1.5 px-1 text-xs text-(--cm-muted)">
             <span v-if="time">{{ time }}</span>
             <template v-if="mine && status">
                 <span aria-hidden="true">·</span>
@@ -130,7 +211,9 @@ function size(bytes: number | null): string {
                     >{{
                         status === 'failed' && error
                             ? `${statusLabels.failed} · ${error}`
-                            : statusLabels[status]
+                            : status === 'sending' && uploading
+                              ? `${statusLabels.sending} ${uploadPercent} %`
+                              : statusLabels[status]
                     }}</span
                 >
                 <button

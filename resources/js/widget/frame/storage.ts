@@ -49,3 +49,44 @@ export function createTokenStorage(publicKey: string): TokenStorage {
         },
     };
 }
+
+export type ThemeChoice = 'system' | 'light' | 'dark';
+
+/**
+ * The visitor's theme choice in the chat ('cm:v1:{publicKey}:theme'),
+ * guarded like the token: when storage is blocked the choice only lasts
+ * while the frame is open.
+ */
+export function createThemeStorage(publicKey: string): {
+    get(): ThemeChoice;
+    set(choice: ThemeChoice): void;
+} {
+    const key = `cm:v1:${publicKey}:theme`;
+
+    return {
+        get(): ThemeChoice {
+            try {
+                const stored = window.localStorage.getItem(key);
+
+                if (stored === 'light' || stored === 'dark') {
+                    return stored;
+                }
+            } catch {
+                // Storage blocked: the system decides.
+            }
+
+            return 'system';
+        },
+        set(choice: ThemeChoice): void {
+            try {
+                if (choice === 'system') {
+                    window.localStorage.removeItem(key);
+                } else {
+                    window.localStorage.setItem(key, choice);
+                }
+            } catch {
+                // Storage blocked: the choice lasts while the frame is open.
+            }
+        },
+    };
+}

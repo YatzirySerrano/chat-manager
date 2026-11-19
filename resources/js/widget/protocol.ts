@@ -62,6 +62,8 @@ export type Appearance = {
     offline_status_text: string | null;
     composer_placeholder: string | null;
     accent_color: string;
+    /** 'allow': the visitor's system or choice; 'off': always light. */
+    dark_mode: 'allow' | 'off';
     position: 'right' | 'left';
     launcher_enabled: boolean;
     launcher_label: string | null;
@@ -224,6 +226,7 @@ export function readAppearance(value: unknown): Appearance | null {
             (offline_status_text as string | null | undefined) ?? null,
         composer_placeholder:
             (composer_placeholder as string | null | undefined) ?? null,
+        dark_mode: value.dark_mode === 'off' ? 'off' : 'allow',
         background_color: (value.background_color as string | null) ?? null,
         visitor_bubble_color:
             (value.visitor_bubble_color as string | null) ?? null,

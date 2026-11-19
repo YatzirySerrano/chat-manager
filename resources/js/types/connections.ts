@@ -30,6 +30,8 @@ export type WebChatWidgetSettings = {
     offline_text: string | null;
     position: WebChatPosition;
     accent_color: string;
+    /** 'allow': the visitor's system or choice; 'off': always light. */
+    dark_mode: 'allow' | 'off';
     launcher_enabled: boolean;
     launcher_label: string | null;
     /** Optional colors (#rrggbb); null keeps the widget's own. */

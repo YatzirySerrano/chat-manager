@@ -93,6 +93,7 @@ class WidgetFrameController extends Controller
                 'launcher_enabled' => $widget->launcher_enabled,
                 'launcher_label' => $widget->launcher_label,
                 ...$widget->launcherStyle(),
+                'dark_mode' => in_array($widget->dark_mode, WebChatWidget::DARK_MODES, true) ? $widget->dark_mode : 'allow',
                 'background_color' => $widget->background_color,
                 'visitor_bubble_color' => $widget->visitor_bubble_color,
                 'visitor_text_color' => $widget->visitor_text_color,

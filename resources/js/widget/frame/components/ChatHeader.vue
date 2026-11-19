@@ -5,7 +5,8 @@ import type { Appearance } from '../../protocol';
 
 /**
  * Header of the widget: avatar, title, subtitle and who is attending (or
- * the team's availability), plus the close button (asks the host page to
+ * the team's availability), extra actions (the theme switch, `actions`
+ * slot), plus the close button (asks the host page to
  * close the panel; on phones the panel covers the whole screen).
  */
 const props = defineProps<{
@@ -24,7 +25,7 @@ const initial = computed(
 
 <template>
     <header
-        class="flex shrink-0 items-center gap-3 bg-(--cm-accent) px-[max(1rem,env(safe-area-inset-left))] pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 text-(--cm-accent-fg)"
+        class="relative z-10 flex shrink-0 items-center gap-3 bg-(--cm-accent) px-[max(1rem,env(safe-area-inset-left))] pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 text-(--cm-accent-fg)"
     >
         <img
             v-if="appearance.avatar"
@@ -60,6 +61,7 @@ const initial = computed(
                 <span class="truncate">{{ statusText }}</span>
             </p>
         </div>
+        <slot name="actions" />
         <button
             v-if="closable"
             type="button"

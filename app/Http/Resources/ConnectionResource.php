@@ -211,6 +211,7 @@ class ConnectionResource extends JsonResource
             'launcher_enabled' => $widget->launcher_enabled,
             'launcher_label' => $widget->launcher_label,
             ...$widget->colors(),
+            'dark_mode' => $widget->dark_mode,
             'launcher_shape' => $widget->launcher_shape,
             'launcher_icon' => $widget->launcher_icon,
             'launcher_size' => $widget->launcher_size,

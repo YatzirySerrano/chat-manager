@@ -101,6 +101,7 @@ type WidgetForm = {
     offline_text: string;
     position: WebChatPosition;
     accent_color: string;
+    dark_mode: WebChatWidgetSettings['dark_mode'];
     launcher_enabled: boolean;
     launcher_label: string;
     background_color: string;
@@ -150,6 +151,7 @@ function initialValues(widget: WebChatWidgetSettings): WidgetForm {
         offline_text: widget.offline_text ?? '',
         position: widget.position,
         accent_color: widget.accent_color,
+        dark_mode: widget.dark_mode ?? 'allow',
         launcher_enabled: widget.launcher_enabled,
         launcher_label: widget.launcher_label ?? '',
         background_color: widget.background_color ?? '',
@@ -376,6 +378,14 @@ const SIZE_OPTIONS: { value: WidgetForm['launcher_size']; label: string }[] = [
     { value: 'small', label: 'Chico' },
     { value: 'medium', label: 'Mediano' },
     { value: 'large', label: 'Grande' },
+];
+
+const DARK_MODE_OPTIONS: {
+    value: WidgetForm['dark_mode'];
+    label: string;
+}[] = [
+    { value: 'allow', label: 'Permitir (el visitante elige)' },
+    { value: 'off', label: 'Solo claro' },
 ];
 
 const WIDTH_OPTIONS = [
@@ -671,6 +681,7 @@ const appearance = computed<WebChatPreviewAppearance>(() => ({
     offline_status_text: form.offline_status_text.trim() || null,
     composer_placeholder: form.composer_placeholder.trim() || null,
     accent_color: accent.value,
+    dark_mode: form.dark_mode,
     position: form.position,
     launcher_enabled: form.launcher_enabled,
     launcher_label: form.launcher_label || null,
@@ -1101,6 +1112,18 @@ const fieldError = (path: string): string | undefined =>
                             placeholder="#2563eb"
                         />
                     </div>
+                </FormField>
+                <FormField
+                    id="widget-dark-mode"
+                    label="Modo oscuro"
+                    :error="fieldError('dark_mode')"
+                >
+                    <AppSelect
+                        id="widget-dark-mode"
+                        v-model="form.dark_mode"
+                        :options="DARK_MODE_OPTIONS"
+                        :disabled="!canUpdate"
+                    />
                 </FormField>
                 <FormField
                     id="widget-avatar"

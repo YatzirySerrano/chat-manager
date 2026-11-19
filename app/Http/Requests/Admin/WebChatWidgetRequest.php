@@ -86,6 +86,7 @@ class WebChatWidgetRequest extends FormRequest
         return [
             ...$colors,
             'allow_visitor_files' => ['sometimes', 'boolean'],
+            'dark_mode' => ['sometimes', 'string', Rule::in(WebChatWidget::DARK_MODES)],
             'launcher_shape' => ['sometimes', 'string', Rule::in(WebChatWidget::LAUNCHER_SHAPES)],
             'launcher_icon' => ['sometimes', 'string', Rule::in(WebChatWidget::LAUNCHER_ICONS)],
             'launcher_size' => ['sometimes', 'string', Rule::in(WebChatWidget::LAUNCHER_SIZES)],
@@ -220,6 +221,7 @@ class WebChatWidgetRequest extends FormRequest
             'agent_bubble_color' => 'burbuja del agente',
             'agent_text_color' => 'texto del agente',
             'allow_visitor_files' => 'archivos de los visitantes',
+            'dark_mode' => 'modo oscuro',
             'launcher_color' => 'color del botón',
             'launcher_icon_color' => 'color del ícono',
             'launcher_shape' => 'forma del botón',
@@ -318,7 +320,7 @@ class WebChatWidgetRequest extends FormRequest
             $settings['launcher_width'] = $this->filled('launcher_width') ? $this->integer('launcher_width') : null;
         }
 
-        foreach (['launcher_shape', 'launcher_icon', 'launcher_size', 'launcher_font_size'] as $choice) {
+        foreach (['launcher_shape', 'launcher_icon', 'launcher_size', 'launcher_font_size', 'dark_mode'] as $choice) {
             if ($this->filled($choice)) {
                 $settings[$choice] = $this->string($choice)->value();
             }

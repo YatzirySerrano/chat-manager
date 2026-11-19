@@ -8,6 +8,8 @@ import {
     reactive,
     ref,
     shallowRef,
+    watch,
+    watchEffect,
 } from 'vue';
 import { envelope, isEnvelope, readAppearance } from '../protocol';
 import type { Appearance, HostToFrameType } from '../protocol';
@@ -27,9 +29,11 @@ import ChatHeader from './components/ChatHeader.vue';
 import MessageBubble from './components/MessageBubble.vue';
 import PrechatForm from './components/PrechatForm.vue';
 import StatusScreen from './components/StatusScreen.vue';
+import ThemeSwitch from './components/ThemeSwitch.vue';
 import { connectRealtime } from './realtime';
 import type { RealtimeHandle } from './realtime';
-import { createTokenStorage } from './storage';
+import { createThemeStorage, createTokenStorage } from './storage';
+import type { ThemeChoice } from './storage';
 
 /**
  * The visitor's chat inside the widget iframe. It resumes the session kept
@@ -129,6 +133,35 @@ function onColorSchemeChange(event: MediaQueryListEvent): void {
     prefersDark.value = event.matches;
 }
 
+/*
+ * Theme: with dark mode allowed the visitor picks Sistema (their system,
+ * followed live), Claro or Oscuro, remembered per widget in the frame's
+ * storage (never in the preview, whose «Sistema» follows the admin's
+ * Claro/Oscuro toggle); with dark mode off the chat is always light.
+ */
+const themeStorage = createThemeStorage(props.config.public_key);
+const themeChoice = ref<ThemeChoice>(preview ? 'system' : themeStorage.get());
+const darkAllowed = computed(() => appearance.value.dark_mode !== 'off');
+const isDark = computed(
+    () =>
+        darkAllowed.value &&
+        (themeChoice.value === 'dark' ||
+            (themeChoice.value === 'system' && prefersDark.value)),
+);
+
+watch(themeChoice, (choice) => {
+    if (!preview) {
+        themeStorage.set(choice);
+    }
+});
+
+watchEffect(() => {
+    const html = document.documentElement;
+
+    html.classList.toggle('dark', isDark.value);
+    html.style.colorScheme = isDark.value ? 'dark' : 'light';
+});
+
 function luminanceOf(hex: string): number {
     const value = parseInt(hex.slice(1), 16);
     const channels = [value >> 16, (value >> 8) & 255, value & 255].map(
@@ -169,7 +202,7 @@ function readableOn(hex: string): string {
 const themeStyle = computed(() => {
     const a = appearance.value;
     const accent = a.accent_color;
-    const theme = prefersDark.value ? 'dark' : 'light';
+    const theme = isDark.value ? 'dark' : 'light';
     const surface = a.background_color ?? SURFACE[theme];
     const contrast = contrastRatio(accent, surface);
     const ink =
@@ -1145,7 +1178,11 @@ function reload(): void {
             :online="availability.online"
             :closable="!preview"
             @close="requestClose"
-        />
+        >
+            <template v-if="darkAllowed && phase !== 'unauthorized'" #actions>
+                <ThemeSwitch v-model="themeChoice" />
+            </template>
+        </ChatHeader>
 
         <p
             v-if="!online && phase !== 'unauthorized'"

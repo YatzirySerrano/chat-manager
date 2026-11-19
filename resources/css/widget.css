@@ -1,12 +1,16 @@
 /*
  * Styles of the web chat widget frame (resources/views/widget/frame.blade.php).
  * Only the frame's own sources are scanned, so the bundle stays small and
- * independent from the agents' app.css. Dark mode follows the visitor's
- * prefers-color-scheme (Tailwind's default media strategy).
+ * independent from the agents' app.css. Dark mode is class based in this
+ * bundle only: App.vue puts `.dark` on <html> from the resolved theme (the
+ * visitor's system, their choice in the chat, or always light when the
+ * widget turns dark mode off).
  */
 @import 'tailwindcss' source(none);
 
 @source '../js/widget/frame';
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
     html,
@@ -23,11 +27,9 @@
         -webkit-text-size-adjust: 100%;
     }
 
-    @media (prefers-color-scheme: dark) {
-        html,
-        body {
-            background-color: var(--color-gray-950);
-        }
+    html.dark,
+    html.dark body {
+        background-color: var(--color-gray-950);
     }
 
     #app {

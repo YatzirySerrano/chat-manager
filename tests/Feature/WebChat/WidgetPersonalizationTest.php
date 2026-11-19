@@ -146,3 +146,20 @@ test('the button takes an image of its own, never an SVG, and it can be removed'
 
     expect(WebChatWidget::query()->sole()->launcher_icon_path)->toBeNull();
 });
+
+test('dark mode is allowed by default and can be turned off', function () {
+    expect(WebChatWidget::query()->sole()->refresh()->dark_mode)->toBe('allow');
+
+    $this->actingAs($this->admin)
+        ->put(route('connections.widget.update', $this->connection), personalizationPayload(['dark_mode' => 'night']))
+        ->assertSessionHasErrors(['dark_mode']);
+
+    $this->actingAs($this->admin)
+        ->put(route('connections.widget.update', $this->connection), personalizationPayload(['dark_mode' => 'off']))
+        ->assertSessionHasNoErrors();
+
+    $response = $this->get(route('widget.frame', $this->connection->webChatWidget->public_key), ['Referer' => 'https://tienda.test/'])->assertOk();
+    preg_match('#<script type="application/json" id="cm-config"[^>]*>(.*?)</script>#s', (string) $response->getContent(), $match);
+
+    expect(json_decode($match[1] ?? 'null', true)['appearance']['dark_mode'])->toBe('off');
+});

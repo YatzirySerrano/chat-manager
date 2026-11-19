@@ -23,11 +23,14 @@ const props = defineProps<{
 const iframe = ref<HTMLIFrameElement | null>(null);
 
 /*
- * Light or dark visitor: the frame follows `color-scheme` of the iframe
- * element (prefers-color-scheme inside it), so the preview starts light
- * whatever the administrator's own system uses.
+ * Light or dark visitor: the frame's «Sistema» theme follows `color-scheme`
+ * of the iframe element (prefers-color-scheme inside it), so the preview
+ * starts light whatever the administrator's own system uses. With dark mode
+ * off the widget is always light and the toggle is hidden.
  */
 const theme = ref<'light' | 'dark'>('light');
+const darkAllowed = computed(() => props.appearance.dark_mode !== 'off');
+const frameScheme = computed(() => (darkAllowed.value ? theme.value : 'light'));
 const state = ref<'loading' | 'ready' | 'unavailable'>('loading');
 let unavailableTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -140,6 +143,7 @@ const launcher = computed(() => {
                     >Sin guardar</span
                 >
                 <div
+                    v-if="darkAllowed"
                     class="inline-flex rounded-md border bg-card p-0.5 text-xs"
                     role="group"
                     aria-label="Tema del visitante en la vista previa"
@@ -173,7 +177,7 @@ const launcher = computed(() => {
                 :src="previewUrl"
                 title="Vista previa del chat web"
                 class="size-full border-0"
-                :style="{ colorScheme: theme }"
+                :style="{ colorScheme: frameScheme }"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
                 referrerpolicy="origin"
                 allow=""

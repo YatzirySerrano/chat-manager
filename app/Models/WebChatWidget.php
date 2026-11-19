@@ -32,6 +32,7 @@ use Illuminate\Support\Str;
  * @property string|null $offline_text
  * @property WebChatPosition $position
  * @property string $accent_color
+ * @property string $dark_mode One of self::DARK_MODES: "allow" (the visitor's system or choice) or "off" (always light).
  * @property string|null $background_color Background of the conversation (#rrggbb); null keeps the theme's own.
  * @property string|null $visitor_bubble_color Bubbles of the visitor's messages; null uses the accent color.
  * @property string|null $visitor_text_color Text on those bubbles; null picks a readable one.
@@ -74,7 +75,7 @@ use Illuminate\Support\Str;
     'agent_text_color', 'allow_visitor_files', 'launcher_color', 'launcher_icon_color', 'launcher_shape',
     'launcher_icon', 'launcher_size', 'launcher_offset_x', 'launcher_offset_y', 'launcher_pulse',
     'launcher_width', 'launcher_font_size', 'panel_width', 'panel_height', 'online_text', 'offline_status_text',
-    'composer_placeholder',
+    'composer_placeholder', 'dark_mode',
 ])]
 #[Hidden(['identity_secret'])]
 class WebChatWidget extends Model
@@ -91,6 +92,9 @@ class WebChatWidget extends Model
         'background_color', 'visitor_bubble_color', 'visitor_text_color', 'agent_bubble_color', 'agent_text_color',
         'launcher_color', 'launcher_icon_color',
     ];
+
+    /** @var list<string> */
+    public const DARK_MODES = ['allow', 'off'];
 
     /** @var list<string> */
     public const LAUNCHER_SHAPES = ['circle', 'rounded', 'pill'];
@@ -122,6 +126,7 @@ class WebChatWidget extends Model
         'accent_color' => '#2563eb',
         'launcher_enabled' => true,
         'allow_visitor_files' => true,
+        'dark_mode' => 'allow',
         'launcher_shape' => 'circle',
         'launcher_icon' => 'chat',
         'launcher_size' => 'medium',

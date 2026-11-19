@@ -86,6 +86,7 @@ function submit(): void {
             >
                 <DirectoryAvatar
                     :name="note.author?.name ?? '?'"
+                    :user-id="note.author?.id ?? null"
                     :tone="note.author ? 'auto' : 'muted'"
                     size="sm"
                     class="absolute top-2.5 left-0 size-6 text-[0.6rem] ring-4 ring-card"

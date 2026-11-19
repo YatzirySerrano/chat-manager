@@ -93,6 +93,7 @@ const technicalJson = computed(() =>
                             <ListAvatar
                                 v-if="entry.actor.id !== null"
                                 :name="entry.actor.name"
+                                :user-id="entry.actor.id"
                                 class="size-6! text-[0.625rem]!"
                             />
                             <span class="truncate">{{ entry.actor.name }}</span>

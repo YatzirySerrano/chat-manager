@@ -116,7 +116,9 @@ class WhatsAppWebClient
      * Each part is null when the contact keeps it private or has none.
      *
      * @param  string  $to  Digits, or the full JID ("…@s.whatsapp.net", "…@lid").
-     * @return array{picture_url: string|null, about: string|null, about_set_at: int|null, business: array<string, mixed>|null}
+     *                      `picture_unavailable`: WhatsApp did not answer about the picture, so
+     *                      a null `picture_url` means "unknown" (keep the stored copy), not "none".
+     * @return array{picture_url: string|null, picture_unavailable: bool, about: string|null, about_set_at: int|null, business: array<string, mixed>|null}
      */
     public function contactProfile(int $connectionId, string $to): array
     {
@@ -124,6 +126,7 @@ class WhatsAppWebClient
 
         return [
             'picture_url' => is_string($answer['picture_url'] ?? null) && $answer['picture_url'] !== '' ? $answer['picture_url'] : null,
+            'picture_unavailable' => ($answer['picture_unavailable'] ?? false) === true,
             'about' => is_string($answer['about'] ?? null) && trim($answer['about']) !== '' ? $answer['about'] : null,
             'about_set_at' => is_int($answer['about_set_at'] ?? null) && $answer['about_set_at'] > 0 ? $answer['about_set_at'] : null,
             'business' => is_array($answer['business'] ?? null) ? $answer['business'] : null,

@@ -514,6 +514,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
                                 <div class="flex min-w-0 items-center gap-3">
                                     <ListAvatar
                                         :name="user.name"
+                                        :user-id="user.id"
                                         :dimmed="user.is_deleted"
                                     />
                                     <div class="min-w-0">
@@ -661,6 +662,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
                             <template #leading>
                                 <ListAvatar
                                     :name="user.name"
+                                    :user-id="user.id"
                                     :dimmed="user.is_deleted"
                                 />
                             </template>

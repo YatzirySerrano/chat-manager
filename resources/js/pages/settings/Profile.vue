@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
-import { MailWarning, UserRound } from '@lucide/vue';
-import { computed } from 'vue';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { Camera, MailWarning, Trash2, UserRound } from '@lucide/vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
+import ProfileAvatarController from '@/actions/App/Http/Controllers/Settings/ProfileAvatarController';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import ListAvatar from '@/components/filters/ListAvatar.vue';
 import SettingsSection from '@/components/settings/SettingsSection.vue';
@@ -43,6 +44,83 @@ const validation = useFormValidation(form, {
     requireChanges: true,
 });
 
+/** The picture: chosen file previewed at once, then uploaded on its own. */
+const fileInput = ref<HTMLInputElement | null>(null);
+const preview = ref<string | null>(null);
+const avatarError = ref<string | null>(null);
+const uploading = ref(false);
+const avatar = computed(
+    () => preview.value ?? (user.value.avatar as string | null) ?? null,
+);
+
+function clearPreview(): void {
+    if (preview.value) {
+        URL.revokeObjectURL(preview.value);
+    }
+
+    preview.value = null;
+}
+
+onBeforeUnmount(clearPreview);
+
+function pickAvatar(): void {
+    fileInput.value?.click();
+}
+
+function uploadAvatar(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+
+    if (!file) {
+        return;
+    }
+
+    avatarError.value = null;
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        avatarError.value = 'Usa una foto JPG, PNG o WebP.';
+
+        return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+        avatarError.value = 'La foto no puede pasar de 8 MB.';
+
+        return;
+    }
+
+    clearPreview();
+    preview.value = URL.createObjectURL(file);
+
+    router.post(
+        ProfileAvatarController.update.url(),
+        { avatar: file },
+        {
+            forceFormData: true,
+            preserveScroll: true,
+            onStart: () => (uploading.value = true),
+            onFinish: () => {
+                uploading.value = false;
+                clearPreview();
+            },
+            onError: (errors) => {
+                avatarError.value =
+                    errors.avatar ?? 'No se pudo guardar la foto.';
+            },
+        },
+    );
+}
+
+function removeAvatar(): void {
+    avatarError.value = null;
+    router.delete(ProfileAvatarController.destroy.url(), {
+        preserveScroll: true,
+        onStart: () => (uploading.value = true),
+        onFinish: () => (uploading.value = false),
+    });
+}
+
 function submit(): void {
     if (!validation.validate()) {
         return;
@@ -59,7 +137,7 @@ function submit(): void {
         <SettingsSection
             :icon="UserRound"
             title="Perfil"
-            description="Tu nombre visible y el correo con el que entras."
+            description="Tu foto y tu nombre visible: así te ve todo el equipo en las conversaciones (quién contestó, responsable), el chat interno y las listas."
         >
             <!-- How teammates see you, updated while you type. -->
             <div
@@ -68,9 +146,10 @@ function submit(): void {
             >
                 <ListAvatar
                     :name="form.name.trim() || user.name"
-                    class="size-12! text-base!"
+                    :src="avatar"
+                    class="size-16! text-lg!"
                 />
-                <div class="min-w-0">
+                <div class="min-w-0 flex-1">
                     <p class="truncate font-display text-base font-semibold">
                         {{ form.name.trim() || user.name }}
                     </p>
@@ -80,9 +159,46 @@ function submit(): void {
                 </div>
             </div>
 
+            <div class="mb-5 flex flex-wrap items-center gap-2">
+                <input
+                    ref="fileInput"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    class="sr-only"
+                    aria-label="Elegir foto de perfil"
+                    @change="uploadAvatar"
+                />
+                <Button
+                    type="button"
+                    variant="outline"
+                    :loading="uploading"
+                    @click="pickAvatar"
+                >
+                    <Camera class="size-4" aria-hidden="true" />
+                    {{ user.avatar ? 'Cambiar foto' : 'Subir foto' }}
+                </Button>
+                <Button
+                    v-if="user.avatar"
+                    type="button"
+                    variant="ghost"
+                    :disabled="uploading"
+                    @click="removeAvatar"
+                >
+                    <Trash2 class="size-4" aria-hidden="true" />
+                    Quitar foto
+                </Button>
+                <p class="w-full text-xs text-muted-foreground">
+                    JPG, PNG o WebP de hasta 8 MB. Se recorta en cuadro.
+                </p>
+                <InputError
+                    :message="avatarError ?? undefined"
+                    class="w-full"
+                />
+            </div>
+
             <div class="field-grid [--col-min:20rem]">
                 <div class="grid gap-2">
-                    <Label for="name">Nombre</Label>
+                    <Label for="name">Nombre visible</Label>
                     <Input
                         id="name"
                         v-model="form.name"
@@ -90,7 +206,7 @@ function submit(): void {
                         required
                         maxlength="255"
                         autocomplete="name"
-                        placeholder="Nombre completo"
+                        placeholder="Ej. Ana López · Ventas"
                         v-bind="validation.field('name', 'name')"
                     />
                     <InputError

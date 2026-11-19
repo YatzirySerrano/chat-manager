@@ -30,6 +30,8 @@ declare module '@inertiajs/core' {
             realtime: RealtimeConfig;
             /** Public VAPID key for Web Push (null when it is off). */
             webPushKey: string | null;
+            /** Teammates' profile pictures by user id (useUserAvatar). */
+            userAvatars: Record<string, string>;
             /** Unread internal chat messages (null without team-chat.use). */
             teamChatUnread: number | null;
             /** Feature flags (config/features.php); the server enforces them. */

@@ -131,7 +131,10 @@ export function watchdogVerdict(options: {
     open: boolean;
     registered: boolean;
 }): string | null {
-    if (options.open && options.now - options.lastFrameAt > WATCHDOG_SILENCE_MS) {
+    if (
+        options.open &&
+        options.now - options.lastFrameAt > WATCHDOG_SILENCE_MS
+    ) {
         return 'watchdog: no frames from WhatsApp while connected';
     }
 
@@ -373,8 +376,7 @@ export function createBaileysFactory(options: {
                 clearInterval(watchdog);
 
                 const error = update.lastDisconnect?.error as
-                    | (Error & { output?: { statusCode?: number } })
-                    | undefined;
+                    (Error & { output?: { statusCode?: number } }) | undefined;
 
                 onEvent({
                     type: 'close',
@@ -456,8 +458,7 @@ export function createBaileysFactory(options: {
                 if (edited) {
                     edits.push({
                         ...target,
-                        timestamp:
-                            Number(update.messageTimestamp ?? 0) || null,
+                        timestamp: Number(update.messageTimestamp ?? 0) || null,
                         message: edited,
                     });
                 } else if (
@@ -494,6 +495,55 @@ export function createBaileysFactory(options: {
                 onEvent({ type: 'statuses', updates: statuses });
             }
         });
+
+        /**
+         * The contact's picture: the full one first, the preview when
+         * WhatsApp refuses or does not serve the full one, and the same
+         * through the contact's @lid when its phone JID gets nothing (since
+         * the LID migration WhatsApp answers many pictures only that way).
+         * `unavailable` when WhatsApp did not answer at all (timeout, socket
+         * error): the stored copy must be kept, not removed.
+         */
+        const pictureOf = async (
+            jid: string,
+        ): Promise<{ url: string | null; unavailable: boolean }> => {
+            const targets = [jid];
+
+            if (jid.endsWith('@s.whatsapp.net')) {
+                const lid = await orNothing(
+                    socket.signalRepository.lidMapping.getLIDForPN(jid),
+                );
+
+                if (typeof lid === 'string' && lid.endsWith('@lid')) {
+                    targets.push(lid.replace(/:\d+@/, '@'));
+                }
+            }
+
+            for (const target of targets) {
+                for (const type of ['image', 'preview'] as const) {
+                    const answer = await pictureAnswer(
+                        socket.profilePictureUrl(
+                            target,
+                            type,
+                            PROFILE_TIMEOUT_MS,
+                        ),
+                    );
+
+                    if (answer.kind === 'url') {
+                        const url = profilePicture(answer.url);
+
+                        if (url !== null) {
+                            return { url, unavailable: false };
+                        }
+                    } else if (answer.kind === 'failed') {
+                        // No answer: asking again now would only add timeouts.
+                        return { url: null, unavailable: true };
+                    }
+                }
+            }
+
+            return { url: null, unavailable: false };
+        };
 
         return {
             async send(jid, content, { messageId, quoted }) {
@@ -536,19 +586,16 @@ export function createBaileysFactory(options: {
                 // Each part fails on its own: a private picture must not
                 // hide a public "about", and the other way around.
                 const [picture, status, business] = await Promise.all([
-                    orNothing(
-                        socket.profilePictureUrl(
-                            jid,
-                            'image',
-                            PROFILE_TIMEOUT_MS,
-                        ),
-                    ),
+                    pictureOf(jid),
                     orNothing(socket.fetchStatus(jid)),
                     orNothing(socket.getBusinessProfile(jid)),
                 ]);
 
                 return {
-                    picture_url: profilePicture(picture),
+                    picture_url: picture.url,
+                    ...(picture.unavailable && picture.url === null
+                        ? { picture_unavailable: true }
+                        : {}),
                     ...statusOf(status?.[0]?.status),
                     business: businessProfile(business),
                 };
@@ -583,6 +630,54 @@ function orNothing<T>(promise: Promise<T>): Promise<T | undefined> {
     ]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * One picture query: its URL, "none" when WhatsApp says there is none or
+ * it is private (401 not-authorized, 404 item-not-found), or "failed" when
+ * it did not answer (timeout, closed socket, anything else).
+ */
+async function pictureAnswer(
+    promise: Promise<string | undefined>,
+): Promise<
+    { kind: 'url'; url: unknown } | { kind: 'none' } | { kind: 'failed' }
+> {
+    let timer: NodeJS.Timeout | undefined;
+
+    try {
+        return await Promise.race([
+            promise.then(
+                (url) =>
+                    url
+                        ? { kind: 'url' as const, url }
+                        : { kind: 'none' as const },
+                (error: unknown) => {
+                    const code = (
+                        error as {
+                            output?: { statusCode?: number };
+                            data?: unknown;
+                        } | null
+                    )?.output?.statusCode;
+                    const data = (error as { data?: unknown } | null)?.data;
+
+                    return code === 401 ||
+                        code === 404 ||
+                        data === 401 ||
+                        data === 404
+                        ? { kind: 'none' as const }
+                        : { kind: 'failed' as const };
+                },
+            ),
+            new Promise<{ kind: 'failed' }>((resolve) => {
+                timer = setTimeout(
+                    () => resolve({ kind: 'failed' }),
+                    PROFILE_TIMEOUT_MS + 1_000,
+                );
+            }),
+        ]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 function text(value: unknown, max = 1000): string | null {
     if (typeof value !== 'string') {
         return null;
@@ -599,9 +694,7 @@ function profilePicture(url: unknown): string | null {
     return value !== null && value.startsWith('https://') ? value : null;
 }
 
-function statusOf(
-    data: unknown,
-): Pick<WaProfile, 'about' | 'about_set_at'> {
+function statusOf(data: unknown): Pick<WaProfile, 'about' | 'about_set_at'> {
     const status = data as { status?: unknown; setAt?: unknown } | undefined;
     const about = text(status?.status, 700);
     const at =

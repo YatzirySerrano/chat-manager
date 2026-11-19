@@ -1161,6 +1161,7 @@ onBeforeUnmount(() => {
                     <TeamAvatar
                         :name="thread.title"
                         :group="isGroup"
+                        :user-id="thread.partner?.id ?? null"
                         :deleted="thread.partner?.deleted ?? false"
                         :online="partnerOnline"
                     />

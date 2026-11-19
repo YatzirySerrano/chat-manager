@@ -37,6 +37,7 @@ use Throwable;
  *   an unchanged picture (same SHA-256) is not stored again and the previous
  *   file is deleted once the new one is recorded;
  * - a picture the contact made private (or removed) removes the stored copy;
+ *   one WhatsApp did not answer about (timeout) keeps it;
  * - the "about" with its date and the business profile are stored as given.
  *
  * Nothing is retried in a loop: a session that is not connected waits for
@@ -139,7 +140,10 @@ class RefreshWhatsAppWebContactProfile implements ShouldBeUniqueUntilProcessing,
         // "keep": the stored copy stays; "remove": the contact has no public picture; or the new file.
         $picture = 'keep';
 
-        if ($profile['picture_url'] === null) {
+        if ($profile['picture_url'] === null && $profile['picture_unavailable']) {
+            // WhatsApp did not answer about the picture: the stored copy stays.
+            $picture = 'keep';
+        } elseif ($profile['picture_url'] === null) {
             $picture = 'remove';
         } elseif ($mediaDisk->ready()) {
             $picture = $this->storePicture($profile['picture_url'], $identity, $mediaDisk, $paths, $fetchedAt);

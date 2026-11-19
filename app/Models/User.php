@@ -47,11 +47,14 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
  * @property string|null $remember_token
+ * @property string|null $avatar_disk Disk of the profile picture the person chose (UserAvatars).
+ * @property string|null $avatar_path
+ * @property string|null $avatar_version Changes with every new picture (cache key of its URL).
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
 #[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token', 'roles', 'permissions'])]
+#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token', 'roles', 'permissions', 'avatar_disk', 'avatar_path', 'avatar_version'])]
 class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
@@ -97,6 +100,34 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             'last_login_at' => 'datetime',
             'two_factor_confirmed_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Whether the person chose a profile picture.
+     */
+    public function hasAvatar(): bool
+    {
+        return is_string($this->avatar_disk) && $this->avatar_disk !== '' && is_string($this->avatar_path) && $this->avatar_path !== '';
+    }
+
+    /**
+     * URL of the profile picture (served to signed-in people only), or null
+     * without one. It carries the version, so a new picture is a new URL.
+     */
+    public function avatarUrl(): ?string
+    {
+        if (! $this->hasAvatar()) {
+            return null;
+        }
+
+        try {
+            return route('users.avatar', ['user' => $this->id, 'v' => $this->avatar_version ?? '1']);
+        } catch (\Throwable $exception) {
+            // A route cache older than the code: initials instead of a broken page.
+            report($exception);
+
+            return null;
+        }
     }
 
     /**

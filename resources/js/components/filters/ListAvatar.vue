@@ -3,6 +3,7 @@ import { UsersRound } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import { getInitials } from '@/composables/useInitials';
+import { userAvatarUrl } from '@/composables/useUserAvatar';
 import { cn } from '@/lib/utils';
 import type { ConnectionChannel } from '@/types';
 import './filters.css';
@@ -32,6 +33,8 @@ const props = withDefaults(
         dimmed?: boolean;
         /** Profile picture; the initials are shown without it. */
         src?: string | null;
+        /** A teammate: their own profile picture when `src` is not given. */
+        userId?: number | null;
     }>(),
     {
         channel: null,
@@ -42,21 +45,25 @@ const props = withDefaults(
         pending: false,
         dimmed: false,
         src: null,
+        userId: null,
     },
 );
 
 const failed = ref(false);
 
 watch(
-    () => props.src,
+    () => [props.src, props.userId],
     () => {
         failed.value = false;
     },
 );
 
 const picture = computed(() =>
-    props.src && !failed.value && !props.group && !props.deleted
-        ? props.src
+    (props.src ?? userAvatarUrl(props.userId)) &&
+    !failed.value &&
+    !props.group &&
+    !props.deleted
+        ? (props.src ?? userAvatarUrl(props.userId))
         : null,
 );
 

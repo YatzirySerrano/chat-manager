@@ -56,6 +56,7 @@ import { googleMapsUrl } from '@/lib/conversations/media';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { firstUrl } from '@/lib/links';
 import { formatPhone } from '@/lib/phone';
+import { userAvatarUrl } from '@/composables/useUserAvatar';
 import type { ConversationMessage, MessageAttachment } from '@/types';
 
 /**
@@ -465,6 +466,13 @@ const reactionChips = computed(() => {
     return [...chips.values()];
 });
 
+/** Picture of the teammate who answered (their own, «Ajustes → Perfil»). */
+const authorPhoto = computed(() =>
+    outbound.value && !props.message.automatic && !props.message.integration
+        ? userAvatarUrl(props.message.sender?.id ?? null)
+        : null,
+);
+
 const author = computed(() => {
     if (!outbound.value) {
         return props.contactName;
@@ -625,6 +633,15 @@ async function copyText(): Promise<void> {
                     <Plug
                         v-else-if="message.integration"
                         class="size-3.5 shrink-0"
+                        aria-hidden="true"
+                    />
+                    <img
+                        v-else-if="authorPhoto"
+                        :src="authorPhoto"
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        class="size-4 shrink-0 rounded-full object-cover"
                         aria-hidden="true"
                     />
                     <span

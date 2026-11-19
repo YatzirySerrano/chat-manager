@@ -65,3 +65,9 @@ Schedule::command('queue:prune-batches --hours=168')->dailyAt('04:40');
 // Queue rules: offers automatic queues again when the minimum wait of a request ended (cheap when nothing waits; decided under the engine's locks).
 // Phase two only (FEATURE_PHASE_TWO); the command itself is inert while it is off.
 Schedule::command('conversations:offer-waiting-queues')->everyMinute()->withoutOverlapping(5)->when(fn (): bool => Features::phaseTwo());
+
+// WhatsApp Web (QR): pictures of contacts that never got one or have a stale one (bounded, paced on the media queue).
+Schedule::command('whatsapp-web:refresh-profiles')->everyThirtyMinutes()->withoutOverlapping(30)->when(fn (): bool => (bool) config('whatsapp_web.enabled') && app(InternalSignature::class)->isConfigured());
+
+// Chatbot: menus nobody answered within their timeout follow the ordinary routing (distributed and announced).
+Schedule::command('chatbot:expire-sessions')->everyMinute()->withoutOverlapping(5);

@@ -3,6 +3,7 @@ import type { LucideIcon } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import type { HTMLAttributes } from 'vue';
 import { getInitials } from '@/composables/useInitials';
+import { userAvatarUrl } from '@/composables/useUserAvatar';
 import { isHexColor, isPaletteColor } from '@/lib/colors';
 import { cn } from '@/lib/utils';
 import './directory.css';
@@ -30,6 +31,8 @@ const props = withDefaults(
         class?: HTMLAttributes['class'];
         /** Profile picture; the initials (or icon) are shown without it. */
         src?: string | null;
+        /** A teammate: their own profile picture when `src` is not given. */
+        userId?: number | null;
     }>(),
     {
         icon: undefined,
@@ -39,13 +42,15 @@ const props = withDefaults(
         tone: 'auto',
         class: undefined,
         src: null,
+        userId: null,
     },
 );
 
 const failed = ref(false);
+const photo = computed(() => props.src ?? userAvatarUrl(props.userId));
 
 watch(
-    () => props.src,
+    () => [props.src, props.userId],
     () => {
         failed.value = false;
     },
@@ -113,8 +118,8 @@ const radius = computed(() => {
         <component :is="icon" v-if="icon" />
         <template v-else>{{ getInitials(name) || '?' }}</template>
         <img
-            v-if="src && !failed"
-            :src="src"
+            v-if="photo && !failed"
+            :src="photo"
             alt=""
             loading="lazy"
             decoding="async"

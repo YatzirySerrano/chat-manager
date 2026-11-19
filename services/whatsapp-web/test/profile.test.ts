@@ -72,6 +72,24 @@ describe('perfil de un contacto (§4)', () => {
         });
     });
 
+    test('una foto que WhatsApp no respondió llega marcada como no disponible', async () => {
+        socket.profileBehaviour = async () => ({
+            picture_url: null,
+            picture_unavailable: true,
+            about: null,
+            about_set_at: null,
+            business: null,
+        });
+
+        const response = await harness.call('POST', '/v1/sessions/1/profile', {
+            to: CUSTOMER,
+        });
+
+        assert.equal(response.status, 200);
+        assert.equal(response.json.picture_unavailable, true);
+        assert.equal(response.json.picture_url, null);
+    });
+
     test('el mismo contacto pedido varias veces seguidas se consulta a WhatsApp una vez', async () => {
         await Promise.all([
             harness.call('POST', '/v1/sessions/1/profile', { to: CUSTOMER }),

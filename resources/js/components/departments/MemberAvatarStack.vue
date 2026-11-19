@@ -42,6 +42,7 @@ const label = computed(() => {
             v-for="(member, position) in shown"
             :key="member.id"
             :name="member.name"
+            :user-id="member.id"
             size="sm"
             class="ring-2 ring-card"
             :class="position > 0 && '-ml-1.5'"

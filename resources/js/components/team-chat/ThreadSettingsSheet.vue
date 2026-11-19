@@ -296,6 +296,7 @@ function keepKeyboardClosed(event: Event): void {
                     <TeamAvatar
                         :name="thread.title"
                         :group="isGroup"
+                        :user-id="thread.partner?.id ?? null"
                         :deleted="thread.partner?.deleted ?? false"
                         :online="
                             thread.partner !== null &&
@@ -475,6 +476,7 @@ function keepKeyboardClosed(event: Event): void {
                         >
                             <TeamAvatar
                                 :name="participant.name"
+                                :user-id="participant.id"
                                 :deleted="participant.deleted"
                                 :online="isOnline(participant.id)"
                                 size="sm"

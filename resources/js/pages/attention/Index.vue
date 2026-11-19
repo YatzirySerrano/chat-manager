@@ -700,6 +700,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                         />
                                         <ListAvatar
                                             :name="agent.name"
+                                            :user-id="agent.id"
                                             :online="presence(agent).online"
                                         />
                                     </div>

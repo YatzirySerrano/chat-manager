@@ -98,6 +98,7 @@ const unreadLabel = computed(() =>
             <ListAvatar
                 :name="thread.title"
                 :group="thread.type === 'group'"
+                :user-id="thread.partner?.id ?? null"
                 :deleted="thread.partner?.deleted ?? false"
                 :online="partnerOnline"
             />

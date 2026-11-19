@@ -59,8 +59,16 @@ class ConversationEventResource extends JsonResource
             return $this->type->label();
         }
 
+        if (($this->metadata['outcome'] ?? null) === 'answered') {
+            $option = is_string($this->metadata['option'] ?? null) ? $this->metadata['option'] : null;
+
+            return $option !== null ? "El chatbot contestó «{$option}»" : 'El chatbot contestó al cliente';
+        }
+
         if (($this->metadata['outcome'] ?? null) === 'fallback') {
-            return 'El chatbot no recibió una opción válida';
+            return ($this->metadata['reason'] ?? null) === 'timeout'
+                ? 'El cliente no contestó el menú del chatbot a tiempo'
+                : 'El chatbot no recibió una opción válida';
         }
 
         return $this->toDepartment !== null ? "El chatbot la envió a {$this->toDepartment->name}" : $this->type->label();

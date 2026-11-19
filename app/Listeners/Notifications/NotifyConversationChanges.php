@@ -169,7 +169,8 @@ class NotifyConversationChanges implements ShouldQueue
             return;
         }
 
-        $recipients = $this->recipients->forPendingConversation($conversation, $record->actor_user_id);
+        // Department members who can take it, and the administrators.
+        $recipients = $this->recipients->forUnattendedConversation($conversation, $record->actor_user_id);
 
         if ($recipients->isNotEmpty()) {
             Notification::send($recipients, new ConversationPendingNotification($conversation->id, $conversation->department_id, $record->id));

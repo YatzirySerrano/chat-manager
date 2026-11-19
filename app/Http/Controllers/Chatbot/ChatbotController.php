@@ -26,6 +26,7 @@ use App\Support\PhoneNumber;
 use App\Support\SaveToast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -57,7 +58,7 @@ class ChatbotController extends Controller
             ->get();
         $menus = ChatbotMenu::query()
             ->whereIn('connection_id', $connections->modelKeys())
-            ->with('options')
+            ->with('allOptions')
             ->get()
             ->keyBy('connection_id');
         $sessions = ChatbotSession::query()
@@ -77,7 +78,7 @@ class ChatbotController extends Controller
             ->get(['id', 'metadata'])
             ->countBy(fn (Message $message): int => (int) ($message->metadata['chatbot_rule_id'] ?? 0));
 
-        $usedDepartmentIds = $menus->flatMap(fn (ChatbotMenu $menu) => $menu->options->pluck('department_id'))
+        $usedDepartmentIds = $menus->flatMap(fn (ChatbotMenu $menu) => $menu->allOptions->pluck('department_id')->filter())
             ->merge($rules->flatMap(fn (ChatbotKeywordRule $rule) => $rule->departments->modelKeys()))
             ->unique()
             ->all();
@@ -109,16 +110,15 @@ class ChatbotController extends Controller
                         'is_enabled' => $menu->is_enabled ?? false,
                         'greeting' => $menu->greeting ?? '',
                         'retry_message' => $menu->retry_message ?? '',
+                        'navigation_hint' => $menu->navigation_hint ?? '',
                         'max_attempts' => $menu->max_attempts ?? 2,
-                        'options' => $menu === null ? [] : $menu->options->map(fn (ChatbotMenuOption $option): array => [
-                            'department_id' => $option->department_id,
-                            'label' => $option->label ?? '',
-                            'reply_message' => $option->reply_message ?? '',
-                        ])->values()->all(),
+                        'timeout_minutes' => $menu->timeout_minutes ?? ChatbotMenu::DEFAULT_TIMEOUT_MINUTES,
+                        'options' => $menu === null ? [] : self::optionTree($menu->allOptions, null),
                         'updated_at' => $menu?->updated_at?->toIso8601String(),
                     ],
                     'activity' => [
                         'routed' => $count(ChatbotSessionStatus::Routed),
+                        'answered' => $count(ChatbotSessionStatus::Answered),
                         'fallback' => $count(ChatbotSessionStatus::Fallback),
                         'awaiting' => $count(ChatbotSessionStatus::Awaiting),
                     ],
@@ -158,6 +158,9 @@ class ChatbotController extends Controller
                 'retry' => ChatbotMenuRequest::RETRY_MAX_LENGTH,
                 'label' => ChatbotMenuRequest::LABEL_MAX_LENGTH,
                 'options' => ChatbotMenuRequest::MAX_OPTIONS,
+                'depth' => ChatbotMenuRequest::MAX_DEPTH,
+                'navigation' => ChatbotMenuRequest::NAVIGATION_MAX_LENGTH,
+                'timeout' => ChatbotMenu::MAX_TIMEOUT_MINUTES,
                 'attempts' => ChatbotMenu::MAX_ATTEMPTS_LIMIT,
                 'name' => ChatbotKeywordRuleRequest::NAME_MAX_LENGTH,
                 'keywords' => ChatbotKeywordRuleRequest::MAX_KEYWORDS,
@@ -166,6 +169,7 @@ class ChatbotController extends Controller
             ],
             'defaults' => [
                 'retry_message' => ChatbotMenu::DEFAULT_RETRY_MESSAGE,
+                'navigation_hint' => ChatbotMenu::DEFAULT_NAVIGATION_HINT,
                 'throttle_minutes' => ChatbotKeywordRule::DEFAULT_THROTTLE_MINUTES,
             ],
             'activityDays' => self::ACTIVITY_DAYS,
@@ -173,6 +177,25 @@ class ChatbotController extends Controller
                 'manage' => $actor->can('create', ChatbotKeywordRule::class),
             ],
         ]);
+    }
+
+    /**
+     * One level of the menu (null: the main one) with its submenus inside.
+     *
+     * @param  Collection<int, ChatbotMenuOption>  $all
+     * @return list<array<string, mixed>>
+     */
+    private static function optionTree(Collection $all, ?int $parentId): array
+    {
+        return array_values($all->filter(fn (ChatbotMenuOption $option): bool => $option->parent_id === $parentId)
+            ->sortBy([['position', 'asc'], ['id', 'asc']])
+            ->map(fn (ChatbotMenuOption $option): array => [
+                'action' => $option->action->value,
+                'department_id' => $option->department_id,
+                'label' => $option->label ?? '',
+                'reply_message' => $option->reply_message ?? '',
+                'children' => self::optionTree($all, $option->id),
+            ])->all());
     }
 
     /**

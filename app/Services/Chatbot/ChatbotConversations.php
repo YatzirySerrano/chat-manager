@@ -4,11 +4,11 @@ namespace App\Services\Chatbot;
 
 use App\Actions\Automation\QueueAutomaticMessage;
 use App\Actions\Conversations\AssignAutomatically;
+use App\Enums\ChatbotOptionAction;
 use App\Enums\ChatbotSessionStatus;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationReadiness;
 use App\Enums\ConversationStatus;
-use App\Models\ChatbotMenu;
 use App\Models\ChatbotMenuOption;
 use App\Models\ChatbotSession;
 use App\Models\Connection;
@@ -20,7 +20,6 @@ use App\Services\Automation\AutomaticMessagePlan;
 use App\Services\BusinessHours;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\QueueRules;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -42,14 +41,20 @@ use Illuminate\Support\Facades\Log;
  *    then the menu stops (cancelled).
  * 3. sendMenu(): the greeting and the numbered options, queued by
  *    SendAutomaticMessages when the conversation is created.
- * 4. answer(): the customer's next messages. An option (its number or its
- *    text) moves the conversation to the option's department, records the
- *    event «El chatbot la envió a X», sends the option's reply (or the
- *    department's welcome, or away message outside hours) and lets the
- *    department distribute and announce it. Anything else gets the short
+ * 4. answer(): the customer's next messages, against the level the
+ *    customer is in (the main menu or a submenu). «0» goes one level back,
+ *    «#» to the main menu. An option (its number or its text) does what its
+ *    action says (ChatbotOptionAction): opens its submenu, answers and stays,
+ *    answers and ends the menu, or moves the conversation to its department,
+ *    records the event «El chatbot la envió a X», sends the option's reply
+ *    (or the department's welcome, or away message outside hours) and lets
+ *    the department distribute and announce it. Anything else gets the short
  *    retry with the options again, up to the menu's attempts; one more
  *    and the ordinary routing takes over (fallback): the conversation stays
  *    where it was, now distributed and announced.
+ * 5. expire(): a menu nobody answers within the menu's timeout falls back
+ *    the same way (chatbot:expire-sessions, every minute), so no
+ *    conversation waits unannounced forever.
  *
  * Every step runs with the conversation row locked (the inbound receipt
  * already holds it), so two messages processed at once never send the menu
@@ -135,13 +140,13 @@ class ChatbotConversations
                 return false;
             }
 
-            $plan = new AutomaticMessagePlan(AutomaticMessageKind::ChatbotMenu, $this->menus->text($available['menu'], $available['options']), 'chatbot');
+            $plan = new AutomaticMessagePlan(AutomaticMessageKind::ChatbotMenu, $this->menus->text($available), 'chatbot');
 
             $this->queueMessage->queueLocked(
                 $conversation,
                 $plan,
                 QueueAutomaticMessage::reference($conversation->id, AutomaticMessageKind::ChatbotMenu, $conversation->reopen_count),
-                ['trigger_event_id' => $triggerEventId, 'chatbot_menu_id' => $available['menu']->id],
+                ['trigger_event_id' => $triggerEventId, 'chatbot_menu_id' => $available->menu->id],
             );
 
             return true;
@@ -193,26 +198,147 @@ class ChatbotConversations
             return false;
         }
 
-        $option = $this->menus->choose($available['options'], (string) $message->body);
+        $submenu = $available->submenu($session->current_option_id);
+        $navigation = $this->menus->navigation((string) $message->body);
+
+        if ($navigation !== null) {
+            // Never an attempt: the customer is finding their way.
+            $target = $navigation === 'main' || $submenu === null ? null : $available->parentOf($submenu);
+            $this->moveTo($conversation, $session, $available, $target, $message);
+
+            return true;
+        }
+
+        $option = $this->menus->choose($available->level($submenu?->id), (string) $message->body);
 
         if ($option !== null) {
-            $this->route($conversation, $session, $option, $message);
+            match ($option->action) {
+                ChatbotOptionAction::Submenu => $this->moveTo($conversation, $session, $available, $option, $message),
+                ChatbotOptionAction::ReplyStay => $this->replyAndStay($conversation, $session, $available, $submenu, $option, $message),
+                ChatbotOptionAction::Reply => $this->replyAndEnd($conversation, $session, $option, $message),
+                ChatbotOptionAction::Transfer => $this->route($conversation, $session, $option, $message),
+            };
 
             return true;
         }
 
         $session->attempts++;
 
-        if ($session->attempts > $available['menu']->max_attempts) {
+        if ($session->attempts > $available->menu->max_attempts) {
             $this->fallBack($conversation, $session, 'no_valid_option');
 
             return true;
         }
 
         $session->save();
-        $this->retry($conversation, $session, $available['menu'], $available['options'], $message);
+        $this->retry($conversation, $session, $available, $submenu, $message);
 
         return true;
+    }
+
+    /**
+     * Menus nobody answered within their timeout: the ordinary routing
+     * takes over (distributed and announced). Returns how many expired.
+     */
+    public function expire(int $limit = 200): int
+    {
+        $expired = 0;
+
+        $candidates = ChatbotSession::query()
+            ->where('chatbot_sessions.status', ChatbotSessionStatus::Awaiting)
+            ->join('chatbot_menus', 'chatbot_menus.connection_id', '=', 'chatbot_sessions.connection_id')
+            ->where('chatbot_menus.timeout_minutes', '>', 0)
+            ->whereRaw('chatbot_sessions.updated_at < (? - interval chatbot_menus.timeout_minutes minute)', [now()->toDateTimeString()])
+            ->orderBy('chatbot_sessions.updated_at')
+            ->limit($limit)
+            ->pluck('chatbot_sessions.conversation_id');
+
+        foreach ($candidates as $conversationId) {
+            $conversation = Conversation::query()->find((int) $conversationId);
+
+            if ($conversation === null) {
+                continue;
+            }
+
+            DB::transaction(function () use ($conversation, &$expired): void {
+                $conversation = $this->lifecycle->lock($conversation);
+                $session = $this->awaitingSession($conversation);
+
+                if ($session === null) {
+                    return;
+                }
+
+                if (! $this->stillInQueue($conversation)) {
+                    $this->close($session, ChatbotSessionStatus::Cancelled);
+
+                    return;
+                }
+
+                $this->fallBack($conversation, $session, 'timeout');
+                $expired++;
+            });
+        }
+
+        return $expired;
+    }
+
+    /**
+     * The customer moves to a level (a submenu, or null for the main menu):
+     * its text and options are sent and the attempts start again.
+     */
+    private function moveTo(Conversation $conversation, ChatbotSession $session, ChatbotTree $tree, ?ChatbotMenuOption $submenu, Message $message): void
+    {
+        $session->forceFill(['current_option_id' => $submenu?->id, 'attempts' => 0]);
+        $session->touch();
+
+        $this->queueMessage->queueLocked(
+            $conversation,
+            new AutomaticMessagePlan(AutomaticMessageKind::ChatbotMenu, $this->menus->levelText($tree, $submenu), 'chatbot'),
+            QueueAutomaticMessage::chatbotReference($conversation->id, AutomaticMessageKind::ChatbotMenu, "{$conversation->reopen_count}:level:{$message->id}"),
+            ['chatbot_option_id' => $submenu?->id, 'trigger_message_id' => $message->id],
+        );
+    }
+
+    /**
+     * An informative option: its answer, then the same level again so the
+     * customer can keep choosing.
+     */
+    private function replyAndStay(Conversation $conversation, ChatbotSession $session, ChatbotTree $tree, ?ChatbotMenuOption $submenu, ChatbotMenuOption $option, Message $message): void
+    {
+        $session->forceFill(['attempts' => 0]);
+        $session->touch();
+
+        $text = trim((string) $option->reply_message)
+            ."\n\n".$this->menus->list($tree->level($submenu?->id))
+            .($submenu === null ? '' : "\n\n".$tree->menu->navigationText());
+
+        $this->queueMessage->queueLocked(
+            $conversation,
+            new AutomaticMessagePlan(AutomaticMessageKind::ChatbotReply, $text, 'chatbot'),
+            QueueAutomaticMessage::chatbotReference($conversation->id, AutomaticMessageKind::ChatbotReply, "{$conversation->reopen_count}:stay:{$message->id}"),
+            ['chatbot_option_id' => $option->id, 'trigger_message_id' => $message->id],
+        );
+    }
+
+    /**
+     * An option that answers and ends the menu: the reply is sent and the
+     * conversation follows the ordinary routing (an agent takes it).
+     */
+    private function replyAndEnd(Conversation $conversation, ChatbotSession $session, ChatbotMenuOption $option, Message $message): void
+    {
+        $reply = trim((string) $option->reply_message);
+
+        if ($reply !== '') {
+            $this->queueMessage->queueLocked(
+                $conversation,
+                new AutomaticMessagePlan(AutomaticMessageKind::ChatbotReply, $reply, 'chatbot'),
+                QueueAutomaticMessage::reference($conversation->id, AutomaticMessageKind::ChatbotReply, $conversation->reopen_count),
+                ['chatbot_option_id' => $option->id, 'trigger_message_id' => $message->id],
+            );
+        }
+
+        $session->forceFill(['chatbot_menu_option_id' => $option->id]);
+        $this->fallBack($conversation, $session, 'answered', ChatbotSessionStatus::Answered, $option);
     }
 
     /**
@@ -226,6 +352,12 @@ class ChatbotConversations
         $fromId = $conversation->department_id;
         $destinationId = $option->department_id;
         $destination = null;
+
+        if ($destinationId === null) {
+            $this->fallBack($conversation, $session, 'department_unavailable');
+
+            return;
+        }
 
         // Lock order step 2: both departments in id order, the destination
         // exclusively (its queue may be distributed right after).
@@ -290,7 +422,7 @@ class ChatbotConversations
      * department the ordinary routing chose, which may now distribute and
      * announce it (the event says why).
      */
-    private function fallBack(Conversation $conversation, ChatbotSession $session, string $reason): void
+    private function fallBack(Conversation $conversation, ChatbotSession $session, string $reason, ChatbotSessionStatus $status = ChatbotSessionStatus::Fallback, ?ChatbotMenuOption $option = null): void
     {
         // Exclusive, like a new conversation of an automatic department: the
         // event references it and the distribution below may lock it again.
@@ -299,10 +431,15 @@ class ChatbotConversations
         $this->lifecycle->record($conversation, ConversationEventType::ChatbotRouted, null, [
             'from_department_id' => $conversation->department_id,
             'to_department_id' => $conversation->department_id,
-            'metadata' => ['outcome' => 'fallback', 'reason' => $reason],
+            'metadata' => array_filter([
+                'outcome' => $status === ChatbotSessionStatus::Answered ? 'answered' : 'fallback',
+                'reason' => $reason,
+                'option_id' => $option?->id,
+                'option' => $option?->displayLabel(),
+            ], fn (mixed $value): bool => $value !== null),
         ]);
 
-        $this->close($session, ChatbotSessionStatus::Fallback);
+        $this->close($session, $status);
 
         Log::info('Chatbot menu fell back to the ordinary routing.', [
             'conversation_id' => $conversation->id,
@@ -314,15 +451,13 @@ class ChatbotConversations
         $this->assignAutomatically->handle($conversation);
     }
 
-    /**
-     * @param  Collection<int, ChatbotMenuOption>  $options
-     */
-    private function retry(Conversation $conversation, ChatbotSession $session, ChatbotMenu $menu, Collection $options, Message $message): void
+    private function retry(Conversation $conversation, ChatbotSession $session, ChatbotTree $tree, ?ChatbotMenuOption $submenu, Message $message): void
     {
         $this->queueMessage->queueLocked(
             $conversation,
-            new AutomaticMessagePlan(AutomaticMessageKind::ChatbotRetry, $this->menus->retryText($menu, $options), 'chatbot'),
-            QueueAutomaticMessage::chatbotReference($conversation->id, AutomaticMessageKind::ChatbotRetry, "{$conversation->reopen_count}:{$session->attempts}"),
+            new AutomaticMessagePlan(AutomaticMessageKind::ChatbotRetry, $this->menus->retryText($tree, $submenu), 'chatbot'),
+            // By message: the attempts start again in every level.
+            QueueAutomaticMessage::chatbotReference($conversation->id, AutomaticMessageKind::ChatbotRetry, "{$conversation->reopen_count}:{$session->attempts}:{$message->id}"),
             ['attempt' => $session->attempts, 'trigger_message_id' => $message->id],
         );
     }

@@ -1,22 +1,19 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import {
-    ArrowDown,
-    ArrowRight,
-    ArrowUp,
-    Bot,
-    ListPlus,
-    MessageSquareReply,
-    Plus,
-    Trash2,
-    TriangleAlert,
-} from '@lucide/vue';
+import { ArrowRight, Bot, RotateCcw } from '@lucide/vue';
 import type { FunctionalComponent } from 'vue';
 import { computed, h, ref } from 'vue';
+import ChatbotOptionList from '@/components/chatbot/ChatbotOptionList.vue';
 import ChatbotPhonePreview from '@/components/chatbot/ChatbotPhonePreview.vue';
 import type { ChatbotPreviewMessage } from '@/components/chatbot/ChatbotPhonePreview.vue';
 import ChatbotStep from '@/components/chatbot/ChatbotStep.vue';
 import ChatbotTextField from '@/components/chatbot/ChatbotTextField.vue';
+import type { ChatbotOptionRow } from '@/components/chatbot/chatbotTree';
+import {
+    optionWorks,
+    toPayload,
+    toRows,
+} from '@/components/chatbot/chatbotTree';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { AppSelect } from '@/components/ui/app-select';
@@ -32,14 +29,15 @@ import type {
     ChatbotConnection,
     ChatbotDepartment,
     ChatbotLimits,
-    ChatbotMenuOption,
     ChatbotVariable,
 } from '@/types';
 
 /**
- * The welcome menu of one connection: on/off, greeting, the ordered options
- * (department, optional text and reply) and what happens with an answer
- * that is not an option, next to a live preview of the conversation.
+ * The programmable chatbot menu of one connection: on/off, greeting, the
+ * options of every level (each one says what it does: open a submenu,
+ * answer and stay, answer and end, or pass to a department), what happens
+ * with an answer that is not an option and how long it waits, next to a
+ * preview the administrator can walk through as a customer would.
  */
 const props = defineProps<{
     connection: ChatbotConnection;
@@ -47,25 +45,21 @@ const props = defineProps<{
     variables: ChatbotVariable[];
     limits: ChatbotLimits;
     defaultRetry: string;
+    defaultNavigation: string;
 }>();
-
-type OptionRow = ChatbotMenuOption & { key: number; showReply: boolean };
-
-let nextKey = 0;
-
-const toRow = (option: ChatbotMenuOption): OptionRow => ({
-    ...option,
-    key: nextKey++,
-    showReply: option.reply_message.trim() !== '',
-});
 
 const form = useForm({
     is_enabled: props.connection.menu.is_enabled,
     greeting: props.connection.menu.greeting,
     retry_message: props.connection.menu.retry_message,
+    navigation_hint: props.connection.menu.navigation_hint,
     max_attempts: props.connection.menu.max_attempts,
-    options: props.connection.menu.options.map(toRow),
+    timeout_minutes: props.connection.menu.timeout_minutes,
+    // Opaque for useForm (its key types cannot follow a recursive tree); read through `rows`.
+    options: toRows(props.connection.menu.options) as unknown as object[],
 });
+
+const rows = computed(() => form.options as unknown as ChatbotOptionRow[]);
 
 const canUpdate = computed(() => props.connection.can.update);
 
@@ -74,12 +68,25 @@ const departmentsById = computed(
 );
 
 /** Whether a department can receive this connection's conversations now. */
-function routable(department: ChatbotDepartment | undefined): boolean {
+function routable(departmentId: number | null): boolean {
+    const department =
+        departmentId === null
+            ? undefined
+            : departmentsById.value.get(departmentId);
+
     return (
         department !== undefined &&
         department.is_active &&
         (props.connection.department_ids.length === 0 ||
             props.connection.department_ids.includes(department.id))
+    );
+}
+
+function departmentName(departmentId: number | null): string {
+    return (
+        (departmentId !== null &&
+            departmentsById.value.get(departmentId)?.name) ||
+        'Texto de la opción'
     );
 }
 
@@ -99,60 +106,18 @@ function dot(color: AppColor): FunctionalComponent {
         });
 }
 
-function departmentOptions(current?: number): AppSelectOption<number>[] {
-    const taken = new Set(form.options.map((option) => option.department_id));
-
-    return props.departments
-        .filter(
-            (department) =>
-                department.id === current ||
-                (!taken.has(department.id) && routable(department)),
-        )
-        .map((department) => ({
-            value: department.id,
-            label: department.name,
-            icon: dot(department.color),
-            description: !department.is_active
-                ? 'Inactivo: se omite del menú'
-                : !routable(department)
-                  ? 'No autorizado para esta conexión: se omite'
-                  : undefined,
-        }));
-}
-
-const addable = computed(() => departmentOptions());
-const adding = ref<number | null>(null);
-
-function addOption(id: number | null | undefined): void {
-    if (
-        id === null ||
-        id === undefined ||
-        form.options.length >= props.limits.options
-    ) {
-        return;
-    }
-
-    form.options.push(
-        toRow({ department_id: id, label: '', reply_message: '' }),
-    );
-    adding.value = null;
-}
-
-function move(index: number, offset: -1 | 1): void {
-    const target = index + offset;
-
-    if (target < 0 || target >= form.options.length) {
-        return;
-    }
-
-    const rows = [...form.options];
-    [rows[index], rows[target]] = [rows[target], rows[index]];
-    form.options = rows;
-}
-
-function remove(index: number): void {
-    form.options = form.options.filter((_, position) => position !== index);
-}
+const departmentOptions = computed<AppSelectOption<number>[]>(() =>
+    props.departments.map((department) => ({
+        value: department.id,
+        label: department.name,
+        icon: dot(department.color),
+        description: !department.is_active
+            ? 'Inactivo: se omite del menú'
+            : !routable(department.id)
+              ? 'No autorizado para esta conexión: se omite'
+              : undefined,
+    })),
+);
 
 const attemptOptions = computed<AppSelectOption<number>[]>(() =>
     Array.from({ length: props.limits.attempts + 1 }, (_, count) => ({
@@ -166,133 +131,260 @@ const attemptOptions = computed<AppSelectOption<number>[]>(() =>
     })),
 );
 
-function optionLabel(option: ChatbotMenuOption): string {
+const timeoutOptions = computed<AppSelectOption<number>[]>(() =>
+    [0, 5, 10, 15, 30, 60, 120, 240, 480, 1440]
+        .filter((minutes) => minutes <= props.limits.timeout)
+        .map((minutes) => ({
+            value: minutes,
+            label:
+                minutes === 0
+                    ? 'Esperar siempre'
+                    : minutes < 60
+                      ? `${minutes} minutos`
+                      : minutes === 60
+                        ? '1 hora'
+                        : `${minutes / 60} horas`,
+        })),
+);
+
+function optionLabel(option: ChatbotOptionRow): string {
     return (
         option.label.trim() ||
-        departmentsById.value.get(option.department_id)?.name ||
-        'Departamento'
+        (option.action === 'transfer'
+            ? departmentsById.value.get(option.department_id ?? -1)?.name
+            : '') ||
+        'Opción'
     );
 }
 
-/* Preview: only the options a customer would see, renumbered (as the server does). */
-const visibleOptions = computed(() =>
-    form.options.filter((option) =>
-        routable(departmentsById.value.get(option.department_id)),
-    ),
-);
+/* ---- Preview: the administrator answers as a customer would. ---- */
 
-const answer = ref<number | 'other'>(1);
+type Answer = number | 'back' | 'main' | 'other';
+
+const answers = ref<Answer[]>([]);
 
 const sample = computed(() =>
     defaultSample({ conexion: props.connection.name }),
 );
 
-const preview = computed<ChatbotPreviewMessage[]>(() => {
-    const list = visibleOptions.value
+function visible(level: ChatbotOptionRow[]): ChatbotOptionRow[] {
+    return level.filter((option) => optionWorks(option, routable));
+}
+
+function list(level: ChatbotOptionRow[]): string {
+    return visible(level)
         .map((option, index) => `${index + 1} - ${optionLabel(option)}`)
         .join('\n');
-    const greeting = form.greeting.trim();
+}
+
+const navigationText = computed(
+    () => form.navigation_hint.trim() || props.defaultNavigation,
+);
+
+function levelText(submenu: ChatbotOptionRow | null): string {
+    if (submenu === null) {
+        return [form.greeting.trim(), list(rows.value)]
+            .filter(Boolean)
+            .join('\n\n');
+    }
+
+    return [
+        submenu.reply_message.trim(),
+        list(submenu.children),
+        navigationText.value,
+    ]
+        .filter(Boolean)
+        .join('\n\n');
+}
+
+/** Walks the answers through the tree, as ChatbotConversations does. */
+const simulation = computed(() => {
+    const render = (text: string, department = '') =>
+        renderChatbotText(
+            text,
+            defaultSample({
+                conexion: props.connection.name,
+                departamento: department,
+            }),
+        );
     const messages: ChatbotPreviewMessage[] = [
         { key: 'hello', from: 'customer', text: 'Hola' },
         {
             key: 'menu',
             from: 'bot',
-            label: 'Menú de bienvenida',
-            text: renderChatbotText(
-                [greeting, list].filter(Boolean).join('\n\n'),
-                sample.value,
-            ),
+            label: 'Menú principal',
+            text: renderChatbotText(levelText(null), sample.value),
             muted: !form.is_enabled,
         },
     ];
+    // The submenus the customer went through (last: where they are).
+    const trail: ChatbotOptionRow[] = [];
+    let ended = false;
+    let attempts = 0;
 
-    if (visibleOptions.value.length === 0) {
-        return messages;
-    }
+    answers.value.forEach((answer, step) => {
+        if (ended) {
+            return;
+        }
 
-    const choice =
-        answer.value === 'other'
-            ? null
-            : (visibleOptions.value[answer.value - 1] ?? null);
+        const current = trail.at(-1) ?? null;
+        const level = visible(current === null ? rows.value : current.children);
 
-    messages.push({
-        key: 'answer',
-        from: 'customer',
-        text: choice === null ? 'quiero informes' : String(answer.value),
-    });
-
-    if (choice === null) {
         messages.push({
-            key: 'retry',
-            from: 'bot',
-            label:
-                form.max_attempts > 0
-                    ? 'Reintento'
-                    : 'Sin reintentos: pasa a la cola normal',
+            key: `answer-${step}`,
+            from: 'customer',
             text:
-                form.max_attempts > 0
-                    ? `${form.retry_message.trim() || props.defaultRetry}\n\n${list}`
-                    : '',
-            muted: form.max_attempts === 0,
+                answer === 'back'
+                    ? '0'
+                    : answer === 'main'
+                      ? '#'
+                      : answer === 'other'
+                        ? 'quiero informes'
+                        : String(answer),
         });
 
-        return messages;
-    }
+        if (answer === 'back' || answer === 'main') {
+            if (answer === 'main') {
+                trail.length = 0;
+            } else {
+                trail.pop();
+            }
 
-    const department = departmentsById.value.get(choice.department_id);
-    const reply = choice.reply_message.trim();
+            attempts = 0;
+            const target = trail.at(-1) ?? null;
+            messages.push({
+                key: `level-${step}`,
+                from: 'bot',
+                label:
+                    target === null
+                        ? 'Menú principal'
+                        : `Submenú «${optionLabel(target)}»`,
+                text: render(levelText(target)),
+            });
 
-    messages.push({
-        key: `reply-${choice.key}`,
-        from: 'bot',
-        label: reply
-            ? 'Respuesta de la opción'
-            : department?.has_welcome
-              ? 'Bienvenida del departamento'
-              : 'Sin respuesta',
-        text: reply
-            ? renderChatbotText(
-                  reply,
-                  defaultSample({
-                      conexion: props.connection.name,
-                      departamento: department?.name ?? '',
-                  }),
-              )
-            : department?.has_welcome
-              ? `_(La bienvenida configurada en ${department.name})_`
-              : '',
-        muted: !reply,
+            return;
+        }
+
+        const option = answer === 'other' ? null : (level[answer - 1] ?? null);
+
+        if (option === null) {
+            attempts++;
+
+            if (attempts > form.max_attempts) {
+                ended = true;
+                messages.push({
+                    key: `fallback-${step}`,
+                    from: 'bot',
+                    label: 'Sin opción válida: pasa a la fila normal',
+                    text: '',
+                    muted: true,
+                });
+
+                return;
+            }
+
+            messages.push({
+                key: `retry-${step}`,
+                from: 'bot',
+                label: 'Reintento',
+                text: [
+                    form.retry_message.trim() || props.defaultRetry,
+                    list(current === null ? rows.value : current.children),
+                    current === null ? '' : navigationText.value,
+                ]
+                    .filter(Boolean)
+                    .join('\n\n'),
+            });
+
+            return;
+        }
+
+        attempts = 0;
+
+        if (option.action === 'submenu') {
+            trail.push(option);
+            messages.push({
+                key: `level-${step}`,
+                from: 'bot',
+                label: `Submenú «${optionLabel(option)}»`,
+                text: render(levelText(option)),
+            });
+
+            return;
+        }
+
+        if (option.action === 'reply_stay') {
+            messages.push({
+                key: `stay-${step}`,
+                from: 'bot',
+                label: 'Respuesta · sigue en el menú',
+                text: render(
+                    [
+                        option.reply_message.trim(),
+                        list(current === null ? rows.value : current.children),
+                        current === null ? '' : navigationText.value,
+                    ]
+                        .filter(Boolean)
+                        .join('\n\n'),
+                ),
+            });
+
+            return;
+        }
+
+        ended = true;
+
+        if (option.action === 'reply') {
+            messages.push({
+                key: `reply-${step}`,
+                from: 'bot',
+                label: 'Respuesta · termina el menú, la toma un agente',
+                text: render(option.reply_message.trim()),
+            });
+
+            return;
+        }
+
+        const department = departmentsById.value.get(
+            option.department_id ?? -1,
+        );
+        const reply = option.showReply ? option.reply_message.trim() : '';
+
+        messages.push({
+            key: `transfer-${step}`,
+            from: 'bot',
+            label: `Pasa a ${department?.name ?? 'un departamento'}`,
+            text: reply
+                ? render(reply, department?.name ?? '')
+                : department?.has_welcome
+                  ? `_(La bienvenida configurada en ${department.name})_`
+                  : '',
+            muted: !reply,
+        });
     });
 
-    return messages;
+    const current = trail.at(-1) ?? null;
+
+    return {
+        messages,
+        ended,
+        inSubmenu: current !== null,
+        choices: visible(current === null ? rows.value : current.children),
+    };
 });
 
-const answerChoices = computed(() => [
-    ...visibleOptions.value.map((_, index) => ({
-        value: (index + 1) as number | 'other',
-        label: String(index + 1),
-    })),
-    { value: 'other' as const, label: 'Otra cosa' },
-]);
+function answer(value: Answer): void {
+    answers.value = [...answers.value, value];
+}
 
-const skipped = computed(
-    () => form.options.length - visibleOptions.value.length,
-);
-
-function optionError(index: number, field: string): string | undefined {
-    return (form.errors as Record<string, string | undefined>)[
-        `options.${index}.${field}`
-    ];
+function errorsRecord(): Record<string, string | undefined> {
+    return form.errors as Record<string, string | undefined>;
 }
 
 function save(): void {
     form.transform((data) => ({
         ...data,
-        options: data.options.map((option) => ({
-            department_id: option.department_id,
-            label: option.label,
-            reply_message: option.showReply ? option.reply_message : '',
-        })),
+        options: toPayload(data.options as unknown as ChatbotOptionRow[]),
     })).put(updateMenu.url(props.connection.id), {
         preserveScroll: true,
         onSuccess: () => form.defaults(),
@@ -331,14 +423,14 @@ function save(): void {
                     <span class="font-display text-base font-semibold">
                         {{
                             form.is_enabled
-                                ? 'El menú está encendido'
-                                : 'El menú está apagado'
+                                ? 'El chatbot está encendido'
+                                : 'El chatbot está apagado'
                         }}
                     </span>
                     <span class="text-sm text-muted-foreground">
                         {{
                             form.is_enabled
-                                ? `Se manda solo cuando alguien escribe por primera vez a ${connection.name}.`
+                                ? `Contesta solo cuando alguien escribe por primera vez a ${connection.name}.`
                                 : 'Nadie lo recibe. Enciéndelo cuando esté listo.'
                         }}
                     </span>
@@ -346,7 +438,7 @@ function save(): void {
                 <Switch
                     v-model="form.is_enabled"
                     :disabled="!canUpdate"
-                    aria-label="Encender el menú de bienvenida"
+                    aria-label="Encender el chatbot"
                     data-test="chatbot-menu-enabled"
                 />
             </label>
@@ -354,240 +446,68 @@ function save(): void {
             <ChatbotStep
                 :id="`chatbot-step-greeting-${connection.id}`"
                 :number="1"
-                title="Saludo"
+                title="Mensaje de bienvenida"
                 hint="Lo primero que lee el cliente, antes de la lista de opciones."
             >
                 <ChatbotTextField
                     :id="`chatbot-greeting-${connection.id}`"
                     v-model="form.greeting"
-                    label="Texto del saludo"
-                    :rows="3"
+                    label="Texto de bienvenida"
+                    :rows="5"
                     :maxlength="limits.message"
                     :variables="variables"
                     :disabled="!canUpdate"
                     :error="form.errors.greeting"
-                    placeholder="¡{{saludo}} {{nombre}}! 👋 Elige una opción:"
+                    placeholder="¡{{saludo}} {{nombre}}! 👋 Indica 1, 2 o 3 para que te atienda:"
                 />
             </ChatbotStep>
 
             <ChatbotStep
                 :id="`chatbot-step-options-${connection.id}`"
                 :number="2"
-                title="Opciones del menú"
-                hint="Cada número manda al cliente con un departamento."
+                title="Opciones y respuestas"
+                :hint="`Cada opción hace algo: abre un submenú, contesta, o pasa a un departamento. Hasta ${limits.options} por menú y ${limits.depth} niveles.`"
             >
-                <template #aside>
-                    <span
-                        class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground tabular-nums"
-                        >{{ form.options.length }}/{{ limits.options }}</span
-                    >
-                </template>
+                <ChatbotOptionList
+                    :options="rows"
+                    path="options"
+                    :depth="1"
+                    :connection-id="connection.id"
+                    :department-options="departmentOptions"
+                    :routable="routable"
+                    :department-name="departmentName"
+                    :errors="errorsRecord()"
+                    :variables="variables"
+                    :limits="limits"
+                    :disabled="!canUpdate"
+                />
+            </ChatbotStep>
 
-                <div
-                    v-if="form.options.length === 0"
-                    class="grid place-items-center gap-1 rounded-lg border border-dashed px-4 py-6 text-center"
-                >
-                    <ListPlus
-                        class="size-6 text-muted-foreground"
-                        aria-hidden="true"
-                    />
-                    <p class="text-sm font-medium">Aún no hay opciones</p>
-                    <p class="text-xs text-muted-foreground">
-                        {{
-                            canUpdate
-                                ? 'Agrega la primera eligiendo un departamento abajo.'
-                                : 'Este número todavía no tiene menú.'
-                        }}
-                    </p>
-                </div>
-
-                <ol v-else class="grid gap-2" data-test="chatbot-options">
-                    <li
-                        v-for="(option, index) in form.options"
-                        :key="option.key"
-                        class="grid gap-3 rounded-lg border bg-background p-3 transition-colors duration-(--duration-fast)"
-                        :class="
-                            !routable(
-                                departmentsById.get(option.department_id),
-                            ) && 'border-dashed opacity-70'
-                        "
-                    >
-                        <div class="flex items-start gap-2">
-                            <div
-                                class="grid min-w-0 flex-1 items-center gap-2 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)]"
-                            >
-                                <span
-                                    class="inline-flex items-center gap-1.5 text-sm text-muted-foreground"
-                                >
-                                    <span class="whitespace-nowrap"
-                                        >Si responde</span
-                                    >
-                                    <span
-                                        class="grid size-7 shrink-0 place-items-center rounded-md bg-primary-soft font-display text-sm font-semibold text-primary-soft-foreground tabular-nums"
-                                        >{{ index + 1 }}</span
-                                    >
-                                    <ArrowRight
-                                        class="size-4 shrink-0"
-                                        aria-hidden="true"
-                                    />
-                                </span>
-                                <div class="grid gap-1">
-                                    <AppSelect
-                                        v-model="option.department_id"
-                                        :options="
-                                            departmentOptions(
-                                                option.department_id,
-                                            )
-                                        "
-                                        :disabled="!canUpdate"
-                                        :invalid="
-                                            Boolean(
-                                                optionError(
-                                                    index,
-                                                    'department_id',
-                                                ),
-                                            )
-                                        "
-                                        :aria-label="`Departamento de la opción ${index + 1}`"
-                                    />
-                                    <InputError
-                                        :message="
-                                            optionError(index, 'department_id')
-                                        "
-                                    />
-                                </div>
-                                <div class="grid gap-1">
-                                    <Input
-                                        v-model="option.label"
-                                        :maxlength="limits.label"
-                                        :disabled="!canUpdate"
-                                        :placeholder="
-                                            departmentsById.get(
-                                                option.department_id,
-                                            )?.name ?? 'Texto de la opción'
-                                        "
-                                        :aria-label="`Texto que ve el cliente en la opción ${index + 1} (opcional)`"
-                                    />
-                                    <InputError
-                                        :message="optionError(index, 'label')"
-                                    />
-                                </div>
-                            </div>
-                            <div
-                                v-if="canUpdate"
-                                class="flex shrink-0 items-center"
-                            >
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    :disabled="index === 0"
-                                    :aria-label="`Subir la opción ${index + 1}`"
-                                    @click="move(index, -1)"
-                                >
-                                    <ArrowUp />
-                                </Button>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    :disabled="
-                                        index === form.options.length - 1
-                                    "
-                                    :aria-label="`Bajar la opción ${index + 1}`"
-                                    @click="move(index, 1)"
-                                >
-                                    <ArrowDown />
-                                </Button>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    class="text-muted-foreground hover:text-destructive"
-                                    :aria-label="`Quitar la opción ${index + 1}`"
-                                    @click="remove(index)"
-                                >
-                                    <Trash2 />
-                                </Button>
-                            </div>
-                        </div>
-
-                        <p
-                            v-if="
-                                !routable(
-                                    departmentsById.get(option.department_id),
-                                )
-                            "
-                            class="flex items-center gap-1.5 text-xs text-warning-soft-foreground"
-                        >
-                            <TriangleAlert
-                                class="size-3.5 shrink-0"
-                                aria-hidden="true"
-                            />
-                            No se muestra: el departamento está inactivo o no
-                            recibe conversaciones de este número.
-                        </p>
-
-                        <ChatbotTextField
-                            v-if="option.showReply"
-                            :id="`chatbot-option-reply-${connection.id}-${option.key}`"
-                            v-model="option.reply_message"
-                            label="Lo que contesta el bot al elegirla"
-                            compact
-                            :rows="2"
-                            :maxlength="limits.message"
-                            :variables="variables"
-                            :disabled="!canUpdate"
-                            :error="optionError(index, 'reply_message')"
-                            placeholder="Te atiende {{departamento}}. En un momento te contestamos."
-                        />
-                        <button
-                            v-else-if="canUpdate"
-                            type="button"
-                            class="inline-flex flex-wrap items-center gap-1.5 justify-self-start text-left text-xs font-medium text-primary hover:underline"
-                            @click="option.showReply = true"
-                        >
-                            <MessageSquareReply
-                                class="size-3.5"
-                                aria-hidden="true"
-                            />
-                            Escribir una respuesta para esta opción
-                            <span class="font-normal text-muted-foreground"
-                                >(si no, se usa la bienvenida del
-                                departamento)</span
-                            >
-                        </button>
-                    </li>
-                </ol>
-
-                <InputError :message="form.errors.options" />
-
-                <div
-                    v-if="canUpdate && form.options.length < limits.options"
-                    class="flex items-center gap-2"
-                >
-                    <Plus
-                        class="size-4 shrink-0 text-primary"
-                        aria-hidden="true"
-                    />
-                    <AppSelect
-                        :model-value="adding"
-                        :options="addable"
-                        placeholder="Agregar opción: elige un departamento"
-                        empty-text="No quedan departamentos disponibles"
-                        class="max-w-sm"
-                        aria-label="Agregar opción"
-                        :disabled="addable.length === 0"
-                        @update:model-value="(value) => addOption(value)"
-                    />
-                </div>
+            <ChatbotStep
+                :id="`chatbot-step-navigation-${connection.id}`"
+                :number="3"
+                title="Regresar en los submenús"
+                hint="El cliente escribe 0 para volver al menú anterior o # para el principal. Esto se muestra debajo de cada submenú."
+            >
+                <ChatbotTextField
+                    :id="`chatbot-navigation-${connection.id}`"
+                    v-model="form.navigation_hint"
+                    label="Instrucciones para regresar"
+                    compact
+                    :rows="2"
+                    :maxlength="limits.navigation"
+                    :variables="[]"
+                    :disabled="!canUpdate"
+                    :error="form.errors.navigation_hint"
+                    :placeholder="defaultNavigation"
+                />
             </ChatbotStep>
 
             <ChatbotStep
                 :id="`chatbot-step-retry-${connection.id}`"
-                :number="3"
-                title="Si no contesta con un número"
-                hint="Por ejemplo, si escribe «quiero informes» en vez de «1»."
+                :number="4"
+                title="Si no contesta con una opción"
+                hint="Por ejemplo, si escribe «quiero informes» en vez de «1», o si deja de contestar."
             >
                 <div
                     class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,12rem)]"
@@ -618,12 +538,24 @@ function save(): void {
                         <InputError :message="form.errors.max_attempts" />
                     </div>
                 </div>
+                <div class="grid gap-1.5 sm:max-w-xs">
+                    <Label :for="`chatbot-timeout-${connection.id}`"
+                        >Si no contesta en</Label
+                    >
+                    <AppSelect
+                        :id="`chatbot-timeout-${connection.id}`"
+                        v-model="form.timeout_minutes"
+                        :options="timeoutOptions"
+                        :disabled="!canUpdate"
+                    />
+                    <InputError :message="form.errors.timeout_minutes" />
+                </div>
                 <p
                     class="flex items-center gap-1.5 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground"
                 >
                     <ArrowRight class="size-3.5 shrink-0" aria-hidden="true" />
                     Después, la conversación pasa a la fila normal de este
-                    número y la toma un agente.
+                    número, se avisa al equipo y la toma un agente.
                 </p>
             </ChatbotStep>
 
@@ -637,6 +569,13 @@ function save(): void {
                     aria-live="polite"
                 >
                     Cambios sin guardar
+                </p>
+                <p
+                    v-if="form.hasErrors"
+                    class="mr-auto text-sm text-destructive"
+                    aria-live="polite"
+                >
+                    Revisa los campos marcados
                 </p>
                 <Button
                     type="button"
@@ -652,58 +591,89 @@ function save(): void {
                     :disabled="!form.isDirty"
                     data-test="chatbot-menu-save"
                 >
-                    Guardar menú
+                    Guardar chatbot
                 </Button>
             </div>
         </form>
 
         <aside class="grid content-start gap-3 xl:sticky xl:top-24">
-            <p
-                class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
-            >
-                Así lo ve el cliente
-            </p>
+            <div class="flex items-center justify-between gap-2">
+                <p
+                    class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                >
+                    Así lo ve el cliente
+                </p>
+                <Button
+                    v-if="answers.length > 0"
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    @click="answers = []"
+                >
+                    <RotateCcw class="size-3.5" aria-hidden="true" />
+                    Reiniciar
+                </Button>
+            </div>
             <ChatbotPhonePreview
                 :title="connection.name"
                 :subtitle="
                     form.is_enabled
                         ? 'Vista previa · no se envía nada'
-                        : 'Menú apagado · vista previa'
+                        : 'Chatbot apagado · vista previa'
                 "
-                :messages="preview"
+                :messages="simulation.messages"
             />
             <div
-                v-if="visibleOptions.length > 0"
+                v-if="!simulation.ended && rows.length > 0"
                 class="flex flex-wrap items-center gap-1.5 text-xs"
                 role="group"
                 aria-label="Respuesta del cliente en la vista previa"
             >
                 <span class="mr-1 text-muted-foreground"
-                    >Prueba qué pasa si responde:</span
+                    >Responde como cliente:</span
                 >
                 <button
-                    v-for="choice in answerChoices"
-                    :key="String(choice.value)"
+                    v-for="(choice, index) in simulation.choices"
+                    :key="choice.key"
                     type="button"
-                    class="rounded-full border px-2.5 py-0.5 font-medium transition-colors duration-(--duration-fast)"
-                    :class="
-                        answer === choice.value
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'bg-card hover:border-border-strong'
-                    "
-                    :aria-pressed="answer === choice.value"
-                    @click="answer = choice.value"
+                    class="rounded-full border bg-card px-2.5 py-0.5 font-medium transition-colors duration-(--duration-fast) hover:border-border-strong"
+                    :title="optionLabel(choice)"
+                    @click="answer(index + 1)"
                 >
-                    {{ choice.label }}
+                    {{ index + 1 }}
+                </button>
+                <template v-if="simulation.inSubmenu">
+                    <button
+                        type="button"
+                        class="rounded-full border bg-card px-2.5 py-0.5 font-medium hover:border-border-strong"
+                        title="Volver al menú anterior"
+                        @click="answer('back')"
+                    >
+                        0
+                    </button>
+                    <button
+                        type="button"
+                        class="rounded-full border bg-card px-2.5 py-0.5 font-medium hover:border-border-strong"
+                        title="Volver al menú principal"
+                        @click="answer('main')"
+                    >
+                        #
+                    </button>
+                </template>
+                <button
+                    type="button"
+                    class="rounded-full border bg-card px-2.5 py-0.5 font-medium hover:border-border-strong"
+                    @click="answer('other')"
+                >
+                    Otra cosa
                 </button>
             </div>
-            <p v-if="skipped > 0" class="text-xs text-muted-foreground">
-                {{
-                    skipped === 1
-                        ? '1 opción no se muestra'
-                        : `${skipped} opciones no se muestran`
-                }}
-                (departamento inactivo o no autorizado).
+            <p
+                v-else-if="simulation.ended"
+                class="text-xs text-muted-foreground"
+            >
+                Aquí termina el chatbot. Pulsa «Reiniciar» para probar otro
+                camino.
             </p>
         </aside>
     </div>

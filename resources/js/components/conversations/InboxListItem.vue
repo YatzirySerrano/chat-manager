@@ -35,6 +35,7 @@ import {
 import CountBadge from '@/components/filters/CountBadge.vue';
 import HighlightMatch from '@/components/filters/HighlightMatch.vue';
 import ListAvatar from '@/components/filters/ListAvatar.vue';
+import { userAvatarUrl } from '@/composables/useUserAvatar';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -594,7 +595,16 @@ const label = computed(() => {
                             :title="`Responsable: ${conversation.assignee.name}`"
                             data-inbox-assignee
                         >
+                            <img
+                                v-if="userAvatarUrl(conversation.assignee.id)"
+                                :src="userAvatarUrl(conversation.assignee.id)!"
+                                alt=""
+                                loading="lazy"
+                                class="size-3.5 shrink-0 rounded-full object-cover"
+                                aria-hidden="true"
+                            />
                             <UserRound
+                                v-else
                                 class="size-3 shrink-0"
                                 aria-hidden="true"
                             />

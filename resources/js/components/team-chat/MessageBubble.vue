@@ -267,6 +267,7 @@ function onEditKeydown(event: KeyboardEvent): void {
             <TeamAvatar
                 v-if="last"
                 :name="message.author?.name ?? ''"
+                :user-id="message.author?.id ?? null"
                 :deleted="message.author?.deleted ?? false"
                 size="xs"
             />

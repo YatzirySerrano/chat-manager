@@ -8,6 +8,7 @@ use App\Enums\Permission;
 use App\Models\User;
 use App\Notifications\Push\Vapid;
 use App\Services\PlatformSettings;
+use App\Services\Users\UserAvatars;
 use App\Support\Features;
 use App\Support\PasswordPolicy;
 use Illuminate\Http\Request;
@@ -57,10 +58,12 @@ class HandleInertiaRequests extends Middleware
                 'palette' => $settings['appearance']['palette'],
             ],
             'auth' => [
-                'user' => $user,
+                'user' => $user instanceof User ? [...$user->toArray(), 'avatar' => $user->avatarUrl()] : $user,
                 'role' => $user instanceof User ? $this->roleSummary($user) : null,
                 'permissions' => $user instanceof User ? $user->effectivePermissions() : [],
             ],
+            // Profile pictures of teammates by id: any avatar of a person shows it from the id alone.
+            'userAvatars' => fn (): object => $user instanceof User ? (object) app(UserAvatars::class)->map($user) : (object) [],
             'passwordPolicy' => fn (): array => PasswordPolicy::current(),
             'realtime' => fn (): array => app(RealtimeClientConfig::class)->for($user instanceof User ? $user : null),
             // Public VAPID key (null = Web Push off): every signed-in page

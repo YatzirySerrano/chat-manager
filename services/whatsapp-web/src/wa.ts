@@ -94,6 +94,12 @@ export type WaBusinessProfile = {
 export type WaProfile = {
     /** Temporary URL of the full picture on WhatsApp's CDN. */
     picture_url: string | null;
+    /**
+     * Present (true) when WhatsApp did not answer about the picture: a null
+     * `picture_url` then means "unknown", not "has none", and the stored
+     * copy is kept.
+     */
+    picture_unavailable?: true;
     /** The contact's "about" text. */
     about: string | null;
     /** Unix seconds when the "about" was set. */

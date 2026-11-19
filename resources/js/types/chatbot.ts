@@ -1,20 +1,39 @@
 import type { AppColor } from './admin';
 import type { ConnectionHealthDescriptor } from './connections';
 
-/** One numbered option of a connection's welcome menu. */
+/**
+ * What an option does when chosen: opens a submenu (its children), answers
+ * and keeps the menu open, answers and ends, or sends the conversation to a
+ * department.
+ */
+export type ChatbotOptionAction =
+    | 'submenu'
+    | 'reply_stay'
+    | 'reply'
+    | 'transfer';
+
+/** One numbered option of the chatbot menu, at any level. */
 export type ChatbotMenuOption = {
-    department_id: number;
-    /** Text shown in the menu; empty uses the department's name. */
+    action: ChatbotOptionAction;
+    /** Only for «transfer». */
+    department_id: number | null;
+    /** Text shown in the menu; for a transfer, empty uses the department's name. */
     label: string;
-    /** Reply once chosen; empty uses the department's welcome (or away) message. */
+    /** The answer; for a submenu, the text above its options. */
     reply_message: string;
+    /** Options of a submenu. */
+    children: ChatbotMenuOption[];
 };
 
 export type ChatbotMenu = {
     is_enabled: boolean;
     greeting: string;
     retry_message: string;
+    /** Shown under the options of a submenu (empty: the default). */
+    navigation_hint: string;
     max_attempts: number;
+    /** Minutes without an answer before the ordinary routing takes over (0: never). */
+    timeout_minutes: number;
     options: ChatbotMenuOption[];
     updated_at: string | null;
 };
@@ -34,7 +53,12 @@ export type ChatbotConnection = {
     department_ids: number[];
     menu: ChatbotMenu;
     /** Menus offered in the last days, by how they ended. */
-    activity: { routed: number; fallback: number; awaiting: number };
+    activity: {
+        routed: number;
+        answered: number;
+        fallback: number;
+        awaiting: number;
+    };
     can: { update: boolean; view: boolean };
 };
 
@@ -74,6 +98,9 @@ export type ChatbotLimits = {
     retry: number;
     label: number;
     options: number;
+    depth: number;
+    navigation: number;
+    timeout: number;
     attempts: number;
     name: number;
     keywords: number;

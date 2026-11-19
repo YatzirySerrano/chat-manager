@@ -47,7 +47,11 @@ const props = defineProps<{
     rules: ChatbotKeywordRule[];
     variables: ChatbotVariable[];
     limits: ChatbotLimits;
-    defaults: { retry_message: string; throttle_minutes: number };
+    defaults: {
+        retry_message: string;
+        navigation_hint: string;
+        throttle_minutes: number;
+    };
     activityDays: number;
     can: { manage: boolean };
 }>();
@@ -107,13 +111,13 @@ const ruleCounts = computed(
 );
 
 function activityLabel(connection: ChatbotConnection): string {
-    const { routed, fallback } = connection.activity;
+    const { routed, answered, fallback } = connection.activity;
 
-    if (routed + fallback === 0) {
+    if (routed + answered + fallback === 0) {
         return `Nadie lo ha usado en ${props.activityDays} días`;
     }
 
-    return `Últimos ${props.activityDays} días: ${routed} eligieron una opción · ${fallback} no contestaron con un número`;
+    return `Últimos ${props.activityDays} días: ${routed} pasaron a un departamento · ${answered} contestadas por el bot · ${fallback} sin opción válida o sin respuesta`;
 }
 
 /* Palabras clave. */
@@ -364,6 +368,7 @@ function confirmRemove(): void {
                         :variables="variables"
                         :limits="limits"
                         :default-retry="defaults.retry_message"
+                        :default-navigation="defaults.navigation_hint"
                     />
                 </TabsContent>
 

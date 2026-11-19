@@ -10,6 +10,8 @@ namespace App\Enums;
  *   nor announced;
  * - routed: the customer chose an option and the conversation went to its
  *   department;
+ * - answered: the customer chose an option that answers and ends the
+ *   menu; the conversation follows the ordinary routing;
  * - fallback: no valid answer after the allowed attempts (or the menu
  *   stopped being available); the conversation stays where the ordinary
  *   routing put it;
@@ -20,6 +22,7 @@ enum ChatbotSessionStatus: string
 {
     case Awaiting = 'awaiting';
     case Routed = 'routed';
+    case Answered = 'answered';
     case Fallback = 'fallback';
     case Cancelled = 'cancelled';
 
@@ -28,6 +31,7 @@ enum ChatbotSessionStatus: string
         return match ($this) {
             self::Awaiting => 'Esperando una opción',
             self::Routed => 'Enviada al departamento elegido',
+            self::Answered => 'Contestada por el chatbot',
             self::Fallback => 'Sin opción válida',
             self::Cancelled => 'Atendida antes de elegir',
         };

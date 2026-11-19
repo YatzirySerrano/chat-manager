@@ -386,6 +386,7 @@ function openDetail(entry: AuditLogEntry): void {
                                         <ListAvatar
                                             v-if="!isSystem(entry)"
                                             :name="entry.actor.name"
+                                            :user-id="entry.actor.id"
                                             class="size-7! text-[0.6875rem]!"
                                         />
                                         <span

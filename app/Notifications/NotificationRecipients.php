@@ -48,6 +48,34 @@ class NotificationRecipients
     }
 
     /**
+     * Whoever must hear about a conversation nobody has taken yet: the
+     * people who can accept it (forPendingConversation) plus the
+     * administrators (root role, or a role of global scope) who can see it,
+     * even without the accept permission. Each one once.
+     *
+     * @return Collection<int, User>
+     */
+    public function forUnattendedConversation(Conversation $conversation, ?int $exceptUserId = null): Collection
+    {
+        $acceptors = $this->forPendingConversation($conversation, $exceptUserId);
+
+        $administrators = User::query()
+            ->active()
+            ->whereKeyNot($acceptors->pluck('id')->all())
+            ->when($exceptUserId !== null, fn (Builder $query) => $query->whereKeyNot($exceptUserId))
+            ->whereHas('roles', fn (Builder $roles) => $roles->where(fn (Builder $role) => $role
+                ->where('is_root', true)
+                ->orWhere('scope', DataScope::Global->value)))
+            ->with(['roles.permissions', 'departments:id'])
+            ->orderBy('id')
+            ->limit(self::MAX_QUEUE_RECIPIENTS)
+            ->get()
+            ->filter(fn (User $user): bool => $this->access->canView($user, $conversation));
+
+        return $acceptors->concat($administrators)->unique('id')->values();
+    }
+
+    /**
      * The user, if they can still see the conversation.
      */
     public function ifCanView(?int $userId, Conversation $conversation): ?User

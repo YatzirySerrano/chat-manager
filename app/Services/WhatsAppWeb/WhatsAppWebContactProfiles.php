@@ -32,6 +32,13 @@ class WhatsAppWebContactProfiles
     public const STALE_AFTER_HOURS = 24;
 
     /**
+     * Without a stored picture (none, private, or WhatsApp did not serve it)
+     * the profile is read again sooner: a picture made public, or one that
+     * failed to download, shows up the same day.
+     */
+    public const STALE_WITHOUT_PICTURE_HOURS = 3;
+
+    /**
      * Queues a refresh of the identity behind an inbound message of a
      * WhatsApp Web connection, when its profile is missing or stale.
      */
@@ -44,7 +51,7 @@ class WhatsAppWebContactProfiles
         $identity = ContactIdentity::query()
             ->where('channel', ConnectionChannel::Whatsapp)
             ->where('external_id', $externalId)
-            ->first(['id', 'profile_fetched_at']);
+            ->first(['id', 'profile_fetched_at', 'avatar_disk', 'avatar_path']);
 
         if ($identity !== null && self::isStale($identity)) {
             RefreshWhatsAppWebContactProfile::dispatch($identity->id, $connection->id);
@@ -53,8 +60,31 @@ class WhatsAppWebContactProfiles
 
     public static function isStale(ContactIdentity $identity): bool
     {
+        $hours = $identity->hasAvatar() ? self::STALE_AFTER_HOURS : self::STALE_WITHOUT_PICTURE_HOURS;
+
         return $identity->profile_fetched_at === null
-            || $identity->profile_fetched_at->lessThan(now()->subHours(self::STALE_AFTER_HOURS));
+            || $identity->profile_fetched_at->lessThan(now()->subHours($hours));
+    }
+
+    /**
+     * Queues a refresh when the profile is shown (details panel, contact
+     * page) and it is missing or stale: contacts that do not write again
+     * still get their picture. The job is unique per identity, so opening
+     * the same conversation many times queues it once.
+     */
+    public function refreshIfStale(ContactIdentity $identity, ?Connection $connection): void
+    {
+        if ($connection === null || ! $connection->isWhatsAppWeb() || $connection->isDeleted()
+            || $connection->webSessionState() !== WhatsAppWebState::Connected || ! self::isStale($identity)) {
+            return;
+        }
+
+        try {
+            RefreshWhatsAppWebContactProfile::dispatch($identity->id, $connection->id);
+        } catch (Throwable $exception) {
+            // The page never fails because the queue does not answer.
+            report($exception);
+        }
     }
 
     /**
@@ -118,6 +148,8 @@ class WhatsAppWebContactProfiles
         if (! $identity instanceof ContactIdentity) {
             return null;
         }
+
+        $this->refreshIfStale($identity, $connection);
 
         $web = $connection !== null && $connection->isWhatsAppWeb();
         $business = is_array($identity->business_profile) ? $identity->business_profile : null;

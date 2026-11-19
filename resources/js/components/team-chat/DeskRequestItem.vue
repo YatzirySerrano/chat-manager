@@ -106,6 +106,7 @@ function acceptRow(): void {
             <ListAvatar
                 :name="row.title"
                 :deleted="row.desk.requester?.deleted ?? false"
+                :user-id="row.desk.requester?.id ?? null"
             />
             <span class="min-w-0 flex-1">
                 <span class="flex items-baseline gap-2">

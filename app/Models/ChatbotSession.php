@@ -16,7 +16,8 @@ use Illuminate\Support\Carbon;
  * @property int $conversation_id
  * @property int $connection_id
  * @property ChatbotSessionStatus $status
- * @property int $attempts Answers that were not an option.
+ * @property int $attempts Answers that were not an option (in the current level).
+ * @property int|null $current_option_id The submenu the customer is in (null: the main menu).
  * @property int|null $chatbot_menu_option_id
  * @property int|null $department_id Where the chosen option sent the conversation.
  * @property Carbon|null $resolved_at

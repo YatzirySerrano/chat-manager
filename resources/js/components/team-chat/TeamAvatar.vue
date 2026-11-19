@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { UsersRound } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { personTint } from '@/components/team-chat/teamChatFormat';
 import { getInitials } from '@/composables/useInitials';
+import { userAvatarUrl } from '@/composables/useUserAvatar';
 import { cn } from '@/lib/utils';
 
 /**
@@ -17,13 +18,33 @@ const props = withDefaults(
         deleted?: boolean;
         online?: boolean;
         size?: 'xs' | 'sm' | 'md' | 'lg';
+        /** The person's profile picture (by id) over the initials. */
+        userId?: number | null;
+        src?: string | null;
     }>(),
     {
         group: false,
         deleted: false,
         online: false,
         size: 'md',
+        userId: null,
+        src: null,
     },
+);
+
+const failed = ref(false);
+
+watch(
+    () => [props.src, props.userId],
+    () => {
+        failed.value = false;
+    },
+);
+
+const photo = computed(() =>
+    props.group || props.deleted || failed.value
+        ? null
+        : (props.src ?? userAvatarUrl(props.userId)),
 );
 
 const isOnline = computed(() => props.online && !props.group && !props.deleted);
@@ -60,6 +81,15 @@ const tint = computed(() =>
             "
         />
         <template v-else>{{ deleted ? '?' : getInitials(name) }}</template>
+        <img
+            v-if="photo"
+            :src="photo"
+            alt=""
+            loading="lazy"
+            decoding="async"
+            class="absolute inset-0 size-full rounded-full object-cover"
+            @error="failed = true"
+        />
         <span
             v-if="isOnline"
             :class="

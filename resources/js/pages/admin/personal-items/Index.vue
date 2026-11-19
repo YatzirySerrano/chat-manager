@@ -455,6 +455,7 @@ function swatches(colors: ChatColors | null, mode: 'light' | 'dark') {
                                     <ListAvatar
                                         class="size-8! text-xs"
                                         :name="row.owner.name"
+                                        :user-id="row.owner.id"
                                     />
                                     <span class="truncate font-medium">{{
                                         row.owner.name
@@ -548,6 +549,7 @@ function swatches(colors: ChatColors | null, mode: 'light' | 'dark') {
                                     <ListAvatar
                                         class="size-8! text-xs"
                                         :name="row.owner.name"
+                                        :user-id="row.owner.id"
                                     />
                                     <span class="truncate font-medium">{{
                                         row.owner.name

@@ -363,6 +363,7 @@ function confirmRemoval(): void {
                 >
                     <DirectoryAvatar
                         :name="member.name"
+                        :user-id="member.id"
                         :tone="member.is_deleted ? 'muted' : 'auto'"
                     />
                     <div class="min-w-0 flex-1">

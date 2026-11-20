@@ -13,7 +13,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Replaces the tags of a conversation. Only active tags can be newly
+ * Replaces the tags of a conversation, which are its CONTACT's tags (see
+ * Conversation::tags()): they follow the person to every conversation.
+ * Only active tags can be newly
  * attached; deleted tags it already carries may stay as history. The
  * conversation row is locked so two people editing at once never lose each
  * other's changes silently, and the actor is authorized again under lock.
@@ -81,6 +83,10 @@ class SyncConversationTags
             ];
 
             $this->audit->record(AuditAction::ConversationTagsChanged, $conversation, $changes, $actor);
+            // The tags live on the contact: its history shows the change too.
+            if ($conversation->contact !== null) {
+                $this->audit->record(AuditAction::ContactTagsChanged, $conversation->contact, $changes, $actor);
+            }
 
             ConversationChanged::dispatch($conversation->id, 'tags', $actor->id);
 

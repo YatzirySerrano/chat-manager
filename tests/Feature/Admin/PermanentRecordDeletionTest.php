@@ -102,7 +102,7 @@ test('a deleted tag is erased for good and taken off contacts and conversations'
     $entry = AuditLog::query()->where('action', AuditAction::RecordPermanentlyDeleted)->sole();
 
     expect($entry->restricted)->toBeTrue()
-        ->and($entry->properties)->toMatchArray(['type' => 'tag', 'contacts' => 1, 'conversations' => 1]);
+        ->and($entry->properties)->toMatchArray(['type' => 'tag', 'contacts' => 2]); // the conversation's tag lives on its contact
 });
 
 test('a deleted category is erased for good and its conversations are left without category', function () {

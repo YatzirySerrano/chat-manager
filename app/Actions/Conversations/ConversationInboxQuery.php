@@ -63,7 +63,7 @@ use Illuminate\Validation\ValidationException;
  * Tags: `tags[]` (up to MAX_TAGS) narrows to conversations carrying ANY of
  * them by default (tag_match=any, OR) or ALL of them (tag_match=all, AND).
  * The legacy single `tag` keeps working and joins the same list. Both are
- * EXISTS lookups on the conversation_tag pivot (its unique
+ * EXISTS lookups on the contact_tag pivot (its unique
  * (conversation_id, tag_id) index), applied inside visibleTo, so a tag never
  * reveals a conversation outside the actor's reach.
  *
@@ -628,7 +628,7 @@ class ConversationInboxQuery
     /**
      * Narrows the conversations to the ones carrying any (OR) or all (AND)
      * of the tags. Each lookup is a correlated EXISTS on the pivot alone (no
-     * join with `tags`), backed by its unique (conversation_id, tag_id)
+     * join with `tags`), backed by its unique (contact_id, tag_id)
      * index: "any" is one lookup with IN, "all" one lookup per tag (at most
      * MAX_TAGS), so neither groups nor counts rows.
      *
@@ -639,9 +639,9 @@ class ConversationInboxQuery
     {
         $tagged = fn (array $ids) => fn (QueryBuilder $pivot) => $pivot
             ->selectRaw('1')
-            ->from('conversation_tag')
-            ->whereColumn('conversation_tag.conversation_id', 'conversations.id')
-            ->whereIn('conversation_tag.tag_id', $ids);
+            ->from('contact_tag')
+            ->whereColumn('contact_tag.contact_id', 'conversations.contact_id')
+            ->whereIn('contact_tag.tag_id', $ids);
 
         if ($match !== self::TAG_MATCH_ALL) {
             $query->whereExists($tagged($tagIds));

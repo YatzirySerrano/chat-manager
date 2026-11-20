@@ -102,7 +102,7 @@ test('every tag mode is one lookup on the pivot per page, never a join with the 
     DB::flushQueryLog();
     DB::enableQueryLog();
     taggedIds($this->agent, ['view' => 'mine', 'tags' => [$this->vip->id, $this->urgent->id], 'tag_match' => 'all']);
-    $list = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql): bool => str_contains($sql, 'conversation_tag') && str_contains($sql, 'from `conversations`'));
+    $list = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql): bool => str_contains($sql, 'contact_tag') && str_contains($sql, 'from `conversations`'));
     DB::disableQueryLog();
 
     expect($list)->toHaveCount(1)

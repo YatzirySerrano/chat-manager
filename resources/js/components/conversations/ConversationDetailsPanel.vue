@@ -29,7 +29,6 @@ import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
 import AliasDialog from '@/components/personalization/AliasDialog.vue';
-import TagBadge from '@/components/tags/TagBadge.vue';
 import TagPicker from '@/components/tags/TagPicker.vue';
 import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
@@ -479,20 +478,6 @@ function safeUrl(url: string | null): string | null {
                         heading="Expediente de esta conversación"
                     />
                 </div>
-                <div v-if="details.contact.tags.length > 0" class="grid gap-1">
-                    <p class="text-xs text-muted-foreground">
-                        Etiquetas del contacto
-                    </p>
-                    <div class="flex flex-wrap gap-1">
-                        <TagBadge
-                            v-for="tag in details.contact.tags"
-                            :key="tag.id"
-                            :name="tag.name"
-                            :color="tag.color"
-                            :deleted="!tag.is_active"
-                        />
-                    </div>
-                </div>
             </section>
 
             <WhatsAppProfileCard
@@ -637,16 +622,14 @@ function safeUrl(url: string | null): string | null {
                     </p>
                 </div>
                 <div class="grid gap-1.5">
-                    <p class="text-xs text-muted-foreground">
-                        Etiquetas de la conversación
-                    </p>
+                    <p class="text-xs text-muted-foreground">Etiquetas</p>
                     <TagPicker
                         :contact-id="details.contact.id"
                         :selected="conversation.tags ?? []"
                         :available="details.availableTags"
                         :disabled="!conversation.can.tag"
                         :sync-url="updateTags.url(conversation.id)"
-                        label="Editar etiquetas de la conversación"
+                        label="Editar etiquetas del contacto"
                     />
                 </div>
             </section>

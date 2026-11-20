@@ -266,11 +266,15 @@ class Conversation extends Model
     }
 
     /**
+     * Tags are one thing: they belong to the CONTACT (contact_tag), and a
+     * conversation shows and edits its contact's tags. So they never get
+     * lost when the person writes again and a new conversation opens.
+     *
      * @return BelongsToMany<Tag, $this>
      */
     public function tags(): BelongsToMany
     {
-        return $this->belongsToMany(Tag::class)->withPivot(['tagged_by_user_id', 'created_at']);
+        return $this->belongsToMany(Tag::class, 'contact_tag', 'contact_id', 'tag_id', 'contact_id', 'id')->withPivot(['tagged_by_user_id', 'created_at']);
     }
 
     /**

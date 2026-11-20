@@ -41,10 +41,11 @@ const contactName = computed(() => {
         <DialogContent class="gap-0 p-0 sm:max-w-md">
             <DialogHeader class="border-b p-4 text-left">
                 <DialogTitle class="text-base">
-                    Etiquetas de la conversación
+                    Etiquetas del contacto
                 </DialogTitle>
                 <DialogDescription class="text-sm">
-                    Solo esta conversación con {{ contactName }}.
+                    Se guardan en {{ contactName }} y se ven en todas sus
+                    conversaciones.
                 </DialogDescription>
             </DialogHeader>
             <TagPickerBody

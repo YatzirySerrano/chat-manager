@@ -717,8 +717,9 @@ class HistoryImportExecutor
             return;
         }
 
-        DB::table('conversation_tag')->insertOrIgnore(array_map(fn (int $tagId): array => [
-            'conversation_id' => $conversation->id,
+        // Tags belong to the contact (see Conversation::tags()).
+        DB::table('contact_tag')->insertOrIgnore(array_map(fn (int $tagId): array => [
+            'contact_id' => $conversation->contact_id,
             'tag_id' => $tagId,
             'tagged_by_user_id' => $actor->id,
             'created_at' => now(),

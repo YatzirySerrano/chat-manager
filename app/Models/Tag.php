@@ -70,7 +70,8 @@ class Tag extends Model
      */
     public function conversations(): BelongsToMany
     {
-        return $this->belongsToMany(Conversation::class)->withPivot(['tagged_by_user_id', 'created_at']);
+        // Through the contact: a conversation carries its contact's tags.
+        return $this->belongsToMany(Conversation::class, 'contact_tag', 'tag_id', 'contact_id', 'id', 'contact_id')->withPivot(['tagged_by_user_id', 'created_at']);
     }
 
     /**

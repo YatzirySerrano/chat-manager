@@ -7,13 +7,14 @@ import {
     Headset,
     ClipboardList,
     MessageSquarePlus,
+    Undo2,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import FieldHelp from '@/components/FieldHelp.vue';
 import DeskFollowUpSheet from '@/components/team-chat/DeskFollowUpSheet.vue';
 import { Button } from '@/components/ui/button';
 import { formatDateTime, formatRelative } from '@/lib/format';
-import { accept, complete } from '@/routes/team-chat/threads/desk';
+import { accept, complete, release } from '@/routes/team-chat/threads/desk';
 import type { TeamThreadDetail } from '@/types/team-chat';
 
 /**
@@ -25,7 +26,7 @@ import type { TeamThreadDetail } from '@/types/team-chat';
  */
 const props = defineProps<{ thread: TeamThreadDetail }>();
 
-const busy = ref<'accept' | 'complete' | 'silent' | null>(null);
+const busy = ref<'accept' | 'complete' | 'silent' | 'release' | null>(null);
 
 /* «Seguimiento»: tags, internal notes and the dossier (desk staff only). */
 const followUpOpen = ref(false);
@@ -130,10 +131,19 @@ const status = computed(() => {
  * «Completar y despedir» posts the goodbye configured in Configuración and
  * completes; «Completar sin mensaje» (silent) only completes.
  */
-function run(action: 'accept' | 'complete' | 'silent'): void {
+function run(action: 'accept' | 'complete' | 'silent' | 'release'): void {
+    const route =
+        action === 'accept'
+            ? accept
+            : action === 'release'
+              ? release
+              : complete;
+
     router.post(
-        (action === 'accept' ? accept : complete).url(props.thread.id),
-        action === 'accept' ? {} : { farewell: action === 'complete' },
+        route.url(props.thread.id),
+        action === 'accept' || action === 'release'
+            ? {}
+            : { farewell: action === 'complete' },
         {
             preserveScroll: true,
             preserveState: true,
@@ -221,6 +231,19 @@ function run(action: 'accept' | 'complete' | 'silent'): void {
                     ? 'Completar sin mensaje'
                     : 'Solicitud completa'
             }}
+        </Button>
+        <Button
+            v-if="thread.can.completeDesk"
+            size="sm"
+            variant="ghost"
+            class="h-8 gap-1.5 rounded-full"
+            :loading="busy === 'release'"
+            :disabled="busy !== null"
+            title="Devuelve la solicitud a «Pendientes» para que otra persona de la Mesa de control la tome"
+            data-desk-release
+            @click="run('release')"
+        >
+            <Undo2 aria-hidden="true" /> Liberar
         </Button>
         <Button
             v-if="details"

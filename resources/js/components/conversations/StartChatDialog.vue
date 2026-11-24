@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { router, useHttp } from "@inertiajs/vue3";
+import { router, useHttp } from '@inertiajs/vue3';
 import {
     MessageSquarePlus,
     Phone,
@@ -7,18 +7,18 @@ import {
     Search,
     TriangleAlert,
     UserRound,
-} from "@lucide/vue";
-import { refDebounced } from "@vueuse/core";
-import { computed, ref, watch } from "vue";
+} from '@lucide/vue';
+import { refDebounced } from '@vueuse/core';
+import { computed, ref, watch } from 'vue';
 import {
     contacts as startContacts,
     options as startOptions,
     store as startStore,
-} from "@/actions/App/Http/Controllers/Conversations/ConversationStartController";
-import FormField from "@/components/FormField.vue";
-import InputError from "@/components/InputError.vue";
-import { AppSelect } from "@/components/ui/app-select";
-import { Button } from "@/components/ui/button";
+} from '@/actions/App/Http/Controllers/Conversations/ConversationStartController';
+import FormField from '@/components/FormField.vue';
+import InputError from '@/components/InputError.vue';
+import { AppSelect } from '@/components/ui/app-select';
+import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
@@ -26,12 +26,12 @@ import {
     DialogFooter,
     DialogHeader,
     DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
-import { colorPresentations } from "@/lib/colors";
-import { PHONE_SHEET_DIALOG } from "@/lib/phoneSheet";
-import type { AppColor } from "@/types";
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
+import { colorPresentations } from '@/lib/colors';
+import { PHONE_SHEET_DIALOG } from '@/lib/phoneSheet';
+import type { AppColor } from '@/types';
 
 /**
  * «Iniciar un chat»: the agent writes first through a WhatsApp connection
@@ -46,7 +46,7 @@ type StartConnection = {
     id: number;
     name: string;
     phone: string | null;
-    modality: "qr" | "cloud_api";
+    modality: 'qr' | 'cloud_api';
     blocked_reason: string | null;
 };
 
@@ -76,7 +76,7 @@ const props = defineProps<{
     contact?: { id: number; name: string; phone: string | null } | null;
 }>();
 
-const open = defineModel<boolean>("open", { required: true });
+const open = defineModel<boolean>('open', { required: true });
 
 const optionsRequest = useHttp<Record<string, never>, StartOptions>({});
 const contactsRequest = useHttp<Record<string, never>, ContactResults>({});
@@ -86,14 +86,14 @@ const loadingOptions = ref(false);
 const connectionId = ref<number | null>(null);
 const departmentId = ref<number | null>(null);
 
-const search = ref("");
+const search = ref('');
 const debouncedSearch = refDebounced(search, 250);
 const results = ref<ContactResults>({ contacts: [], typed_phone: null });
 const loadingContacts = ref(false);
 const selected = ref<StartContact | null>(null);
 /** Writing to the typed number instead of a contact of the list. */
 const typedNumber = ref<string | null>(null);
-const newName = ref("");
+const newName = ref('');
 
 const processing = ref(false);
 const errors = ref<Record<string, string | undefined>>({});
@@ -111,10 +111,10 @@ const connectionOptions = computed(() =>
         label: item.name,
         description: [
             item.phone,
-            item.modality === "qr" ? "WhatsApp (QR)" : "WhatsApp API de Meta",
+            item.modality === 'qr' ? 'WhatsApp (QR)' : 'WhatsApp API de Meta',
         ]
             .filter(Boolean)
-            .join(" · "),
+            .join(' · '),
         disabled: item.blocked_reason !== null,
     })),
 );
@@ -157,7 +157,7 @@ async function loadOptions(forConnection: number | null): Promise<void> {
     } catch {
         if (request === latestOptions) {
             errors.value = {
-                start: "No se pudieron cargar las conexiones. Cierra el diálogo e inténtalo de nuevo.",
+                start: 'No se pudieron cargar las conexiones. Cierra el diálogo e inténtalo de nuevo.',
             };
         }
     } finally {
@@ -201,8 +201,8 @@ watch(
         }
 
         errors.value = {};
-        search.value = "";
-        newName.value = "";
+        search.value = '';
+        newName.value = '';
         typedNumber.value = null;
         selected.value = props.contact
             ? {
@@ -216,7 +216,7 @@ watch(
         void loadOptions(null);
 
         if (!props.contact) {
-            void loadContacts("");
+            void loadContacts('');
         }
     },
     { immediate: true },
@@ -309,8 +309,8 @@ function initials(name: string): string {
             .split(/\s+/)
             .filter(Boolean)
             .slice(0, 2)
-            .map((word) => word[0]?.toUpperCase() ?? "")
-            .join("") || "#"
+            .map((word) => word[0]?.toUpperCase() ?? '')
+            .join('') || '#'
     );
 }
 
@@ -461,12 +461,12 @@ const recipientError = computed(
                             >
                                 <Phone v-if="typedNumber" class="size-4" />
                                 <template v-else>{{
-                                    initials(selected?.name ?? "")
+                                    initials(selected?.name ?? '')
                                 }}</template>
                             </span>
                             <div class="min-w-0 flex-1">
                                 <p class="truncate font-medium uppercase">
-                                    {{ selected?.name ?? "Número nuevo" }}
+                                    {{ selected?.name ?? 'Número nuevo' }}
                                 </p>
                                 <p
                                     class="truncate text-sm text-muted-foreground"
@@ -474,7 +474,7 @@ const recipientError = computed(
                                     {{
                                         selected?.phone ??
                                         typedNumber ??
-                                        "Número oculto por WhatsApp"
+                                        'Número oculto por WhatsApp'
                                     }}
                                 </p>
                             </div>
@@ -551,8 +551,8 @@ const recipientError = computed(
                             >
                                 {{
                                     search.trim()
-                                        ? "Contactos encontrados"
-                                        : "Recientes"
+                                        ? 'Contactos encontrados'
+                                        : 'Recientes'
                                 }}
                             </p>
 
@@ -571,8 +571,8 @@ const recipientError = computed(
                             >
                                 {{
                                     search.trim()
-                                        ? "Ningún contacto coincide. Escribe el número completo con lada para escribirle."
-                                        : "Aún no hay contactos con WhatsApp."
+                                        ? 'Ningún contacto coincide. Escribe el número completo con lada para escribirle.'
+                                        : 'Aún no hay contactos con WhatsApp.'
                                 }}
                             </p>
                             <ul
@@ -618,7 +618,7 @@ const recipientError = computed(
                                                 class="block truncate text-xs text-muted-foreground"
                                                 >{{
                                                     item.phone ??
-                                                    "Número oculto por WhatsApp"
+                                                    'Número oculto por WhatsApp'
                                                 }}</span
                                             >
                                         </span>

@@ -7,6 +7,7 @@ use App\Enums\TeamChat\TeamDeskStatus;
 use App\Enums\TeamChat\TeamThreadType;
 use App\Models\Department;
 use App\Models\TeamChat\TeamMessage;
+use App\Models\TeamChat\TeamParticipant;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use App\Services\TeamChat\ControlDesk;
@@ -287,4 +288,29 @@ test('«Pendientes» shows the newest request first and «Mías» the one waitin
             ->where('deskInbox.threads.1.id', $threads[1]->id)
             ->where('deskInbox.threads.2.id', $threads[2]->id)
             ->where('deskInbox.capacity.load', 3));
+});
+
+test('«Liberar» returns an open request to the waiting list so another auditor takes it', function () {
+    $thread = deskRequest($this->requester);
+
+    $this->actingAs($this->auditor)->post(route('team-chat.threads.desk.accept', $thread))->assertRedirect();
+
+    $this->actingAs($this->otherAuditor)
+        ->postJson(route('team-chat.threads.desk.release', $thread))
+        ->assertStatus(409);
+
+    $this->actingAs($this->auditor)
+        ->post(route('team-chat.threads.desk.release', $thread))
+        ->assertRedirect();
+
+    $thread->refresh();
+
+    expect($thread->desk_status)->toBe(TeamDeskStatus::Pending)
+        ->and($thread->desk_assigned_user_id)->toBeNull()
+        ->and(TeamParticipant::query()->where('team_thread_id', $thread->id)->where('user_id', $this->auditor->id)->whereNull('left_at')->exists())->toBeFalse()
+        ->and(TeamParticipant::query()->where('team_thread_id', $thread->id)->where('user_id', $this->requester->id)->whereNull('left_at')->exists())->toBeTrue();
+
+    $this->actingAs($this->otherAuditor)->post(route('team-chat.threads.desk.accept', $thread))->assertRedirect();
+
+    expect($thread->refresh()->desk_assigned_user_id)->toBe($this->otherAuditor->id);
 });

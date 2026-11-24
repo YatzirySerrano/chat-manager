@@ -43,6 +43,7 @@ Route::middleware(['auth', 'verified'])->prefix('team-chat')->name('team-chat.')
         // «Mesa de control»: an auditor accepts a pending request or completes hers.
         Route::post('desk/accept', [TeamDeskController::class, 'accept'])->middleware('throttle:60,1')->name('desk.accept');
         Route::post('desk/complete', [TeamDeskController::class, 'complete'])->middleware('throttle:60,1')->name('desk.complete');
+        Route::post('desk/release', [TeamDeskController::class, 'release'])->middleware('throttle:60,1')->name('desk.release');
         // Follow-up of a request: internal notes and tags (never seen by the requester).
         Route::post('desk/notes', [TeamDeskDetailsController::class, 'storeNote'])->middleware('throttle:60,1')->name('desk.notes.store');
         Route::put('desk/notes/{note}', [TeamDeskDetailsController::class, 'updateNote'])->withoutScopedBindings()->middleware('throttle:60,1')->name('desk.notes.update');

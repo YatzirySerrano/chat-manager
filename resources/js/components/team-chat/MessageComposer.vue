@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useHttp } from '@inertiajs/vue3';
-import { Paperclip, Smile } from '@lucide/vue';
+import { Paperclip, Slash, Smile } from '@lucide/vue';
 import { useDebounceFn, useMediaQuery } from '@vueuse/core';
 import {
     computed,
@@ -21,6 +21,7 @@ import {
 import ChatReplyPreview from '@/components/chat/ChatReplyPreview.vue';
 import ChatSendButton from '@/components/chat/ChatSendButton.vue';
 import InputError from '@/components/InputError.vue';
+import QuickReplyPicker from '@/components/quick-replies/QuickReplyPicker.vue';
 import DraftAttachment from '@/components/team-chat/DraftAttachment.vue';
 import {
     attachmentSummary,
@@ -38,6 +39,7 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { useComposerDrafts } from '@/composables/useComposerDrafts';
+import { usePermissions } from '@/composables/usePermissions';
 import { useUploadProgress } from '@/composables/useUploadProgress';
 import { formatFileSize } from '@/lib/format';
 import { UPLOAD_CODE_FIELD } from '@/lib/uploads';
@@ -45,6 +47,7 @@ import { cn } from '@/lib/utils';
 import { typing as announceTyping } from '@/routes/team-chat/threads';
 import { show as draftRoute } from '@/routes/team-chat/threads/draft';
 import { store as storeMessage } from '@/routes/team-chat/threads/messages';
+import type { AvailableQuickReply } from '@/types/quick-replies';
 import type {
     TeamChatLimits,
     TeamMention,
@@ -391,14 +394,99 @@ function signalTyping(): void {
         });
 }
 
+/*
+ * Quick replies through «/», as in Conversaciones (quick-replies.use). In
+ * the internal chat there is no customer: their variables stay empty.
+ */
+const { can: holdsPermission } = usePermissions();
+const canUseQuickReplies = computed(() => holdsPermission('quick-replies.use'));
+const quickPicker = ref<InstanceType<typeof QuickReplyPicker> | null>(null);
+const quickTrigger = ref<{ start: number; query: string } | null>(null);
+const quickDismissedAt = ref<number | null>(null);
+
+function updateQuickTrigger(): void {
+    const element = textarea.value;
+
+    if (
+        !canUseQuickReplies.value ||
+        !element ||
+        element.selectionStart !== element.selectionEnd
+    ) {
+        quickTrigger.value = null;
+
+        return;
+    }
+
+    const caret = element.selectionStart;
+    const match = /(^|\s)\/([a-z0-9_-]*)$/i.exec(http.body.slice(0, caret));
+
+    if (!match) {
+        quickTrigger.value = null;
+        quickDismissedAt.value = null;
+
+        return;
+    }
+
+    const start = caret - match[2].length - 1;
+
+    quickTrigger.value =
+        quickDismissedAt.value === start
+            ? null
+            : { start, query: match[2].toLowerCase() };
+}
+
+function closeQuickReplies(): void {
+    quickDismissedAt.value = quickTrigger.value?.start ?? null;
+    quickTrigger.value = null;
+}
+
+async function insertQuickReply(reply: AvailableQuickReply): Promise<void> {
+    const element = textarea.value;
+    const caret = element?.selectionStart ?? http.body.length;
+    const start = quickTrigger.value?.start ?? caret;
+
+    quickTrigger.value = null;
+    http.body = http.body.slice(0, start) + reply.text + http.body.slice(caret);
+
+    await nextTick();
+
+    const position = start + reply.text.length;
+    element?.focus();
+    element?.setSelectionRange(position, position);
+    resize();
+    void rememberDraftSoon();
+}
+
+/* Opens the quick replies as typing «/» would. */
+async function openQuickReplies(): Promise<void> {
+    const element = textarea.value;
+    const caret = element?.selectionStart ?? http.body.length;
+    const before = http.body.slice(0, caret);
+    const slash = before === '' || /\s$/u.test(before) ? '/' : ' /';
+
+    http.body = before + slash + http.body.slice(caret);
+    await nextTick();
+    element?.focus();
+    element?.setSelectionRange(caret + slash.length, caret + slash.length);
+    quickDismissedAt.value = null;
+    updateQuickTrigger();
+}
+
 function onInput(): void {
     resize();
     detectMention();
+    updateQuickTrigger();
     signalTyping();
     void rememberDraftSoon();
 }
 
 function onKeydown(event: KeyboardEvent): void {
+    if (quickTrigger.value && quickPicker.value?.handleKeydown(event)) {
+        event.preventDefault();
+
+        return;
+    }
+
     if (suggestions.value.length > 0 && !event.isComposing) {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault();
@@ -861,8 +949,33 @@ defineExpose({ focus, addFiles });
                         <TeamEmojiPicker @pick="insertEmoji" />
                     </PopoverContent>
                 </Popover>
+                <Button
+                    v-if="canUseQuickReplies"
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    :class="COMPOSER_TOOL"
+                    title="Respuestas rápidas (/)"
+                    aria-label="Abrir las respuestas rápidas"
+                    :disabled="http.processing"
+                    @mousedown.prevent
+                    @click="openQuickReplies"
+                >
+                    <Slash aria-hidden="true" />
+                </Button>
                 <label :for="textareaId" class="sr-only">Mensaje</label>
                 <div class="relative flex min-w-0 flex-1">
+                    <div
+                        v-if="quickTrigger"
+                        class="absolute inset-x-0 bottom-full z-20 mb-3"
+                    >
+                        <QuickReplyPicker
+                            ref="quickPicker"
+                            :query="quickTrigger.query"
+                            @select="insertQuickReply"
+                            @close="closeQuickReplies"
+                        />
+                    </div>
                     <ul
                         v-if="suggestions.length > 0"
                         :id="`${textareaId}-mentions`"
@@ -896,7 +1009,11 @@ defineExpose({ focus, addFiles });
                         rows="1"
                         :enterkeyhint="phoneKeyboard ? 'enter' : 'send'"
                         class="max-h-[200px] min-h-10 flex-1 resize-none rounded-lg border-0 bg-transparent px-2 py-2.5 text-base leading-snug outline-none placeholder:truncate placeholder:text-muted-foreground md:text-sm md:leading-5"
-                        placeholder="Escribe un mensaje interno…"
+                        :placeholder="
+                            canUseQuickReplies
+                                ? 'Escribe un mensaje interno. «/» abre las respuestas rápidas.'
+                                : 'Escribe un mensaje interno…'
+                        "
                         :aria-invalid="errors.length > 0"
                         :aria-expanded="suggestions.length > 0"
                         :aria-controls="
@@ -913,7 +1030,10 @@ defineExpose({ focus, addFiles });
                         @input="onInput"
                         @paste="onPaste"
                         @click="detectMention"
-                        @blur="mentionQuery = null"
+                        @blur="
+                            mentionQuery = null;
+                            quickTrigger = null;
+                        "
                     />
                 </div>
                 <ChatSendButton

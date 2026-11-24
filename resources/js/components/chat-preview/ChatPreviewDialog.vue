@@ -9,18 +9,18 @@ import {
     RefreshCw,
     Sticker,
     Video,
-} from "@lucide/vue";
-import { computed, nextTick, ref, watch } from "vue";
-import type { Component } from "vue";
-import LinkPreviewCard from "@/components/chat/LinkPreviewCard.vue";
-import LocationCard from "@/components/chat/LocationCard.vue";
-import MediaLightbox from "@/components/MediaLightbox.vue";
+} from '@lucide/vue';
+import { computed, nextTick, ref, watch } from 'vue';
+import type { Component } from 'vue';
+import LinkPreviewCard from '@/components/chat/LinkPreviewCard.vue';
+import LocationCard from '@/components/chat/LocationCard.vue';
+import MediaLightbox from '@/components/MediaLightbox.vue';
 import type {
     ChatPreviewAttachment,
     ChatPreviewItem,
-} from "@/components/chat-preview/types";
-import { dayLabel, formatTime } from "@/components/conversations/messageFormat";
-import { Button } from "@/components/ui/button";
+} from '@/components/chat-preview/types';
+import { dayLabel, formatTime } from '@/components/conversations/messageFormat';
+import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
@@ -28,15 +28,15 @@ import {
     DialogFooter,
     DialogHeader,
     DialogTitle,
-} from "@/components/ui/dialog";
-import { Skeleton } from "@/components/ui/skeleton";
-import WhatsAppText from "@/components/WhatsAppText.vue";
+} from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
+import WhatsAppText from '@/components/WhatsAppText.vue';
 import {
     CUSTOM_BUBBLE_CLASSES,
     chatColorVariables,
-} from "@/lib/chatAppearance";
-import { formatDateTime } from "@/lib/format";
-import type { ChatColors } from "@/types";
+} from '@/lib/chatAppearance';
+import { formatDateTime } from '@/lib/format';
+import type { ChatColors } from '@/types';
 
 /**
  * Floating preview of a chat (customer conversation or internal chat): its
@@ -68,12 +68,12 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    "update:open": [value: boolean];
+    'update:open': [value: boolean];
     open: [];
     retry: [];
 }>();
 
-const ATTACHMENT_ICONS: Record<ChatPreviewAttachment["kind"], Component> = {
+const ATTACHMENT_ICONS: Record<ChatPreviewAttachment['kind'], Component> = {
     image: ImageIcon,
     sticker: Sticker,
     audio: Mic,
@@ -119,7 +119,7 @@ function openImage(event: MouseEvent, attachment: ChatPreviewAttachment): void {
 function shown(attachment: ChatPreviewAttachment): boolean {
     return (
         Boolean(attachment.src) &&
-        ["image", "sticker", "video", "audio"].includes(attachment.kind) &&
+        ['image', 'sticker', 'video', 'audio'].includes(attachment.kind) &&
         !failed.value.has(attachment.src as string)
     );
 }
@@ -144,24 +144,24 @@ function customBubble(item: ChatPreviewItem): boolean {
 }
 
 function secondaryText(item: ChatPreviewItem): string {
-    return customBubble(item) ? "" : "text-muted-foreground";
+    return customBubble(item) ? '' : 'text-muted-foreground';
 }
 
 function bubbleClasses(item: ChatPreviewItem): string {
     const custom = customBubble(item);
 
     if (item.mine) {
-        return `rounded-br-sm ${custom ? CUSTOM_BUBBLE_CLASSES.sent : "bg-bubble-out text-bubble-out-foreground"}`;
+        return `rounded-br-sm ${custom ? CUSTOM_BUBBLE_CLASSES.sent : 'bg-bubble-out text-bubble-out-foreground'}`;
     }
 
-    return `rounded-bl-sm border border-border-strong/60 ${custom ? CUSTOM_BUBBLE_CLASSES.received : "bg-bubble-in text-bubble-in-foreground"}`;
+    return `rounded-bl-sm border border-border-strong/60 ${custom ? CUSTOM_BUBBLE_CLASSES.received : 'bg-bubble-in text-bubble-in-foreground'}`;
 }
 
 /* Text placed on the chat background gets the theme's backdrop. */
 const onChatBackground = computed(() =>
     customColors.value
-        ? "mx-auto w-fit rounded-full bg-background px-2.5 py-0.5"
-        : "",
+        ? 'mx-auto w-fit rounded-full bg-background px-2.5 py-0.5'
+        : '',
 );
 
 /** Items grouped by calendar day, in the order they were written. */
@@ -170,7 +170,7 @@ const days = computed(() => {
         [];
 
     for (const item of props.items) {
-        const label = item.at ? dayLabel(item.at) : "";
+        const label = item.at ? dayLabel(item.at) : '';
         const last = groups.at(-1);
 
         if (last && last.label === label) {
@@ -217,7 +217,7 @@ watch(
                     <span v-if="unread && unread > 0" class="font-medium">
                         {{
                             unread === 1
-                                ? "1 mensaje sin leer."
+                                ? '1 mensaje sin leer.'
                                 : `${unread} mensajes sin leer.`
                         }}
                     </span>

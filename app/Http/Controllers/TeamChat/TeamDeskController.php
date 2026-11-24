@@ -4,6 +4,7 @@ namespace App\Http\Controllers\TeamChat;
 
 use App\Actions\TeamChat\AcceptDeskRequest;
 use App\Actions\TeamChat\CompleteDeskRequest;
+use App\Actions\TeamChat\ReleaseDeskRequest;
 use App\Http\Controllers\Controller;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
@@ -62,6 +63,22 @@ class TeamDeskController extends Controller
         $completeDeskRequest->handle($thread, $actor);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => ($sent ? 'Solicitud completada y despedida enviada.' : 'Solicitud completada.').' Si la persona vuelve a escribir, regresará a «Pendientes».']);
+
+        return back();
+    }
+
+    /**
+     * «Liberar solicitud»: back to «Pendientes» for another auditor.
+     */
+    public function release(Request $request, TeamThread $thread, ReleaseDeskRequest $releaseDeskRequest): RedirectResponse
+    {
+        Gate::authorize('attendDesk', $thread);
+
+        /** @var User $actor */
+        $actor = $request->user();
+        $releaseDeskRequest->handle($thread, $actor);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Solicitud liberada: volvió a «Pendientes» para que otra persona de la Mesa de control la tome.']);
 
         return back();
     }

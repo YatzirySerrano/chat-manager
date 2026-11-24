@@ -20,6 +20,7 @@ enum TeamChatSystemEvent: string
     case GroupUnarchived = 'group_unarchived';
     case DeskAccepted = 'desk_accepted';
     case DeskCompleted = 'desk_completed';
+    case DeskReleased = 'desk_released';
 
     /**
      * Sentence shown in the thread. The actor and target are names already
@@ -46,6 +47,7 @@ enum TeamChatSystemEvent: string
             self::GroupUnarchived => "{$actor} reactivó el grupo.",
             self::DeskAccepted => "{$actor} aceptó la solicitud.",
             self::DeskCompleted => "{$actor} marcó la solicitud como completa.",
+            self::DeskReleased => "{$actor} liberó la solicitud: vuelve a la lista de espera.",
         };
     }
 }

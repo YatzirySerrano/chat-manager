@@ -1,46 +1,48 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router } from "@inertiajs/vue3";
 import {
     ArrowDownUp,
     ChevronDown,
     Contact as ContactIcon,
     Ellipsis,
     Eye,
+    MessageSquarePlus,
     Pencil,
     Plus,
     ShieldQuestion,
     Tags,
     Upload,
     UserRoundSearch,
-} from '@lucide/vue';
-import { useMediaQuery, watchDebounced } from '@vueuse/core';
-import { computed, onUnmounted, reactive, ref } from 'vue';
-import ConfirmDialog from '@/components/ConfirmDialog.vue';
-import ContactFormDialog from '@/components/contacts/ContactFormDialog.vue';
-import ContactOriginBadge from '@/components/contacts/ContactOriginBadge.vue';
-import ContactTagList from '@/components/contacts/ContactTagList.vue';
-import UnsavedContactBadge from '@/components/contacts/UnsavedContactBadge.vue';
-import DataPagination from '@/components/DataPagination.vue';
-import DeletedBadge from '@/components/DeletedBadge.vue';
-import DepartmentTag from '@/components/DepartmentTag.vue';
-import DirectoryPanel from '@/components/directory/DirectoryPanel.vue';
-import DirectoryRow from '@/components/directory/DirectoryRow.vue';
-import ExportMenu from '@/components/ExportMenu.vue';
-import ActiveFilters from '@/components/filters/ActiveFilters.vue';
-import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
-import FilterSearch from '@/components/filters/FilterSearch.vue';
-import FilterTabs from '@/components/filters/FilterTabs.vue';
-import FilterToggle from '@/components/filters/FilterToggle.vue';
-import HighlightMatch from '@/components/filters/HighlightMatch.vue';
-import ListAvatar from '@/components/filters/ListAvatar.vue';
+} from "@lucide/vue";
+import { useMediaQuery, watchDebounced } from "@vueuse/core";
+import { computed, onUnmounted, reactive, ref } from "vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
+import ContactFormDialog from "@/components/contacts/ContactFormDialog.vue";
+import ContactOriginBadge from "@/components/contacts/ContactOriginBadge.vue";
+import ContactTagList from "@/components/contacts/ContactTagList.vue";
+import UnsavedContactBadge from "@/components/contacts/UnsavedContactBadge.vue";
+import DataPagination from "@/components/DataPagination.vue";
+import DeletedBadge from "@/components/DeletedBadge.vue";
+import DepartmentTag from "@/components/DepartmentTag.vue";
+import DirectoryPanel from "@/components/directory/DirectoryPanel.vue";
+import DirectoryRow from "@/components/directory/DirectoryRow.vue";
+import ExportMenu from "@/components/ExportMenu.vue";
+import ActiveFilters from "@/components/filters/ActiveFilters.vue";
+import FilteredEmpty from "@/components/filters/FilteredEmpty.vue";
+import FilterSearch from "@/components/filters/FilterSearch.vue";
+import FilterTabs from "@/components/filters/FilterTabs.vue";
+import FilterToggle from "@/components/filters/FilterToggle.vue";
+import HighlightMatch from "@/components/filters/HighlightMatch.vue";
+import ListAvatar from "@/components/filters/ListAvatar.vue";
 import type {
     ActiveFilterPill,
     FilterTabOption,
-} from '@/components/filters/types';
-import PageHeader from '@/components/PageHeader.vue';
-import RecordActions from '@/components/RecordActions.vue';
-import RecordCard from '@/components/RecordCard.vue';
-import { Button } from '@/components/ui/button';
+} from "@/components/filters/types";
+import PageHeader from "@/components/PageHeader.vue";
+import StartChatDialog from "@/components/conversations/StartChatDialog.vue";
+import RecordActions from "@/components/RecordActions.vue";
+import RecordCard from "@/components/RecordCard.vue";
+import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -49,34 +51,35 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
     Select,
     SelectContent,
     SelectItem,
     SelectTrigger,
     SelectValue,
-} from '@/components/ui/select';
-import ViewModeToggle from '@/components/ViewModeToggle.vue';
-import { useLiveReload } from '@/composables/useLiveReload';
-import { useRecordDeletion } from '@/composables/useRecordDeletion';
+} from "@/components/ui/select";
+import ViewModeToggle from "@/components/ViewModeToggle.vue";
+import { useLiveReload } from "@/composables/useLiveReload";
+import { useRecordDeletion } from "@/composables/useRecordDeletion";
 import {
     inboxChannelNames,
     userChannelName,
-} from '@/composables/useUserChannel';
-import { useViewMode } from '@/composables/useViewMode';
-import { contactDeletionCopy } from '@/lib/deletionCopy';
-import { formatDateTime, formatRelative } from '@/lib/format';
-import { formatPhone } from '@/lib/phone';
-import { recordActions } from '@/lib/recordActions';
+} from "@/composables/useUserChannel";
+import { useViewMode } from "@/composables/useViewMode";
+import { contactDeletionCopy } from "@/lib/deletionCopy";
+import { formatDateTime, formatRelative } from "@/lib/format";
+import { usePermissions } from "@/composables/usePermissions";
+import { formatPhone } from "@/lib/phone";
+import { recordActions } from "@/lib/recordActions";
 import {
     destroy as destroyContact,
     index as contactsIndex,
     restore as restoreContact,
     show,
-} from '@/routes/contacts';
-import { create as importCreate } from '@/routes/contacts/import';
-import { index as reviewsIndex } from '@/routes/contacts/reviews';
+} from "@/routes/contacts";
+import { create as importCreate } from "@/routes/contacts/import";
+import { index as reviewsIndex } from "@/routes/contacts/reviews";
 import type {
     ConnectionChannel,
     Contact,
@@ -91,11 +94,11 @@ import type {
     RecordAction,
     RecordStateOption,
     RecordStateValue,
-} from '@/types';
+} from "@/types";
 
 defineOptions({
     layout: {
-        breadcrumbs: [{ title: 'Contactos', href: contactsIndex() }],
+        breadcrumbs: [{ title: "Contactos", href: contactsIndex() }],
     },
 });
 
@@ -127,50 +130,50 @@ useLiveReload({
         return [
             ...inboxChannelNames().map((name) => ({
                 name,
-                events: ['inbox.changed'],
+                events: ["inbox.changed"],
             })),
             ...(user
                 ? [
                       {
                           name: user,
-                          events: ['inbox.changed', 'transfer.changed'],
+                          events: ["inbox.changed", "transfer.changed"],
                       },
                   ]
                 : []),
         ];
     },
-    only: ['contacts', 'openReviews'],
+    only: ["contacts", "openReviews"],
     filter: (event, payload) =>
-        event === 'transfer.changed' ||
-        payload.reason === 'created' ||
-        payload.reason === 'message',
+        event === "transfer.changed" ||
+        payload.reason === "created" ||
+        payload.reason === "message",
     debounceMs: 2000,
     fallbackIntervalMs: 30_000,
     safetyIntervalMs: 60_000,
 });
 
-const ALL = 'all';
+const ALL = "all";
 
 const SORT_OPTIONS: { value: ContactSort; label: string }[] = [
-    { value: 'recent', label: 'Última interacción' },
-    { value: 'name', label: 'Nombre (A-Z)' },
-    { value: 'newest', label: 'Más recientes' },
+    { value: "recent", label: "Última interacción" },
+    { value: "name", label: "Nombre (A-Z)" },
+    { value: "newest", label: "Más recientes" },
 ];
 
 const filterState = reactive({
-    search: props.filters.search ?? '',
+    search: props.filters.search ?? "",
     record: props.filters.record,
     tags: [...(props.filters.tags ?? [])] as number[],
     source: props.filters.source ?? ALL,
     origin: props.filters.origin ?? ALL,
-    sort: props.filters.sort ?? 'recent',
+    sort: props.filters.sort ?? "recent",
     includeProvisional: props.filters.include_provisional ?? false,
 });
 
 const hasFilters = computed(
     () =>
-        filterState.search !== '' ||
-        filterState.record !== 'active' ||
+        filterState.search !== "" ||
+        filterState.record !== "active" ||
         filterState.tags.length > 0 ||
         filterState.source !== ALL ||
         filterState.origin !== ALL ||
@@ -178,13 +181,13 @@ const hasFilters = computed(
 );
 
 const loading = ref(false);
-const stopStart = router.on('start', (event) => {
+const stopStart = router.on("start", (event) => {
     // Background refreshes (polling, async reloads) do not dim the table.
-    if (event.detail.visit.method === 'get' && !event.detail.visit.async) {
+    if (event.detail.visit.method === "get" && !event.detail.visit.async) {
         loading.value = true;
     }
 });
-const stopFinish = router.on('finish', () => (loading.value = false));
+const stopFinish = router.on("finish", () => (loading.value = false));
 
 onUnmounted(() => {
     stopStart();
@@ -196,11 +199,11 @@ let lastRequested: string | null = null;
 function applyFilters(): void {
     const query: Record<string, string | number[]> = {};
 
-    if (filterState.search.trim() !== '') {
+    if (filterState.search.trim() !== "") {
         query.search = filterState.search.trim();
     }
 
-    if (filterState.record !== 'active') {
+    if (filterState.record !== "active") {
         query.record = filterState.record;
     }
 
@@ -208,18 +211,18 @@ function applyFilters(): void {
         query.tags = filterState.tags;
     }
 
-    for (const key of ['source', 'origin'] as const) {
+    for (const key of ["source", "origin"] as const) {
         if (filterState[key] !== ALL) {
             query[key] = filterState[key];
         }
     }
 
-    if (filterState.sort !== 'recent') {
+    if (filterState.sort !== "recent") {
         query.sort = filterState.sort;
     }
 
     if (filterState.includeProvisional) {
-        query.include_provisional = '1';
+        query.include_provisional = "1";
     }
 
     const url = contactsIndex.url({ query });
@@ -236,7 +239,7 @@ function applyFilters(): void {
         preserveState: true,
         preserveScroll: true,
         replace: true,
-        only: ['contacts', 'filters'],
+        only: ["contacts", "filters"],
     });
 }
 
@@ -250,8 +253,8 @@ function toggleTag(tagId: number, checked: boolean): void {
 }
 
 function clearFilters(): void {
-    filterState.search = '';
-    filterState.record = 'active';
+    filterState.search = "";
+    filterState.record = "active";
     filterState.tags = [];
     filterState.source = ALL;
     filterState.origin = ALL;
@@ -266,13 +269,13 @@ function toggleProvisional(): void {
 
 const selectedTagsLabel = computed(() => {
     if (filterState.tags.length === 0) {
-        return 'Etiquetas';
+        return "Etiquetas";
     }
 
     if (filterState.tags.length === 1) {
         return (
             props.tags?.find((tag) => tag.id === filterState.tags[0])?.name ??
-            '1 etiqueta'
+            "1 etiqueta"
         );
     }
 
@@ -296,20 +299,20 @@ function setRecord(value: RecordStateValue): void {
 const tagPills = computed<ActiveFilterPill[]>(() =>
     filterState.tags.map((id) => ({
         key: `tag-${id}`,
-        label: props.tags?.find((tag) => tag.id === id)?.name ?? 'Etiqueta',
+        label: props.tags?.find((tag) => tag.id === id)?.name ?? "Etiqueta",
         remove: () => toggleTag(id, false),
     })),
 );
 
 /* The search the list on screen answers, to mark it in the names. */
-const appliedSearch = computed(() => props.filters.search ?? '');
+const appliedSearch = computed(() => props.filters.search ?? "");
 
 const CHANNELS: ConnectionChannel[] = [
-    'whatsapp',
-    'messenger',
-    'instagram',
-    'telegram',
-    'web_chat',
+    "whatsapp",
+    "messenger",
+    "instagram",
+    "telegram",
+    "web_chat",
 ];
 
 function channelOf(contact: Contact): ConnectionChannel | null {
@@ -320,15 +323,15 @@ function channelOf(contact: Contact): ConnectionChannel | null {
         : null;
 }
 
-const { mode: viewMode } = useViewMode('contacts');
+const { mode: viewMode } = useViewMode("contacts");
 
 /**
  * Phones always get the cards presentation: a table squeezed to one column
  * hides most of the data. The remembered choice still applies from `sm` up.
  */
-const isPhone = useMediaQuery('(max-width: 639px)');
+const isPhone = useMediaQuery("(max-width: 639px)");
 const effectiveViewMode = computed(() =>
-    isPhone.value ? 'cards' : viewMode.value,
+    isPhone.value ? "cards" : viewMode.value,
 );
 
 /** Secondary page actions, grouped in "Más acciones" below `lg`. */
@@ -361,17 +364,48 @@ const deletion = useRecordDeletion<Contact>({
     copy: contactDeletionCopy,
 });
 
+/* «Iniciar chat»: write first to the contact (or a number) by WhatsApp. */
+const { can: holds } = usePermissions();
+const canStartChat = computed(() => holds("conversations.reply"));
+const startChatOpen = ref(false);
+const startChatContact = ref<{
+    id: number;
+    name: string;
+    phone: string | null;
+} | null>(null);
+
+function openStartChat(contact: Contact | null): void {
+    startChatContact.value = contact
+        ? {
+              id: contact.id,
+              name: contact.name,
+              phone: contact.phone_e164
+                  ? formatPhone(contact.phone_e164)
+                  : null,
+          }
+        : null;
+    startChatOpen.value = true;
+}
+
 function actionsFor(contact: Contact): RecordAction[] {
     return recordActions(
         contact.can?.view && {
-            key: 'view',
-            label: 'Ver',
+            key: "view",
+            label: "Ver",
             icon: Eye,
             href: show(contact.id),
         },
+        canStartChat.value &&
+            !contact.is_deleted &&
+            contact.phone_e164 !== null && {
+                key: "start-chat",
+                label: "Iniciar chat",
+                icon: MessageSquarePlus,
+                onSelect: () => openStartChat(contact),
+            },
         contact.can?.update && {
-            key: 'edit',
-            label: 'Editar',
+            key: "edit",
+            label: "Editar",
             icon: Pencil,
             onSelect: () => openEdit(contact),
         },
@@ -399,6 +433,7 @@ function contactSubtitle(contact: Contact): string | null {
         >
             <template
                 v-if="
+                    canStartChat ||
                     can.create ||
                     can.reviewDuplicates ||
                     can.import ||
@@ -406,6 +441,16 @@ function contactSubtitle(contact: Contact): string | null {
                 "
                 #actions
             >
+                <Button
+                    v-if="canStartChat"
+                    variant="outline"
+                    class="max-sm:w-full"
+                    data-start-chat
+                    @click="openStartChat(null)"
+                >
+                    <MessageSquarePlus />
+                    Iniciar chat
+                </Button>
                 <Button
                     v-if="can.create"
                     class="max-sm:w-full lg:order-last"
@@ -691,8 +736,8 @@ function contactSubtitle(contact: Contact): string | null {
                                     :value="option.value"
                                 >
                                     {{
-                                        option.value === 'unknown'
-                                            ? 'No identificado'
+                                        option.value === "unknown"
+                                            ? "No identificado"
                                             : option.label
                                     }}
                                 </SelectItem>
@@ -944,6 +989,11 @@ function contactSubtitle(contact: Contact): string | null {
             v-model:open="deletion.open"
             v-bind="deletion.dialog"
             @confirm="deletion.confirm"
+        />
+        <StartChatDialog
+            v-if="canStartChat"
+            v-model:open="startChatOpen"
+            :contact="startChatContact"
         />
     </div>
 </template>

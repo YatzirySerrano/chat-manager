@@ -615,6 +615,24 @@ queda además en la bitácora central (`AuditAction::MessageRetriedWithDuplicate
 `conversation.message_retried_duplicate_risk`, con actor, conversación y mensaje). Cada reintento abre un nuevo ciclo
 de reintentos automáticos.
 
+### Iniciar chat (el agente escribe primero)
+
+El botón «Iniciar chat» (bandeja de Conversaciones y Contactos) abre el diálogo
+`StartChatDialog`: conexión de WhatsApp (QR o API de Meta), departamento y
+destinatario (un contacto, uno reciente o un número escrito a mano).
+`StartConversation` decide:
+
+- si el contacto ya tiene una conversación sin cerrar en esa conexión, abre la
+  propia o acepta la que espera en cola; si la atiende otra persona, responde
+  «Este contacto ya está siendo atendido por el usuario …»;
+- si no, crea la conversación (lista para atención, evento `created` con
+  `source: started_by_agent`) y el agente la acepta si las reglas de la cola
+  lo permiten; si no, queda en «Pendientes».
+
+Un número que no corresponde a ningún contacto registra uno provisional. El
+envío sigue las reglas normales: por QR se escribe libremente; por la API de
+Meta, sin un mensaje del cliente en 24 horas el primero debe ser plantilla.
+
 ## 6. Ventana de atención y costos
 
 - La ventana de 24 h depende solo del último mensaje del cliente (`CustomerServiceWindow`); abrir o cerrar un ticket

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Download, FileText, RotateCw } from '@lucide/vue';
-import { computed } from 'vue';
-import type { LocalStatus, ThreadMessage } from '../../types';
-import AgentAvatar from './AgentAvatar.vue';
+import { Download, FileText, RotateCw, X } from "@lucide/vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
+import type { LocalStatus, ThreadMessage } from "../../types";
+import AgentAvatar from "./AgentAvatar.vue";
 
 /**
  * One message of the thread. The visitor's own messages show their
@@ -25,7 +25,7 @@ const props = defineProps<{
 
 defineEmits<{ retry: [] }>();
 
-const mine = computed(() => props.message.direction === 'inbound');
+const mine = computed(() => props.message.direction === "inbound");
 
 const author = computed(() => {
     if (mine.value || !props.showAuthor) {
@@ -33,7 +33,7 @@ const author = computed(() => {
     }
 
     if (props.message.assistant) {
-        return { name: 'Asistente virtual', bot: true };
+        return { name: "Asistente virtual", bot: true };
     }
 
     return props.message.agent_name
@@ -42,23 +42,59 @@ const author = computed(() => {
 });
 
 const statusLabels: Record<LocalStatus, string> = {
-    sending: 'Enviando',
-    sent: 'Enviado',
-    delivered: 'Entregado',
-    read: 'Leído',
-    failed: 'Fallido',
+    sending: "Enviando",
+    sent: "Enviado",
+    delivered: "Entregado",
+    read: "Leído",
+    failed: "Fallido",
 };
 
 const time = computed(() => {
     if (!props.message.created_at) {
-        return '';
+        return "";
     }
 
-    return new Date(props.message.created_at).toLocaleTimeString('es-MX', {
-        hour: '2-digit',
-        minute: '2-digit',
+    return new Date(props.message.created_at).toLocaleTimeString("es-MX", {
+        hour: "2-digit",
+        minute: "2-digit",
     });
 });
+
+/*
+ * A picture opens enlarged inside the widget, never in another window; a
+ * click with a modifier key keeps the link's own behaviour. Escape closes it.
+ */
+const enlarged = ref<{ url: string; name: string } | null>(null);
+
+function enlarge(event: MouseEvent, url: string, name: string): void {
+    if (
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.button !== 0
+    ) {
+        return;
+    }
+
+    event.preventDefault();
+    enlarged.value = { url, name };
+}
+
+function closeOnEscape(event: KeyboardEvent): void {
+    if (event.key === "Escape") {
+        enlarged.value = null;
+    }
+}
+
+watch(enlarged, (value) => {
+    if (value) {
+        window.addEventListener("keydown", closeOnEscape);
+    } else {
+        window.removeEventListener("keydown", closeOnEscape);
+    }
+});
+
+onBeforeUnmount(() => window.removeEventListener("keydown", closeOnEscape));
 
 /** The upload in progress, while the server has not stored it yet. */
 const uploading = computed(() =>
@@ -73,7 +109,7 @@ const uploadPercent = computed(() =>
 
 function size(bytes: number | null): string {
     if (!bytes) {
-        return '';
+        return "";
     }
 
     return bytes >= 1048576
@@ -81,18 +117,18 @@ function size(bytes: number | null): string {
         : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-function kindOf(mime: string | null): 'image' | 'video' | 'audio' | 'file' {
-    const type = (mime ?? '').toLowerCase();
+function kindOf(mime: string | null): "image" | "video" | "audio" | "file" {
+    const type = (mime ?? "").toLowerCase();
 
-    if (type.startsWith('image/')) {
-        return 'image';
+    if (type.startsWith("image/")) {
+        return "image";
     }
 
-    if (type.startsWith('video/')) {
-        return 'video';
+    if (type.startsWith("video/")) {
+        return "video";
     }
 
-    return type.startsWith('audio/') ? 'audio' : 'file';
+    return type.startsWith("audio/") ? "audio" : "file";
 }
 </script>
 
@@ -177,7 +213,11 @@ function kindOf(mime: string | null): 'image' | 'video' | 'audio' | 'file' {
                         :href="attachment.url"
                         target="_blank"
                         rel="noopener noreferrer"
-                        class="block"
+                        class="block cursor-zoom-in"
+                        :aria-label="`Ver ${attachment.name} en grande`"
+                        @click="
+                            enlarge($event, attachment.url, attachment.name)
+                        "
                     >
                         <img
                             :src="attachment.url"
@@ -235,9 +275,9 @@ function kindOf(mime: string | null): 'image' | 'video' | 'audio' | 'file' {
                     }"
                     :data-status="status"
                     >{{
-                        status === 'failed' && error
+                        status === "failed" && error
                             ? `${statusLabels.failed} · ${error}`
-                            : status === 'sending' && uploading
+                            : status === "sending" && uploading
                               ? `${statusLabels.sending} ${uploadPercent} %`
                               : statusLabels[status]
                     }}</span
@@ -253,5 +293,49 @@ function kindOf(mime: string | null): 'image' | 'video' | 'audio' | 'file' {
                 </button>
             </template>
         </p>
+        <Teleport to="body">
+            <div
+                v-if="enlarged"
+                class="fixed inset-0 z-50 flex flex-col bg-black/90"
+                role="dialog"
+                aria-modal="true"
+                :aria-label="enlarged.name"
+                @click.self="enlarged = null"
+            >
+                <div
+                    class="flex shrink-0 items-center gap-1 px-3 py-2 text-white"
+                >
+                    <span class="min-w-0 flex-1 truncate text-sm">{{
+                        enlarged.name
+                    }}</span>
+                    <a
+                        :href="enlarged.url"
+                        download
+                        class="grid size-10 place-items-center rounded-full hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-white"
+                        :aria-label="`Descargar ${enlarged.name}`"
+                    >
+                        <Download class="size-5" aria-hidden="true" />
+                    </a>
+                    <button
+                        type="button"
+                        class="grid size-10 place-items-center rounded-full hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-white"
+                        aria-label="Cerrar imagen"
+                        @click="enlarged = null"
+                    >
+                        <X class="size-5" aria-hidden="true" />
+                    </button>
+                </div>
+                <div
+                    class="flex min-h-0 flex-1 items-center justify-center p-3"
+                    @click.self="enlarged = null"
+                >
+                    <img
+                        :src="enlarged.url"
+                        :alt="enlarged.name"
+                        class="max-h-full max-w-full object-contain"
+                    />
+                </div>
+            </div>
+        </Teleport>
     </li>
 </template>

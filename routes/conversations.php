@@ -9,6 +9,7 @@ use App\Http\Controllers\Conversations\ConversationPermanentDeletionController;
 use App\Http\Controllers\Conversations\ConversationPreviewController;
 use App\Http\Controllers\Conversations\ConversationReadController;
 use App\Http\Controllers\Conversations\ConversationReadinessController;
+use App\Http\Controllers\Conversations\ConversationStartController;
 use App\Http\Controllers\Conversations\ConversationStatusController;
 use App\Http\Controllers\Conversations\ConversationTagController;
 use App\Http\Controllers\Conversations\ConversationTimelineController;
@@ -29,6 +30,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('conversations/page', [ConversationController::class, 'page'])
         ->middleware('throttle:120,1')
         ->name('conversations.page');
+    // «Iniciar chat»: the agent writes first through a WhatsApp connection.
+    Route::get('conversations/start/options', [ConversationStartController::class, 'options'])
+        ->middleware('throttle:60,1')
+        ->name('conversations.start.options');
+    Route::get('conversations/start/contacts', [ConversationStartController::class, 'contacts'])
+        ->middleware('throttle:120,1')
+        ->name('conversations.start.contacts');
+    Route::post('conversations/start', [ConversationStartController::class, 'store'])
+        ->middleware('throttle:30,1')
+        ->name('conversations.start.store');
     Route::get('conversations/{conversation}', [ConversationController::class, 'show'])->name('conversations.show');
     Route::post('conversations/{conversation}/accept', [ConversationAssignmentController::class, 'accept'])->name('conversations.accept');
     Route::post('conversations/{conversation}/assign', [ConversationAssignmentController::class, 'assign'])->name('conversations.assign');

@@ -7,11 +7,11 @@ import {
     LoaderCircle,
     Maximize2,
     Play,
-} from '@lucide/vue';
-import { useIntersectionObserver } from '@vueuse/core';
-import { computed, defineAsyncComponent, inject, ref } from 'vue';
-import AudioPlayer from '@/components/conversations/AudioPlayer.vue';
-import { CUSTOM_CHAT_COLORS } from '@/lib/chatAppearance';
+} from "@lucide/vue";
+import { useIntersectionObserver } from "@vueuse/core";
+import { computed, defineAsyncComponent, inject, ref } from "vue";
+import AudioPlayer from "@/components/conversations/AudioPlayer.vue";
+import { CUSTOM_CHAT_COLORS } from "@/lib/chatAppearance";
 import {
     FILE_TONE_CLASSES,
     MEDIA_GALLERY,
@@ -20,14 +20,14 @@ import {
     formatClock,
     mediaKind,
     warmImage,
-} from '@/lib/conversations/media';
-import type { ViewerItem } from '@/lib/conversations/media';
-import { formatFileSize } from '@/lib/format';
-import type { MessageAttachment } from '@/types';
+} from "@/lib/conversations/media";
+import type { ViewerItem } from "@/lib/conversations/media";
+import { formatFileSize } from "@/lib/format";
+import type { MessageAttachment } from "@/types";
 
 // Loaded the first time it is shown: it is not needed to paint the page.
 const MediaViewer = defineAsyncComponent(
-    () => import('@/components/conversations/MediaViewer.vue'),
+    () => import("@/components/conversations/MediaViewer.vue"),
 );
 
 /**
@@ -69,7 +69,7 @@ const props = withDefaults(
         at?: string | null;
     }>(),
     {
-        channelLabel: 'el canal',
+        channelLabel: "el canal",
         sticker: null,
         voice: false,
         seconds: null,
@@ -119,7 +119,7 @@ const intrinsic = computed(() => {
 });
 
 const stickerLabel = computed(() =>
-    props.sticker?.animated ? 'Sticker animado' : 'Sticker',
+    props.sticker?.animated ? "Sticker animado" : "Sticker",
 );
 
 /**
@@ -131,20 +131,20 @@ const customColors = inject(
     computed(() => false),
 );
 const mutedText = computed(() =>
-    customColors.value ? '' : 'text-muted-foreground',
+    customColors.value ? "" : "text-muted-foreground",
 );
 const iconButton = computed(() =>
     customColors.value
-        ? 'hover:bg-current/10'
-        : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+        ? "hover:bg-current/10"
+        : "text-muted-foreground hover:bg-accent hover:text-foreground",
 );
 
 const kind = computed(() => mediaKind(props.attachment.mime_type));
 const isGifImage = computed(
-    () => props.attachment.mime_type.toLowerCase() === 'image/gif',
+    () => props.attachment.mime_type.toLowerCase() === "image/gif",
 );
 
-const name = computed(() => props.attachment.file_name ?? 'Archivo adjunto');
+const name = computed(() => props.attachment.file_name ?? "Archivo adjunto");
 
 /**
  * The reason a customer's file was given up (DownloadInboundMedia), so a
@@ -155,14 +155,14 @@ const UNAVAILABLE_DETAILS: Record<string, (channel: string) => string> = {
     expired: (channel) =>
         `${channel} ya no conserva este archivo o no permitió descargarlo.`,
     too_large: () =>
-        'El archivo recibido supera el tamaño que Chat Manager acepta para este tipo de mensaje.',
+        "El archivo recibido supera el tamaño que Chat Manager acepta para este tipo de mensaje.",
     type_not_allowed: () =>
-        'El contenido del archivo recibido no corresponde a un tipo permitido para este mensaje.',
-    empty: () => 'El archivo recibido estaba vacío.',
+        "El contenido del archivo recibido no corresponde a un tipo permitido para este mensaje.",
+    empty: () => "El archivo recibido estaba vacío.",
     credentials_rejected: (channel) =>
         `${channel} rechazó la descarga: revisa las credenciales de la conexión.`,
     credentials_missing: () =>
-        'La conexión no tiene credenciales para descargar el archivo.',
+        "La conexión no tiene credenciales para descargar el archivo.",
     download_failed: (channel) =>
         `No se pudo descargar el archivo desde ${channel} después de varios intentos.`,
 };
@@ -175,52 +175,52 @@ const UNAVAILABLE_DETAILS: Record<string, (channel: string) => string> = {
 const unavailable = computed<{ title: string; detail: string | null }>(() => {
     const { status, error_code: code } = props.attachment;
 
-    if (status === 'unavailable' && code === 'historical_missing') {
+    if (status === "unavailable" && code === "historical_missing") {
         return {
-            title: 'Archivo histórico no disponible',
+            title: "Archivo histórico no disponible",
             detail: `${name.value}: el historial importado no incluía este archivo.`,
         };
     }
 
-    if (status === 'unavailable' && code === 'historical_ambiguous') {
+    if (status === "unavailable" && code === "historical_ambiguous") {
         return {
-            title: 'Archivo histórico no disponible',
+            title: "Archivo histórico no disponible",
             detail: `${name.value}: había varios archivos con este nombre en los ZIP del historial y no se pudo saber cuál era.`,
         };
     }
 
-    if (status === 'unavailable' && code === 'zip_entry_invalid') {
+    if (status === "unavailable" && code === "zip_entry_invalid") {
         return {
-            title: 'Archivo histórico no disponible',
+            title: "Archivo histórico no disponible",
             detail: `${name.value}: el archivo estaba dañado dentro del ZIP del historial.`,
         };
     }
 
-    if (code === 'storage_unavailable') {
+    if (code === "storage_unavailable") {
         return {
-            title: 'Archivo no disponible',
-            detail: 'El almacenamiento de archivos no respondió. Inténtalo más tarde o avisa a un administrador.',
+            title: "Archivo no disponible",
+            detail: "El almacenamiento de archivos no respondió. Inténtalo más tarde o avisa a un administrador.",
         };
     }
 
-    if (status === 'unavailable') {
+    if (status === "unavailable") {
         return {
-            title: 'Archivo no disponible',
+            title: "Archivo no disponible",
             detail:
-                UNAVAILABLE_DETAILS[code ?? '']?.(props.channelLabel) ??
+                UNAVAILABLE_DETAILS[code ?? ""]?.(props.channelLabel) ??
                 `No se pudo descargar el archivo desde ${props.channelLabel}.`,
         };
     }
 
     return {
-        title: 'Archivo en camino',
+        title: "Archivo en camino",
         detail: `El archivo todavía se está descargando desde ${props.channelLabel}.`,
     };
 });
 const pending = computed(
     () =>
         !props.attachment.available &&
-        props.attachment.status !== 'unavailable',
+        props.attachment.status !== "unavailable",
 );
 const size = computed(() => formatFileSize(props.attachment.size_bytes));
 const badge = computed(() =>
@@ -239,7 +239,7 @@ const viewerOpen = ref(false);
 const viewerItem = computed<ViewerItem | null>(() => {
     const viewer = kind.value;
 
-    return viewer === 'image' || viewer === 'video' || viewer === 'pdf'
+    return viewer === "image" || viewer === "video" || viewer === "pdf"
         ? {
               id: props.attachment.id,
               kind: viewer,
@@ -255,12 +255,8 @@ const viewerItem = computed<ViewerItem | null>(() => {
 
 function openViewer(event?: MouseEvent): void {
     if (
-        props.sticker ||
-        (event &&
-            (event.ctrlKey ||
-                event.metaKey ||
-                event.shiftKey ||
-                event.button !== 0))
+        event &&
+        (event.ctrlKey || event.metaKey || event.shiftKey || event.button !== 0)
     ) {
         return;
     }
@@ -287,7 +283,7 @@ useIntersectionObserver(
             near.value = true;
         }
     },
-    { rootMargin: '300px' },
+    { rootMargin: "300px" },
 );
 
 const video = ref<HTMLVideoElement | null>(null);
@@ -317,7 +313,7 @@ async function playVideo(): Promise<void> {
     try {
         await element.play();
     } catch (error) {
-        if ((error as DOMException | null)?.name !== 'AbortError') {
+        if ((error as DOMException | null)?.name !== "AbortError") {
             playing.value = false;
         }
     }
@@ -380,7 +376,7 @@ function pauseVideo(): void {
                 :class="sticker ? 'rounded-lg' : 'rounded-xl'"
                 :aria-label="
                     sticker
-                        ? `Abrir ${stickerLabel.toLowerCase()} en una pestaña nueva`
+                        ? `Ver ${stickerLabel.toLowerCase()} en grande`
                         : `Abrir imagen ${name}`
                 "
                 @click="openViewer"

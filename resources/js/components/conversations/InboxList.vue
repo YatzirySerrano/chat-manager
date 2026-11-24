@@ -5,35 +5,38 @@ import {
     Inbox,
     MailWarning,
     MessageCircleReply,
-} from '@lucide/vue';
-import { useDebounceFn, useMediaQuery, watchDebounced } from '@vueuse/core';
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
-import AcceptBlockNotice from '@/components/conversations/AcceptBlockNotice.vue';
-import InboxFilterPanel from '@/components/conversations/InboxFilterPanel.vue';
-import InboxFilterSurface from '@/components/conversations/InboxFilterSurface.vue';
+    MessageSquarePlus,
+} from "@lucide/vue";
+import { useDebounceFn, useMediaQuery, watchDebounced } from "@vueuse/core";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import AcceptBlockNotice from "@/components/conversations/AcceptBlockNotice.vue";
+import InboxFilterPanel from "@/components/conversations/InboxFilterPanel.vue";
+import InboxFilterSurface from "@/components/conversations/InboxFilterSurface.vue";
 import {
     MAX_FILTER_TAGS,
     isClosedStatus,
-} from '@/components/conversations/inboxFilters';
-import type { InboxFilterState } from '@/components/conversations/inboxFilters';
-import InboxListItem from '@/components/conversations/InboxListItem.vue';
-import InboxTagsDialog from '@/components/conversations/InboxTagsDialog.vue';
-import ExportMenu from '@/components/ExportMenu.vue';
-import ActiveFilters from '@/components/filters/ActiveFilters.vue';
-import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
-import FilterSearch from '@/components/filters/FilterSearch.vue';
-import FilterTabs from '@/components/filters/FilterTabs.vue';
-import FilterToggle from '@/components/filters/FilterToggle.vue';
+} from "@/components/conversations/inboxFilters";
+import type { InboxFilterState } from "@/components/conversations/inboxFilters";
+import InboxListItem from "@/components/conversations/InboxListItem.vue";
+import InboxTagsDialog from "@/components/conversations/InboxTagsDialog.vue";
+import StartChatDialog from "@/components/conversations/StartChatDialog.vue";
+import ExportMenu from "@/components/ExportMenu.vue";
+import ActiveFilters from "@/components/filters/ActiveFilters.vue";
+import FilteredEmpty from "@/components/filters/FilteredEmpty.vue";
+import FilterSearch from "@/components/filters/FilterSearch.vue";
+import FilterTabs from "@/components/filters/FilterTabs.vue";
+import FilterToggle from "@/components/filters/FilterToggle.vue";
 import type {
     ActiveFilterPill,
     FilterTabOption,
-} from '@/components/filters/types';
-import ListSkeleton from '@/components/filters/ListSkeleton.vue';
-import { useRowMotion } from '@/components/filters/useRowMotion';
-import { useSelectionGlider } from '@/components/filters/useSelectionGlider';
-import { Button } from '@/components/ui/button';
-import { colorPresentations } from '@/lib/colors';
-import { formatPhone } from '@/lib/phone';
+} from "@/components/filters/types";
+import ListSkeleton from "@/components/filters/ListSkeleton.vue";
+import { useRowMotion } from "@/components/filters/useRowMotion";
+import { useSelectionGlider } from "@/components/filters/useSelectionGlider";
+import { Button } from "@/components/ui/button";
+import { colorPresentations } from "@/lib/colors";
+import { usePermissions } from "@/composables/usePermissions";
+import { formatPhone } from "@/lib/phone";
 import type {
     AppColor,
     ConnectionChannel,
@@ -49,7 +52,7 @@ import type {
     InboxView,
     InboxViewer,
     TagOption,
-} from '@/types';
+} from "@/types";
 
 /**
  * Left panel of the inbox, built for someone who answers all day and has to
@@ -140,7 +143,7 @@ const emit = defineEmits<{
     preview: [conversation: ConversationSummary];
 }>();
 
-const ALL = '';
+const ALL = "";
 
 function fromFilters(filters: ConversationFilters): InboxFilterState {
     return {
@@ -152,7 +155,7 @@ function fromFilters(filters: ConversationFilters): InboxFilterState {
             filters.connection === null ? ALL : String(filters.connection),
         channel: filters.channel ?? ALL,
         tags: [...(filters.tags ?? [])],
-        tagMatch: filters.tag_match ?? 'any',
+        tagMatch: filters.tag_match ?? "any",
         sort: filters.sort,
         searchIn: filters.search_in,
         unread: filters.unread,
@@ -188,9 +191,9 @@ const defaultView = computed(() => props.inbox.views[0]);
  * people who attend conversations on their general inbox.
  */
 const baseView = computed<InboxView>(() =>
-    defaultView.value === 'general' ? 'general' : 'all',
+    defaultView.value === "general" ? "general" : "all",
 );
-const isGeneral = computed(() => baseView.value === 'general');
+const isGeneral = computed(() => baseView.value === "general");
 
 /*
  * The order each view opens with (ConversationInboxQuery::defaultSort()):
@@ -198,9 +201,9 @@ const isGeneral = computed(() => baseView.value === 'general');
  * own ones oldest first.
  */
 function defaultSort(view: InboxView): ConversationSort {
-    return view === 'mine' ? 'oldest' : 'recent';
+    return view === "mine" ? "oldest" : "recent";
 }
-const hasMine = computed(() => props.inbox.views.includes('mine'));
+const hasMine = computed(() => props.inbox.views.includes("mine"));
 const channels = computed(() => props.filterOptions.channels);
 const showChannels = computed(() => channels.value.length > 1);
 const showAgents = computed(
@@ -212,88 +215,88 @@ const showAgents = computed(
  * "visible": the whole organization, their departments, or only their own.
  */
 const allLabel = computed(() =>
-    props.inbox.scope === 'global'
-        ? 'Todas las conversaciones'
-        : props.inbox.scope === 'departments'
-          ? 'Conversaciones de mis departamentos'
-          : 'Mis conversaciones',
+    props.inbox.scope === "global"
+        ? "Todas las conversaciones"
+        : props.inbox.scope === "departments"
+          ? "Conversaciones de mis departamentos"
+          : "Mis conversaciones",
 );
 
 const viewLabels = computed<Record<InboxView, string>>(() => ({
-    general: isGeneral.value ? 'Bandeja general' : 'Por atender',
-    mine: 'Mis conversaciones',
+    general: isGeneral.value ? "Bandeja general" : "Por atender",
+    mine: "Mis conversaciones",
     all: allLabel.value,
-    queue: isGeneral.value ? 'Bandeja general' : 'Por atender',
+    queue: isGeneral.value ? "Bandeja general" : "Por atender",
 }));
 
 /* What the base tab holds, in the viewer's reach. */
 const baseTitle = computed(() => {
     if (isGeneral.value) {
-        return 'Todo lo que espera por ti: las pendientes que puedes aceptar y las que atiendes.';
+        return "Todo lo que espera por ti: las pendientes que puedes aceptar y las que atiendes.";
     }
 
-    if (props.inbox.scope === 'global') {
-        return 'Las conversaciones activas de toda la organización, sin importar quién las atienda, su departamento o su conexión.';
+    if (props.inbox.scope === "global") {
+        return "Las conversaciones activas de toda la organización, sin importar quién las atienda, su departamento o su conexión.";
     }
 
-    if (props.inbox.scope === 'departments') {
+    if (props.inbox.scope === "departments") {
         return props.inbox.supervises
-            ? 'Las conversaciones activas de tus departamentos y las que pasaron por ellos, sin importar quién las atienda.'
-            : 'Las conversaciones activas de tus departamentos, sin importar quién las atienda.';
+            ? "Las conversaciones activas de tus departamentos y las que pasaron por ellos, sin importar quién las atienda."
+            : "Las conversaciones activas de tus departamentos, sin importar quién las atienda.";
     }
 
-    return 'Las conversaciones activas que tienes asignadas.';
+    return "Las conversaciones activas que tienes asignadas.";
 });
 
 const pendingTitle = computed(() => {
     if (isGeneral.value) {
-        return 'Conversaciones que esperan a que alguien de tu departamento las acepte. No incluye las que atienden tus compañeros.';
+        return "Conversaciones que esperan a que alguien de tu departamento las acepte. No incluye las que atienden tus compañeros.";
     }
 
-    return props.inbox.scope === 'global'
-        ? 'Conversaciones de toda la organización que esperan a que alguien las acepte.'
-        : props.inbox.scope === 'departments'
-          ? 'Conversaciones de tus departamentos que esperan a que alguien las acepte.'
-          : 'Conversaciones que esperan a que alguien las acepte.';
+    return props.inbox.scope === "global"
+        ? "Conversaciones de toda la organización que esperan a que alguien las acepte."
+        : props.inbox.scope === "departments"
+          ? "Conversaciones de tus departamentos que esperan a que alguien las acepte."
+          : "Conversaciones que esperan a que alguien las acepte.";
 });
 
 const statusLabels: Record<string, string> = {
-    active: 'Todas las activas',
-    pending: 'Pendientes',
-    open: 'En atención',
-    closed: 'Cerradas',
-    completed: 'Solicitudes completadas',
-    all: 'Todos los estados',
+    active: "Todas las activas",
+    pending: "Pendientes",
+    open: "En atención",
+    closed: "Cerradas",
+    completed: "Solicitudes completadas",
+    all: "Todos los estados",
 };
 
 /* Estado options; "Mis conversaciones" never holds pending ones. */
 const statusOptions = computed<
     { value: ConversationStatusFilter; label: string }[]
 >(() => {
-    const values: ConversationStatusFilter[] = ['active'];
+    const values: ConversationStatusFilter[] = ["active"];
 
-    if (draft.view !== 'mine') {
-        values.push('pending');
+    if (draft.view !== "mine") {
+        values.push("pending");
     }
 
-    values.push('open');
+    values.push("open");
 
     if (props.canSeeClosed) {
-        values.push('closed', 'completed');
+        values.push("closed", "completed");
     }
 
     return values.map((value) => ({ value, label: statusLabels[value] }));
 });
 
 const sortOptions: { value: ConversationSort; label: string }[] = [
-    { value: 'recent', label: 'Actividad más reciente' },
-    { value: 'priority', label: 'Pendientes primero' },
-    { value: 'oldest', label: 'Esperando hace más tiempo' },
+    { value: "recent", label: "Actividad más reciente" },
+    { value: "priority", label: "Pendientes primero" },
+    { value: "oldest", label: "Esperando hace más tiempo" },
 ];
 
 const searchScopes: { value: ConversationSearchScope; label: string }[] = [
-    { value: 'contact', label: 'Nombre, teléfono o correo del contacto' },
-    { value: 'messages', label: 'Contenido de los mensajes' },
+    { value: "contact", label: "Nombre, teléfono o correo del contacto" },
+    { value: "messages", label: "Contenido de los mensajes" },
 ];
 
 const plural = (count: number, one: string, many: string): string =>
@@ -301,38 +304,38 @@ const plural = (count: number, one: string, many: string): string =>
 
 /* ---- Tabs: the view + status pairs the server offers. ---- */
 
-type InboxTab = 'base' | 'pending' | 'attending' | 'mine' | 'closed';
+type InboxTab = "base" | "pending" | "attending" | "mine" | "closed";
 
 /** The tab the filters belong to, or null (a combination of the panel). */
 function tabOf(filters: InboxFilterState): InboxTab | null {
     const base = filters.view === baseView.value;
 
-    if (base && filters.status === 'active') {
-        return 'base';
+    if (base && filters.status === "active") {
+        return "base";
     }
 
-    if (base && filters.status === 'pending') {
-        return 'pending';
+    if (base && filters.status === "pending") {
+        return "pending";
     }
 
     if (
         !isGeneral.value &&
-        filters.view === 'all' &&
-        filters.status === 'open'
+        filters.view === "all" &&
+        filters.status === "open"
     ) {
-        return 'attending';
+        return "attending";
     }
 
     if (
         hasMine.value &&
-        filters.view === 'mine' &&
-        filters.status === 'active'
+        filters.view === "mine" &&
+        filters.status === "active"
     ) {
-        return 'mine';
+        return "mine";
     }
 
     if (props.canSeeClosed && base && isClosedStatus(filters.status)) {
-        return 'closed';
+        return "closed";
     }
 
     return null;
@@ -340,75 +343,75 @@ function tabOf(filters: InboxFilterState): InboxTab | null {
 
 const activeTab = computed(() => tabOf(state));
 const pendingCount = computed(() => props.counts.pending);
-const pendingActive = computed(() => activeTab.value === 'pending');
-const generalActive = computed(() => activeTab.value === 'base');
+const pendingActive = computed(() => activeTab.value === "pending");
+const generalActive = computed(() => activeTab.value === "base");
 const closedActive = computed(() => isClosedStatus(state.status));
 
 const tabs = computed<FilterTabOption<InboxTab>[]>(() => {
     const options: FilterTabOption<InboxTab>[] = [
         {
-            value: 'pending',
-            label: 'Pendientes',
+            value: "pending",
+            label: "Pendientes",
             icon: pendingCount.value > 0 ? Hourglass : undefined,
             count: pendingCount.value,
             attention: pendingCount.value > 0,
             title: pendingTitle.value,
             srLabel: `${pendingCount.value} por aceptar`,
             attrs: {
-                'data-inbox-chip': 'pending',
-                'data-tour': 'inbox.pending',
+                "data-inbox-chip": "pending",
+                "data-tour": "inbox.pending",
             },
         },
         {
-            value: 'base',
-            label: isGeneral.value ? 'Bandeja' : 'Todas',
+            value: "base",
+            label: isGeneral.value ? "Bandeja" : "Todas",
             count: props.counts.general,
             title: `${viewLabels.value[baseView.value]}. ${baseTitle.value}`,
             srLabel: plural(
                 props.counts.general,
-                'conversación activa',
-                'conversaciones activas',
+                "conversación activa",
+                "conversaciones activas",
             ),
-            attrs: { 'data-inbox-chip': 'base', 'data-tour': 'inbox.general' },
+            attrs: { "data-inbox-chip": "base", "data-tour": "inbox.general" },
         },
     ];
 
     if (!isGeneral.value) {
         options.push({
-            value: 'attending',
-            label: 'En atención',
+            value: "attending",
+            label: "En atención",
             count: props.counts.attending,
-            title: 'Conversaciones que alguien del equipo ya atiende.',
+            title: "Conversaciones que alguien del equipo ya atiende.",
             srLabel: plural(
                 props.counts.attending,
-                'conversación en atención',
-                'conversaciones en atención',
+                "conversación en atención",
+                "conversaciones en atención",
             ),
-            attrs: { 'data-inbox-chip': 'attending' },
+            attrs: { "data-inbox-chip": "attending" },
         });
     }
 
     if (hasMine.value) {
         options.push({
-            value: 'mine',
-            label: 'Mías',
+            value: "mine",
+            label: "Mías",
             count: props.counts.mine,
-            title: 'Las conversaciones que tienes asignadas.',
+            title: "Las conversaciones que tienes asignadas.",
             srLabel: plural(
                 props.counts.mine,
-                'conversación asignada a ti',
-                'conversaciones asignadas a ti',
+                "conversación asignada a ti",
+                "conversaciones asignadas a ti",
             ),
-            attrs: { 'data-inbox-chip': 'mine' },
+            attrs: { "data-inbox-chip": "mine" },
         });
     }
 
     if (props.canSeeClosed) {
         options.push({
-            value: 'closed',
-            label: 'Cerradas',
-            title: 'El historial de conversaciones cerradas, incluidas las solicitudes completadas.',
-            attrs: { 'data-inbox-chip': 'closed' },
+            value: "closed",
+            label: "Cerradas",
+            title: "El historial de conversaciones cerradas, incluidas las solicitudes completadas.",
+            attrs: { "data-inbox-chip": "closed" },
         });
     }
 
@@ -419,21 +422,21 @@ function chooseTab(tab: InboxTab): void {
     const patches: Record<InboxTab, Partial<InboxFilterState>> = {
         base: {
             view: baseView.value,
-            status: 'active',
+            status: "active",
             sort: defaultSort(baseView.value),
         },
         pending: {
             view: baseView.value,
-            status: 'pending',
+            status: "pending",
             sort: defaultSort(baseView.value),
         },
-        attending: { view: 'all', status: 'open', sort: defaultSort('all') },
+        attending: { view: "all", status: "open", sort: defaultSort("all") },
         // Their own requests, the one waiting the longest first.
-        mine: { view: 'mine', status: 'active', sort: defaultSort('mine') },
+        mine: { view: "mine", status: "active", sort: defaultSort("mine") },
         // Closed conversations are never unread nor waiting for an answer.
         closed: {
             view: baseView.value,
-            status: 'closed',
+            status: "closed",
             sort: defaultSort(baseView.value),
             unread: false,
             awaiting: false,
@@ -443,7 +446,7 @@ function chooseTab(tab: InboxTab): void {
     // A second click on the chosen tab goes back to the default one
     // («Pendientes»).
     if (tab === activeTab.value) {
-        if (tab !== 'pending') {
+        if (tab !== "pending") {
             change(patches.pending);
         }
 
@@ -461,18 +464,18 @@ function chooseTab(tab: InboxTab): void {
  * message. The region is emptied before each message, so a text equal to
  * the previous one is still a change the screen reader announces.
  */
-const pendingAnnouncement = ref('');
+const pendingAnnouncement = ref("");
 let pendingIncrease = 0;
 
 const announcePending = useDebounceFn(async () => {
     if (pendingIncrease > 0) {
         const message =
             pendingIncrease === 1
-                ? '1 conversación pendiente nueva'
+                ? "1 conversación pendiente nueva"
                 : `${pendingIncrease} conversaciones pendientes nuevas`;
 
         pendingIncrease = 0;
-        pendingAnnouncement.value = '';
+        pendingAnnouncement.value = "";
         await nextTick();
         pendingAnnouncement.value = message;
     }
@@ -494,7 +497,7 @@ watch(
  */
 const searchTooShort = computed(
     () =>
-        state.searchIn === 'messages' &&
+        state.searchIn === "messages" &&
         props.filters.search_ignored &&
         props.filters.search === search.value.trim(),
 );
@@ -511,17 +514,17 @@ function chipsOf(filters: InboxFilterState): ActiveFilterPill[] {
 
     if (!inTab && filters.view !== baseView.value) {
         chips.push({
-            key: 'view',
+            key: "view",
             label: `Vista: ${viewLabels.value[filters.view]}`,
             remove: () => (filters.view = baseView.value),
         });
     }
 
-    if (!inTab && filters.status !== 'pending') {
+    if (!inTab && filters.status !== "pending") {
         chips.push({
-            key: 'status',
+            key: "status",
             label: `Estado: ${statusLabels[filters.status] ?? filters.status}`,
-            remove: () => (filters.status = 'pending'),
+            remove: () => (filters.status = "pending"),
         });
     }
 
@@ -531,8 +534,8 @@ function chipsOf(filters: InboxFilterState): ActiveFilterPill[] {
         );
 
         chips.push({
-            key: 'department',
-            label: `Departamento: ${filters.department === 'none' ? 'Sin departamento' : (department?.name ?? 'No disponible')}`,
+            key: "department",
+            label: `Departamento: ${filters.department === "none" ? "Sin departamento" : (department?.name ?? "No disponible")}`,
             remove: () => (filters.department = ALL),
         });
     }
@@ -543,15 +546,15 @@ function chipsOf(filters: InboxFilterState): ActiveFilterPill[] {
         );
 
         chips.push({
-            key: 'agent',
-            label: `Responsable: ${filters.agent === 'none' ? 'Sin agente' : (agent?.name ?? 'No disponible')}`,
+            key: "agent",
+            label: `Responsable: ${filters.agent === "none" ? "Sin agente" : (agent?.name ?? "No disponible")}`,
             remove: () => (filters.agent = ALL),
         });
     }
 
     if (filters.channel !== ALL) {
         chips.push({
-            key: 'channel',
+            key: "channel",
             label: `Canal: ${channels.value.find((option) => option.value === filters.channel)?.label ?? filters.channel}`,
             remove: () => (filters.channel = ALL),
         });
@@ -563,19 +566,19 @@ function chipsOf(filters: InboxFilterState): ActiveFilterPill[] {
         );
 
         chips.push({
-            key: 'category',
-            label: `Categoría: ${category?.name ?? 'No disponible'}`,
+            key: "category",
+            label: `Categoría: ${category?.name ?? "No disponible"}`,
             remove: () => (filters.category = ALL),
         });
     }
 
     if (filters.readiness !== ALL) {
         chips.push({
-            key: 'readiness',
+            key: "readiness",
             label:
-                filters.readiness === 'needs_info'
-                    ? 'Necesita información'
-                    : 'Lista para atención',
+                filters.readiness === "needs_info"
+                    ? "Necesita información"
+                    : "Lista para atención",
             remove: () => (filters.readiness = ALL),
         });
     }
@@ -586,8 +589,8 @@ function chipsOf(filters: InboxFilterState): ActiveFilterPill[] {
         );
 
         chips.push({
-            key: 'connection',
-            label: `Conexión: ${connection ? `${connection.name}${connection.display_phone_number ? ` · ${formatPhone(connection.display_phone_number)}` : ''}` : 'No disponible'}`,
+            key: "connection",
+            label: `Conexión: ${connection ? `${connection.name}${connection.display_phone_number ? ` · ${formatPhone(connection.display_phone_number)}` : ""}` : "No disponible"}`,
             remove: () => (filters.connection = ALL),
         });
     }
@@ -595,24 +598,24 @@ function chipsOf(filters: InboxFilterState): ActiveFilterPill[] {
     for (const id of filters.tags) {
         chips.push({
             key: `tag-${id}`,
-            label: `Etiqueta: ${props.tags.find((tag) => tag.id === id)?.name ?? 'No disponible'}`,
+            label: `Etiqueta: ${props.tags.find((tag) => tag.id === id)?.name ?? "No disponible"}`,
             remove: () =>
                 (filters.tags = filters.tags.filter((tag) => tag !== id)),
         });
     }
 
     // "At least one tag" is the default; only the AND mode is a pill.
-    if (filters.tags.length > 1 && filters.tagMatch === 'all') {
+    if (filters.tags.length > 1 && filters.tagMatch === "all") {
         chips.push({
-            key: 'tag-match',
-            label: 'Tiene todas las etiquetas elegidas',
-            remove: () => (filters.tagMatch = 'any'),
+            key: "tag-match",
+            label: "Tiene todas las etiquetas elegidas",
+            remove: () => (filters.tagMatch = "any"),
         });
     }
 
     if (filters.sort !== defaultSort(filters.view)) {
         chips.push({
-            key: 'sort',
+            key: "sort",
             label: `Orden: ${sortOptions.find((option) => option.value === filters.sort)?.label ?? filters.sort}`,
             remove: () => (filters.sort = defaultSort(filters.view)),
         });
@@ -639,7 +642,7 @@ const appliedChips = computed<ActiveFilterPill[]>(() =>
  * combination mode refines the tags: it is not one more filter.
  */
 const countOf = (filters: InboxFilterState): number =>
-    chipsOf(filters).filter((chip) => chip.key !== 'tag-match').length +
+    chipsOf(filters).filter((chip) => chip.key !== "tag-match").length +
     (filters.unread ? 1 : 0) +
     (filters.awaiting ? 1 : 0);
 
@@ -655,8 +658,8 @@ const isNarrowed = computed(
         appliedChips.value.length > 0 ||
         state.unread ||
         state.awaiting ||
-        state.status === 'completed' ||
-        search.value.trim() !== '',
+        state.status === "completed" ||
+        search.value.trim() !== "",
 );
 
 /* «Limpiar filtros»: anything but the default tab with nothing else. */
@@ -678,19 +681,19 @@ function query(): Record<string, string | string[]> {
     }
 
     // No status is the default «Pendientes» list.
-    if (state.status !== 'pending') {
+    if (state.status !== "pending") {
         result.status = state.status;
     }
 
     for (const key of [
-        'department',
-        'agent',
-        'connection',
-        'channel',
-        'category',
-        'readiness',
+        "department",
+        "agent",
+        "connection",
+        "channel",
+        "category",
+        "readiness",
     ] as const) {
-        if (state[key] !== ALL && !(key === 'agent' && props.inbox.personal)) {
+        if (state[key] !== ALL && !(key === "agent" && props.inbox.personal)) {
             result[key] = state[key];
         }
     }
@@ -698,8 +701,8 @@ function query(): Record<string, string | string[]> {
     if (state.tags.length > 0) {
         result.tags = state.tags.map(String);
 
-        if (state.tagMatch === 'all' && state.tags.length > 1) {
-            result.tag_match = 'all';
+        if (state.tagMatch === "all" && state.tags.length > 1) {
+            result.tag_match = "all";
         }
     }
 
@@ -708,17 +711,17 @@ function query(): Record<string, string | string[]> {
     }
 
     if (state.unread) {
-        result.unread = '1';
+        result.unread = "1";
     }
 
     if (state.awaiting) {
-        result.awaiting = '1';
+        result.awaiting = "1";
     }
 
-    if (search.value.trim() !== '') {
+    if (search.value.trim() !== "") {
         result.search = search.value.trim();
 
-        if (state.searchIn !== 'contact') {
+        if (state.searchIn !== "contact") {
             result.search_in = state.searchIn;
         }
     }
@@ -727,22 +730,22 @@ function query(): Record<string, string | string[]> {
 }
 
 function apply(): void {
-    emit('filter', query());
+    emit("filter", query());
 }
 
 /*
  * The applied filters are announced politely, in their own region (never
  * mixed with the pending conversations announcement).
  */
-const filtersAnnouncement = ref('');
+const filtersAnnouncement = ref("");
 
 async function announceFilters(): Promise<void> {
     const count = activeFilterCount.value;
 
-    filtersAnnouncement.value = '';
+    filtersAnnouncement.value = "";
     await nextTick();
     filtersAnnouncement.value =
-        count === 0 ? 'Sin filtros aplicados' : `Filtros aplicados: ${count}`;
+        count === 0 ? "Sin filtros aplicados" : `Filtros aplicados: ${count}`;
 }
 
 watchDebounced(search, apply, { debounce: 300 });
@@ -751,14 +754,14 @@ function change(patch: Partial<InboxFilterState>): void {
     Object.assign(state, patch);
 
     // "Mis conversaciones" never holds pending ones.
-    if (state.view === 'mine' && state.status === 'pending') {
-        state.status = 'active';
+    if (state.view === "mine" && state.status === "pending") {
+        state.status = "active";
     }
 
     if (
-        'searchIn' in patch &&
+        "searchIn" in patch &&
         Object.keys(patch).length === 1 &&
-        search.value.trim() === ''
+        search.value.trim() === ""
     ) {
         return;
     }
@@ -770,8 +773,8 @@ function change(patch: Partial<InboxFilterState>): void {
 function changeDraft(patch: Partial<InboxFilterState>): void {
     Object.assign(draft, patch);
 
-    if (draft.view === 'mine' && draft.status === 'pending') {
-        draft.status = 'active';
+    if (draft.view === "mine" && draft.status === "pending") {
+        draft.status = "active";
     }
 }
 
@@ -789,8 +792,8 @@ function applyDraft(): void {
  * An agent of a single department never sees it.
  */
 const departmentChips = computed(() =>
-    props.filters.space !== 'web' &&
-    (props.inbox.scope === 'global' || props.inbox.scope === 'departments') &&
+    props.filters.space !== "web" &&
+    (props.inbox.scope === "global" || props.inbox.scope === "departments") &&
     props.departments.length > 1
         ? props.departments.filter((department) => department.is_active)
         : [],
@@ -811,21 +814,21 @@ function toggleAwaiting(): void {
 }
 
 function toggleCompleted(): void {
-    change({ status: state.status === 'completed' ? 'closed' : 'completed' });
+    change({ status: state.status === "completed" ? "closed" : "completed" });
 }
 
 function defaults(): InboxFilterState {
     return {
         view: defaultView.value,
-        status: 'pending',
+        status: "pending",
         department: ALL,
         agent: ALL,
         connection: ALL,
         channel: ALL,
         tags: [],
-        tagMatch: 'any',
+        tagMatch: "any",
         sort: defaultSort(defaultView.value),
-        searchIn: 'contact',
+        searchIn: "contact",
         unread: false,
         awaiting: false,
         category: ALL,
@@ -835,7 +838,7 @@ function defaults(): InboxFilterState {
 
 function clearFilters(): void {
     Object.assign(state, defaults());
-    search.value = '';
+    search.value = "";
     filtersOpen.value = false;
     apply();
     void announceFilters();
@@ -843,7 +846,7 @@ function clearFilters(): void {
 
 /* Shortcuts of the empty chat pane (pages/conversations/Index). */
 function showPending(): void {
-    change({ view: baseView.value, status: 'pending' });
+    change({ view: baseView.value, status: "pending" });
 }
 
 function showUnread(): void {
@@ -856,7 +859,7 @@ defineExpose({ query, showPending, showUnread });
  * "Filtros": a popover on wide screens, a bottom sheet on phones and on
  * very short windows (200 % zoom and up), where a popover has no room.
  */
-const compact = useMediaQuery('(max-width: 639px), (max-height: 499px)');
+const compact = useMediaQuery("(max-width: 639px), (max-height: 499px)");
 const filtersOpen = ref(false);
 
 /*
@@ -903,7 +906,7 @@ const listElement = ref<{ $el: HTMLElement } | null>(null);
 function rowElements(): HTMLElement[] {
     return [
         ...(listElement.value?.$el.querySelectorAll<HTMLElement>(
-            '[data-inbox-item]',
+            "[data-inbox-item]",
         ) ?? []),
     ];
 }
@@ -913,7 +916,7 @@ function focusFirstRow(): void {
 }
 
 function onListKeydown(event: KeyboardEvent): void {
-    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         return;
     }
 
@@ -927,18 +930,18 @@ function onListKeydown(event: KeyboardEvent): void {
     event.preventDefault();
 
     // Arrow up from the first row goes back to the search box.
-    if (event.key === 'ArrowUp' && index === 0) {
+    if (event.key === "ArrowUp" && index === 0) {
         searchBox.value?.focus();
 
         return;
     }
 
     const next =
-        event.key === 'Home'
+        event.key === "Home"
             ? 0
-            : event.key === 'End'
+            : event.key === "End"
               ? items.length - 1
-              : event.key === 'ArrowDown'
+              : event.key === "ArrowDown"
                 ? Math.min(items.length - 1, index + 1)
                 : Math.max(0, index - 1);
 
@@ -969,7 +972,7 @@ function onScroll(event: Event): void {
         !props.loading &&
         element.scrollHeight - element.scrollTop - element.clientHeight < 160
     ) {
-        emit('loadMore');
+        emit("loadMore");
     }
 }
 
@@ -991,57 +994,62 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
 
 /* The applied contact search, marked in the rows' names. */
 const highlight = computed(() =>
-    props.filters.search_in === 'contact' ? props.filters.search : '',
+    props.filters.search_in === "contact" ? props.filters.search : "",
 );
 
 const emptyCopy = computed(() => {
-    if (state.status === 'completed') {
+    if (state.status === "completed") {
         return {
-            title: 'Aún no hay solicitudes completadas',
-            description: 'Aquí verás las cerradas como completadas.',
+            title: "Aún no hay solicitudes completadas",
+            description: "Aquí verás las cerradas como completadas.",
         };
     }
 
     if (closedActive.value) {
         return {
-            title: 'No hay conversaciones cerradas',
-            description: 'Aquí queda el historial de las cerradas.',
+            title: "No hay conversaciones cerradas",
+            description: "Aquí queda el historial de las cerradas.",
         };
     }
 
     if (pendingActive.value) {
         return {
-            title: 'No hay pendientes por aceptar',
+            title: "No hay pendientes por aceptar",
             description: isGeneral.value
-                ? 'Las asignadas a ti llegarán a tu bandeja.'
-                : 'Los clientes nuevos aparecerán aquí.',
+                ? "Las asignadas a ti llegarán a tu bandeja."
+                : "Los clientes nuevos aparecerán aquí.",
         };
     }
 
     if (generalActive.value && isGeneral.value) {
         return {
-            title: 'Tu bandeja está al día',
-            description: 'Sin pendientes ni conversaciones en atención.',
+            title: "Tu bandeja está al día",
+            description: "Sin pendientes ni conversaciones en atención.",
         };
     }
 
     return {
-        title: 'No hay conversaciones aquí',
+        title: "No hay conversaciones aquí",
         description:
-            props.inbox.scope === 'global'
-                ? 'Llegan cuando un cliente escribe a cualquier conexión.'
-                : 'Llegan cuando un cliente escribe a tus conexiones.',
+            props.inbox.scope === "global"
+                ? "Llegan cuando un cliente escribe a cualquier conexión."
+                : "Llegan cuando un cliente escribe a tus conexiones.",
     };
 });
 
 const searchPlaceholder = computed(() =>
-    state.searchIn === 'messages'
-        ? 'Buscar en los mensajes'
-        : 'Buscar nombre, teléfono o correo',
+    state.searchIn === "messages"
+        ? "Buscar en los mensajes"
+        : "Buscar nombre, teléfono o correo",
 );
 
 const scopeButton =
-    'h-6 rounded-md px-2 text-xs font-medium outline-none transition-colors duration-(--duration-fast) focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-8';
+    "h-6 rounded-md px-2 text-xs font-medium outline-none transition-colors duration-(--duration-fast) focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-8";
+
+/* «Iniciar chat»: write first to a contact or a number through WhatsApp. */
+const { can } = usePermissions();
+const canStartChat = computed(() => can("conversations.reply"));
+const startChatOpen = ref(false);
 </script>
 
 <template>
@@ -1056,7 +1064,7 @@ const scopeButton =
             <!-- The page header already names the module: this title is for screen readers. -->
             <h1 class="sr-only">
                 {{
-                    filters.space === 'web' ? 'Mensajes web' : 'Conversaciones'
+                    filters.space === "web" ? "Mensajes web" : "Conversaciones"
                 }}
             </h1>
 
@@ -1107,6 +1115,19 @@ const scopeButton =
                         @change="changeDraft"
                     />
                 </InboxFilterSurface>
+
+                <Button
+                    v-if="canStartChat && filters.space !== 'web'"
+                    type="button"
+                    size="icon"
+                    class="shrink-0"
+                    title="Iniciar chat"
+                    aria-label="Iniciar chat"
+                    data-start-chat
+                    @click="startChatOpen = true"
+                >
+                    <MessageSquarePlus aria-hidden="true" />
+                </Button>
 
                 <ExportMenu
                     v-if="canExport"
@@ -1405,5 +1426,6 @@ const scopeButton =
             :conversation="taggedConversation"
             :available="tags"
         />
+        <StartChatDialog v-if="canStartChat" v-model:open="startChatOpen" />
     </section>
 </template>

@@ -209,6 +209,12 @@ class RegisterInboundContact
 
             if ($sender->profileName !== null) {
                 $contact->profile_name = $sender->profileName;
+
+                // An unsaved contact still named automatically takes the
+                // profile name; a name somebody chose is never replaced.
+                if (! $contact->isSaved() && ConnectionChannel::isAutomaticWhatsAppName($contact->name)) {
+                    $contact->name = mb_substr($sender->profileName, 0, 160);
+                }
             }
         }
 

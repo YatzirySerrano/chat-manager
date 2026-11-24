@@ -27,7 +27,15 @@ final class ViewerAlias
      */
     public static function load(Conversation|Collection $conversations, User $viewer): void
     {
-        $conversations->load(['contact.aliases' => function (Relation $query) use ($viewer): void {
+        $conversations = $conversations instanceof Conversation ? new Collection([$conversations]) : $conversations;
+
+        // Contacts already loaded are kept (with what was loaded on them,
+        // such as the WhatsApp profile picture); only missing ones are read.
+        $conversations->loadMissing('contact');
+
+        $contacts = new Collection($conversations->pluck('contact')->filter()->unique(fn (Contact $contact): int => spl_object_id($contact))->values()->all());
+
+        $contacts->load(['aliases' => function (Relation $query) use ($viewer): void {
             $query->where('user_id', $viewer->id);
         }]);
     }

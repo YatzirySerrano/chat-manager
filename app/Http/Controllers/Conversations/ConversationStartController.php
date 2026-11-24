@@ -99,14 +99,28 @@ class ConversationStartController extends Controller
             'contacts' => $contacts->map(fn (Contact $contact): array => [
                 'id' => $contact->id,
                 'name' => $contact->name,
-                'phone' => PhoneNumber::format($contact->phone_e164 ?? '+'.ltrim((string) $contact->whatsappIdentity?->external_id, '+'))
-                    ?? $contact->phone_e164,
+                'phone' => self::visiblePhone($contact),
                 'avatar_url' => WhatsAppWebContactProfiles::contactAvatarUrl($contact),
                 'last_interaction_at' => $contact->last_interaction_at?->toIso8601String(),
             ])->values(),
             // A typed number the dialog can offer to write to directly.
             'typed_phone' => $term !== '' ? PhoneNumber::normalize($term) : null,
         ]);
+    }
+
+    /**
+     * The contact's phone, or the digits of its WhatsApp id when it is a
+     * phone. A privacy id (LID, "lid:…") is never shown as a number.
+     */
+    private static function visiblePhone(Contact $contact): ?string
+    {
+        if ($contact->phone_e164 !== null) {
+            return PhoneNumber::format($contact->phone_e164) ?? $contact->phone_e164;
+        }
+
+        $id = (string) $contact->whatsappIdentity?->external_id;
+
+        return ctype_digit($id) ? PhoneNumber::format('+'.$id) : null;
     }
 
     public function store(Request $request, StartConversation $start): RedirectResponse

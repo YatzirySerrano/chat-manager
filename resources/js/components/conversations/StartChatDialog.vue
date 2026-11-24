@@ -471,7 +471,11 @@ const recipientError = computed(
                                 <p
                                     class="truncate text-sm text-muted-foreground"
                                 >
-                                    {{ selected?.phone ?? typedNumber }}
+                                    {{
+                                        selected?.phone ??
+                                        typedNumber ??
+                                        "Número oculto por WhatsApp"
+                                    }}
                                 </p>
                             </div>
                             <Button
@@ -612,7 +616,10 @@ const recipientError = computed(
                                             >
                                             <span
                                                 class="block truncate text-xs text-muted-foreground"
-                                                >{{ item.phone }}</span
+                                                >{{
+                                                    item.phone ??
+                                                    "Número oculto por WhatsApp"
+                                                }}</span
                                             >
                                         </span>
                                     </button>

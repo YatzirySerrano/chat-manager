@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link } from "@inertiajs/vue3";
 import {
     CalendarClock,
     History,
@@ -11,40 +11,40 @@ import {
     Trash2,
     UserPlus,
     UserRoundSearch,
-} from '@lucide/vue';
-import { computed, ref } from 'vue';
-import ClassifyOriginDialog from '@/components/contacts/ClassifyOriginDialog.vue';
-import ContactFormDialog from '@/components/contacts/ContactFormDialog.vue';
-import ContactNotesCard from '@/components/contacts/ContactNotesCard.vue';
-import ContactOriginCard from '@/components/contacts/ContactOriginCard.vue';
-import SaveContactDialog from '@/components/contacts/SaveContactDialog.vue';
-import UnsavedContactBadge from '@/components/contacts/UnsavedContactBadge.vue';
-import WhatsAppProfileCard from '@/components/contacts/WhatsAppProfileCard.vue';
-import ConfirmDialog from '@/components/ConfirmDialog.vue';
-import ChannelIcon from '@/components/connections/ChannelIcon.vue';
-import DeletedBadge from '@/components/DeletedBadge.vue';
-import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
-import DepartmentTag from '@/components/DepartmentTag.vue';
-import DirectoryAvatar from '@/components/directory/DirectoryAvatar.vue';
-import DirectoryHero from '@/components/directory/DirectoryHero.vue';
-import EmptyState from '@/components/EmptyState.vue';
-import PageHeader from '@/components/PageHeader.vue';
-import StatusNote from '@/components/StatusNote.vue';
-import SurfaceCard from '@/components/SurfaceCard.vue';
-import TagPicker from '@/components/tags/TagPicker.vue';
-import { Button } from '@/components/ui/button';
-import { useRecordDeletion } from '@/composables/useRecordDeletion';
-import { contactDeletionCopy } from '@/lib/deletionCopy';
-import { formatDateTime, formatRelative } from '@/lib/format';
-import { formatPhone } from '@/lib/phone';
+} from "@lucide/vue";
+import { computed, ref } from "vue";
+import ClassifyOriginDialog from "@/components/contacts/ClassifyOriginDialog.vue";
+import ContactFormDialog from "@/components/contacts/ContactFormDialog.vue";
+import ContactNotesCard from "@/components/contacts/ContactNotesCard.vue";
+import ContactOriginCard from "@/components/contacts/ContactOriginCard.vue";
+import SaveContactDialog from "@/components/contacts/SaveContactDialog.vue";
+import UnsavedContactBadge from "@/components/contacts/UnsavedContactBadge.vue";
+import WhatsAppProfileCard from "@/components/contacts/WhatsAppProfileCard.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
+import ChannelIcon from "@/components/connections/ChannelIcon.vue";
+import DeletedBadge from "@/components/DeletedBadge.vue";
+import DeletedRecordNotice from "@/components/DeletedRecordNotice.vue";
+import DepartmentTag from "@/components/DepartmentTag.vue";
+import DirectoryAvatar from "@/components/directory/DirectoryAvatar.vue";
+import DirectoryHero from "@/components/directory/DirectoryHero.vue";
+import EmptyState from "@/components/EmptyState.vue";
+import PageHeader from "@/components/PageHeader.vue";
+import StatusNote from "@/components/StatusNote.vue";
+import SurfaceCard from "@/components/SurfaceCard.vue";
+import TagPicker from "@/components/tags/TagPicker.vue";
+import { Button } from "@/components/ui/button";
+import { useRecordDeletion } from "@/composables/useRecordDeletion";
+import { contactDeletionCopy } from "@/lib/deletionCopy";
+import { formatDateTime, formatRelative } from "@/lib/format";
+import { formatPhone } from "@/lib/phone";
 import {
     destroy as destroyContact,
     index as contactsIndex,
     restore as restoreContact,
     save as saveContact,
     show,
-} from '@/routes/contacts';
-import '@/components/filters/filters.css';
+} from "@/routes/contacts";
+import "@/components/filters/filters.css";
 import type {
     ConnectionChannel,
     Contact,
@@ -57,7 +57,7 @@ import type {
     ContactReceivingConnection,
     ContactTag,
     WhatsAppProfile,
-} from '@/types';
+} from "@/types";
 
 const props = defineProps<{
     contact: Contact;
@@ -87,7 +87,7 @@ const props = defineProps<{
 defineOptions({
     layout: (pageProps: { contact: Contact }) => ({
         breadcrumbs: [
-            { title: 'Contactos', href: contactsIndex() },
+            { title: "Contactos", href: contactsIndex() },
             { title: pageProps.contact.name, href: show(pageProps.contact.id) },
         ],
     }),
@@ -108,11 +108,11 @@ const channels = computed(() => [
 ]);
 
 const KNOWN_CHANNELS: ConnectionChannel[] = [
-    'whatsapp',
-    'messenger',
-    'instagram',
-    'telegram',
-    'web_chat',
+    "whatsapp",
+    "messenger",
+    "instagram",
+    "telegram",
+    "web_chat",
 ];
 
 /* One chip per channel the person used, with its brand color. */
@@ -144,14 +144,14 @@ const customFields = computed(() =>
 
 const hasConfirmedOrigin = computed(() =>
     props.origin.history.some(
-        (item) => item.reliability === 'provider_confirmed',
+        (item) => item.reliability === "provider_confirmed",
     ),
 );
 
-const conversationTone: Record<ContactConversation['status'], string> = {
-    pending: 'bg-warning-soft text-warning-soft-foreground',
-    open: 'bg-success-soft text-success-soft-foreground',
-    closed: 'bg-muted text-muted-foreground',
+const conversationTone: Record<ContactConversation["status"], string> = {
+    pending: "bg-warning-soft text-warning-soft-foreground",
+    open: "bg-success-soft text-success-soft-foreground",
+    closed: "bg-muted text-muted-foreground",
 };
 </script>
 
@@ -343,14 +343,14 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                                 Correo electrónico
                             </dt>
                             <dd class="break-all">
-                                {{ contact.email ?? '—' }}
+                                {{ contact.email ?? "—" }}
                             </dd>
                         </div>
                         <div>
                             <dt class="text-xs text-muted-foreground">
                                 Nombre de perfil de WhatsApp
                             </dt>
-                            <dd>{{ contact.profile_name ?? '—' }}</dd>
+                            <dd>{{ contact.profile_name ?? "—" }}</dd>
                         </div>
                         <div>
                             <dt class="text-xs text-muted-foreground">
@@ -462,9 +462,17 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                                 </p>
                                 <p
                                     class="truncate font-mono text-xs text-muted-foreground"
-                                    :title="identity.external_id"
+                                    :title="
+                                        identity.external_id.startsWith('lid:')
+                                            ? 'WhatsApp oculta el número de esta persona'
+                                            : identity.external_id
+                                    "
                                 >
-                                    {{ identity.external_id }}
+                                    {{
+                                        identity.external_id.startsWith("lid:")
+                                            ? "Número oculto por WhatsApp"
+                                            : identity.external_id
+                                    }}
                                 </p>
                                 <p
                                     v-if="identity.display_name"
@@ -496,8 +504,8 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                             {{ conversations.length }}
                             {{
                                 conversations.length === 1
-                                    ? 'conversación'
-                                    : 'conversaciones'
+                                    ? "conversación"
+                                    : "conversaciones"
                             }}
                         </span>
                     </template>
@@ -560,7 +568,7 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                                         {{
                                             conversation.assignee
                                                 ? `Atendida por ${conversation.assignee.name}`
-                                                : 'Sin asignar'
+                                                : "Sin asignar"
                                         }}
                                         <span
                                             v-if="conversation.connection"

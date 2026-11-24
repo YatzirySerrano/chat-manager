@@ -76,7 +76,7 @@ test('the web chat channel has no window, no templates and its own contact sourc
         ->defaultProvider()->value->toBe('web_widget')
         ->contactSource()->value->toBe('web_chat')
         ->fallbackContactName('wv:01jabcdefghjkmnpqrstvwxyz')->toBe('Visitante web tvwxyz')
-        ->and(ConnectionChannel::Whatsapp->fallbackContactName('5215512345678'))->toBe('WhatsApp 5215512345678');
+        ->and(ConnectionChannel::Whatsapp->fallbackContactName('lid:40674078527636'))->toBe('Contacto de WhatsApp 7636');
 });
 
 test('the health of a connection list never lazy loads the widget, wherever it is built', function () {

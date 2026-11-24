@@ -111,12 +111,23 @@ enum ConnectionChannel: string
     public function fallbackContactName(string $externalId): string
     {
         return match ($this) {
-            self::Whatsapp => "WhatsApp {$externalId}",
+            // A privacy id (LID, "lid:…") is not a phone: never shown as one.
+            self::Whatsapp => 'Contacto de WhatsApp '.mb_substr((string) preg_replace('/\D+/', '', $externalId), -4),
             self::WebChat => 'Visitante web '.mb_substr($externalId, -6),
             self::Messenger => 'Usuario de Messenger '.mb_substr($externalId, -6),
             self::Instagram => 'Usuario de Instagram '.mb_substr($externalId, -6),
             self::Telegram => 'Usuario de Telegram '.mb_substr($externalId, -6),
         };
+    }
+
+    /**
+     * Whether a contact name is still the automatic one of an unnamed
+     * WhatsApp sender (the current form or the old "WhatsApp lid:…"), so
+     * the profile name may replace it when WhatsApp sends one.
+     */
+    public static function isAutomaticWhatsAppName(?string $name): bool
+    {
+        return is_string($name) && preg_match('/^(WhatsApp (lid:)?\d+|Contacto de WhatsApp \d{0,4})$/', trim($name)) === 1;
     }
 
     /**

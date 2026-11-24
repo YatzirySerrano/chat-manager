@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Download, FileText, RotateCw, X } from "@lucide/vue";
-import { computed, onBeforeUnmount, ref, watch } from "vue";
-import type { LocalStatus, ThreadMessage } from "../../types";
-import AgentAvatar from "./AgentAvatar.vue";
+import { Download, FileText, RotateCw, X } from '@lucide/vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import type { LocalStatus, ThreadMessage } from '../../types';
+import AgentAvatar from './AgentAvatar.vue';
 
 /**
  * One message of the thread. The visitor's own messages show their
@@ -25,7 +25,7 @@ const props = defineProps<{
 
 defineEmits<{ retry: [] }>();
 
-const mine = computed(() => props.message.direction === "inbound");
+const mine = computed(() => props.message.direction === 'inbound');
 
 const author = computed(() => {
     if (mine.value || !props.showAuthor) {
@@ -33,7 +33,7 @@ const author = computed(() => {
     }
 
     if (props.message.assistant) {
-        return { name: "Asistente virtual", bot: true };
+        return { name: 'Asistente virtual', bot: true };
     }
 
     return props.message.agent_name
@@ -42,21 +42,21 @@ const author = computed(() => {
 });
 
 const statusLabels: Record<LocalStatus, string> = {
-    sending: "Enviando",
-    sent: "Enviado",
-    delivered: "Entregado",
-    read: "Leído",
-    failed: "Fallido",
+    sending: 'Enviando',
+    sent: 'Enviado',
+    delivered: 'Entregado',
+    read: 'Leído',
+    failed: 'Fallido',
 };
 
 const time = computed(() => {
     if (!props.message.created_at) {
-        return "";
+        return '';
     }
 
-    return new Date(props.message.created_at).toLocaleTimeString("es-MX", {
-        hour: "2-digit",
-        minute: "2-digit",
+    return new Date(props.message.created_at).toLocaleTimeString('es-MX', {
+        hour: '2-digit',
+        minute: '2-digit',
     });
 });
 
@@ -81,20 +81,20 @@ function enlarge(event: MouseEvent, url: string, name: string): void {
 }
 
 function closeOnEscape(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
+    if (event.key === 'Escape') {
         enlarged.value = null;
     }
 }
 
 watch(enlarged, (value) => {
     if (value) {
-        window.addEventListener("keydown", closeOnEscape);
+        window.addEventListener('keydown', closeOnEscape);
     } else {
-        window.removeEventListener("keydown", closeOnEscape);
+        window.removeEventListener('keydown', closeOnEscape);
     }
 });
 
-onBeforeUnmount(() => window.removeEventListener("keydown", closeOnEscape));
+onBeforeUnmount(() => window.removeEventListener('keydown', closeOnEscape));
 
 /** The upload in progress, while the server has not stored it yet. */
 const uploading = computed(() =>
@@ -109,7 +109,7 @@ const uploadPercent = computed(() =>
 
 function size(bytes: number | null): string {
     if (!bytes) {
-        return "";
+        return '';
     }
 
     return bytes >= 1048576
@@ -117,18 +117,18 @@ function size(bytes: number | null): string {
         : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-function kindOf(mime: string | null): "image" | "video" | "audio" | "file" {
-    const type = (mime ?? "").toLowerCase();
+function kindOf(mime: string | null): 'image' | 'video' | 'audio' | 'file' {
+    const type = (mime ?? '').toLowerCase();
 
-    if (type.startsWith("image/")) {
-        return "image";
+    if (type.startsWith('image/')) {
+        return 'image';
     }
 
-    if (type.startsWith("video/")) {
-        return "video";
+    if (type.startsWith('video/')) {
+        return 'video';
     }
 
-    return type.startsWith("audio/") ? "audio" : "file";
+    return type.startsWith('audio/') ? 'audio' : 'file';
 }
 </script>
 
@@ -275,9 +275,9 @@ function kindOf(mime: string | null): "image" | "video" | "audio" | "file" {
                     }"
                     :data-status="status"
                     >{{
-                        status === "failed" && error
+                        status === 'failed' && error
                             ? `${statusLabels.failed} · ${error}`
-                            : status === "sending" && uploading
+                            : status === 'sending' && uploading
                               ? `${statusLabels.sending} ${uploadPercent} %`
                               : statusLabels[status]
                     }}</span

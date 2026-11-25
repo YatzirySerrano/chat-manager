@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\ConnectionProvider;
 use App\Enums\ConversationEventType;
 use App\Enums\CustomerWindowStatus;
 use App\Enums\MessageDirection;
@@ -469,4 +470,13 @@ test('with the Human Agent tag Messenger and Instagram allow human replies for 7
         ->and($window->for($instagram)->status)->toBe(CustomerWindowStatus::Expired)
         ->and($window->for($instagram)->blockReason)->toContain('más de 7 días')
         ->and($window->for($whatsapp)->status)->toBe(CustomerWindowStatus::Expired);
+});
+
+test('only the official Meta API warns about credentials Meta has not verified', function () {
+    $conversation = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHour());
+    $conversation->channelConnection()->firstOrFail()->forceFill(['provider' => ConnectionProvider::WhatsappWeb, 'credentials_verified_at' => null])->save();
+
+    $this->actingAs($this->agent)
+        ->get(route('conversations.index', ['c' => $conversation->id]))
+        ->assertInertia(fn (Assert $page) => $page->where('conversation.connection.credentials_verified', true));
 });

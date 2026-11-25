@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\ConnectionProvider;
 use App\Enums\ConversationReadiness;
 use App\Enums\ConversationStatus;
 use App\Models\Conversation;
@@ -75,7 +76,10 @@ class ConversationResource extends JsonResource
                 'farewell' => (bool) $this->channelConnection->farewell_enabled && trim((string) $this->channelConnection->farewell_message) !== '',
                 'can_send' => ($sendBlockReason = $this->channelConnection->sendingBlockReason()) === null,
                 'send_block_reason' => $sendBlockReason,
-                'credentials_verified' => $this->channelConnection->credentials_verified_at !== null,
+                // Only the official Meta API has credentials Meta verifies: a
+                // WhatsApp Web (QR) number never shows «aún no se han verificado con Meta».
+                'credentials_verified' => $this->channelConnection->provider !== ConnectionProvider::MetaCloudApi
+                    || $this->channelConnection->credentials_verified_at !== null,
             ]),
             'department' => $this->whenLoaded('department', fn (): ?array => $this->department === null ? null : [
                 'id' => $this->department->id,

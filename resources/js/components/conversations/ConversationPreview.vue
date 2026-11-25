@@ -28,6 +28,7 @@ import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import { useChannel } from '@/composables/useChannel';
 import { useFeatures } from '@/composables/useFeatures';
+import { viewerKind } from '@/lib/conversations/media';
 import { formatDateTime } from '@/lib/format';
 import { compactLinks, firstUrl } from '@/lib/links';
 import { preview as previewRoute } from '@/routes/conversations';
@@ -242,7 +243,11 @@ function toItem(message: ConversationMessage): ChatPreviewItem {
     const media = ['image', 'sticker', 'audio', 'video', 'document'];
     const attachments: ChatPreviewAttachment[] = message.attachments.map(
         (attachment) => ({
-            kind: attachmentKind(message.type),
+            // A PDF opens in the viewer, as in the chat.
+            kind:
+                viewerKind(attachment, message) === 'pdf'
+                    ? 'pdf'
+                    : attachmentKind(message.type),
             label: attachment.file_name ?? typeLabel(message.type),
             src: attachment.available
                 ? message.type === 'image'
@@ -250,6 +255,7 @@ function toItem(message: ConversationMessage): ChatPreviewItem {
                     : attachment.url
                 : null,
             href: attachment.available ? attachment.url : null,
+            downloadUrl: attachment.available ? attachment.download_url : null,
         }),
     );
 

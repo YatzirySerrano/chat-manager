@@ -5,12 +5,21 @@ import type { ViewerChatAppearance } from '@/types';
  * audio the viewer may already open in the chat, the file itself.
  */
 export type ChatPreviewAttachment = {
-    kind: 'image' | 'sticker' | 'audio' | 'video' | 'document' | 'other';
+    kind:
+        | 'image'
+        | 'sticker'
+        | 'audio'
+        | 'video'
+        | 'pdf'
+        | 'document'
+        | 'other';
     label: string;
-    /** Where the image (its thumbnail), video or audio loads from; absent: only the name is shown. */
+    /** Where the image (its thumbnail), video, audio or PDF loads from; absent: only the name is shown. */
     src?: string | null;
     /** The full file, opened in a new tab from an image. */
     href?: string | null;
+    /** Where a PDF downloads from, for the viewer's download button. */
+    downloadUrl?: string | null;
 };
 
 /**

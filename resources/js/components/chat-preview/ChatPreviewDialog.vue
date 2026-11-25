@@ -14,6 +14,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import type { Component } from 'vue';
 import LinkPreviewCard from '@/components/chat/LinkPreviewCard.vue';
 import LocationCard from '@/components/chat/LocationCard.vue';
+import MediaViewer from '@/components/conversations/MediaViewer.vue';
 import MediaLightbox from '@/components/MediaLightbox.vue';
 import type {
     ChatPreviewAttachment,
@@ -35,6 +36,7 @@ import {
     CUSTOM_BUBBLE_CLASSES,
     chatColorVariables,
 } from '@/lib/chatAppearance';
+import type { ViewerItem } from '@/lib/conversations/media';
 import { formatDateTime } from '@/lib/format';
 import type { ChatColors } from '@/types';
 
@@ -78,6 +80,7 @@ const ATTACHMENT_ICONS: Record<ChatPreviewAttachment['kind'], Component> = {
     sticker: Sticker,
     audio: Mic,
     video: Video,
+    pdf: FileText,
     document: FileText,
     other: Paperclip,
 };
@@ -116,10 +119,52 @@ function openImage(event: MouseEvent, attachment: ChatPreviewAttachment): void {
     lightbox.value = { src, name: attachment.label };
 }
 
+/* A PDF opens in the chat's viewer, right here and never in another window. */
+const pdf = ref<ViewerItem | null>(null);
+const pdfOpen = computed({
+    get: () => pdf.value !== null,
+    set: (value: boolean) => {
+        if (!value) {
+            pdf.value = null;
+        }
+    },
+});
+
+function openPdf(
+    event: MouseEvent,
+    attachment: ChatPreviewAttachment,
+    item: ChatPreviewItem,
+    index: number,
+): void {
+    if (
+        !attachment.src ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.button !== 0
+    ) {
+        return;
+    }
+
+    event.preventDefault();
+    pdf.value = {
+        id: item.id * 100 + index,
+        kind: 'pdf',
+        src: attachment.src,
+        downloadUrl: attachment.downloadUrl ?? null,
+        name: attachment.label,
+        caption: item.text,
+        author: item.author,
+        at: item.at,
+    };
+}
+
 function shown(attachment: ChatPreviewAttachment): boolean {
     return (
         Boolean(attachment.src) &&
-        ['image', 'sticker', 'video', 'audio'].includes(attachment.kind) &&
+        ['image', 'sticker', 'video', 'audio', 'pdf'].includes(
+            attachment.kind,
+        ) &&
         !failed.value.has(attachment.src as string)
     );
 }
@@ -368,6 +413,65 @@ watch(
                                                 @error="markFailed(attachment)"
                                             />
                                         </a>
+                                        <a
+                                            v-else-if="
+                                                shown(attachment) &&
+                                                attachment.kind === 'pdf'
+                                            "
+                                            :href="attachment.src ?? undefined"
+                                            target="_blank"
+                                            rel="noopener"
+                                            class="group/pdf block w-64 max-w-full overflow-hidden rounded-lg border outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                            :class="
+                                                customBubble(item)
+                                                    ? 'border-current/30'
+                                                    : 'bg-background'
+                                            "
+                                            :aria-label="`Ver ${attachment.label}`"
+                                            @click="
+                                                openPdf(
+                                                    $event,
+                                                    attachment,
+                                                    item,
+                                                    index,
+                                                )
+                                            "
+                                        >
+                                            <span
+                                                class="relative block h-36 overflow-hidden bg-white"
+                                                aria-hidden="true"
+                                            >
+                                                <!-- First page; clicks go to the card. -->
+                                                <iframe
+                                                    :src="`${attachment.src}#page=1&toolbar=0&navpanes=0&scrollbar=0&view=FitH`"
+                                                    title=""
+                                                    tabindex="-1"
+                                                    loading="lazy"
+                                                    class="pointer-events-none h-[220%] w-full origin-top-left"
+                                                />
+                                                <span
+                                                    class="absolute inset-0 grid place-items-center bg-black/0 transition-colors group-hover/pdf:bg-black/25"
+                                                >
+                                                    <Eye
+                                                        class="size-6 text-white opacity-0 drop-shadow transition-opacity group-hover/pdf:opacity-100"
+                                                    />
+                                                </span>
+                                            </span>
+                                            <span
+                                                class="flex min-w-0 items-center gap-2 px-2 py-1.5 text-xs"
+                                            >
+                                                <span
+                                                    class="shrink-0 rounded bg-red-600 px-1.5 py-0.5 text-[0.625rem] font-bold tracking-wide text-white"
+                                                    >PDF</span
+                                                >
+                                                <span
+                                                    class="min-w-0 flex-1 truncate font-medium"
+                                                    >{{
+                                                        attachment.label
+                                                    }}</span
+                                                >
+                                            </span>
+                                        </a>
                                         <video
                                             v-else-if="
                                                 shown(attachment) &&
@@ -463,6 +567,7 @@ watch(
             </DialogFooter>
         </DialogContent>
     </Dialog>
+    <MediaViewer v-if="pdf" v-model:open="pdfOpen" :items="[pdf]" />
     <MediaLightbox
         v-if="lightbox"
         v-model:open="lightboxOpen"

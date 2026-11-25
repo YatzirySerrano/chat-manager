@@ -250,3 +250,42 @@ test('a conversation reopened by the customer never gets the menu again', functi
         // The reopening greets as usual (Orizaba's welcome), never with the menu.
         ->and(chatbotKinds($reopened->conversation))->toBe(['chatbot_menu', 'chatbot_reply', 'welcome']);
 });
+
+test('a chatbot without options greets every cycle the customer starts, reopened conversations included', function () {
+    $this->menu->allOptions()->delete();
+    $this->menu->forceFill(['greeting' => 'Hemos recibido tu solicitud, {{userName}}.'])->save();
+    $this->connection->forceFill(['reopen_window_minutes' => 120])->save();
+    $agent = User::factory()->administrator()->create();
+
+    $receipt = receiveWhatsapp($this->connection, '5215512345678', 'Hola');
+
+    expect(chatbotKinds($receipt->conversation))->toBe(['chatbot_menu'])
+        ->and(chatbotLast($receipt->conversation)->body)->toBe('Hemos recibido tu solicitud, Laura Pérez.')
+        ->and(ChatbotSession::query()->count())->toBe(0);
+
+    app(CloseConversation::class)->handle($receipt->conversation->refresh(), $agent);
+    $this->travel(5)->minutes();
+    $reopened = receiveWhatsapp($this->connection, '5215512345678', 'Otra solicitud');
+
+    expect($reopened->conversation->id)->toBe($receipt->conversation->id)
+        ->and($reopened->conversation->refresh()->reopen_count)->toBe(1)
+        ->and(chatbotKinds($reopened->conversation))->toBe(['chatbot_menu', 'chatbot_menu']);
+
+    // More messages in the same cycle are not greeted again.
+    receiveWhatsapp($this->connection, '5215512345678', 'Te mando los papeles');
+
+    expect(chatbotKinds($reopened->conversation))->toBe(['chatbot_menu', 'chatbot_menu']);
+});
+
+test('a chatbot without options greets outside business hours too: after the away message, or alone when there is none', function () {
+    $this->menu->allOptions()->delete();
+    $this->travelTo(CarbonImmutable::parse('2026-10-19 21:00', 'America/Mexico_City'));
+
+    $withAway = receiveWhatsapp($this->connection, '5215512345678', 'Hola');
+
+    $this->connection->forceFill(['away_enabled' => false])->save();
+    $withoutAway = receiveWhatsapp($this->connection, '5215587654321', 'Hola');
+
+    expect(chatbotKinds($withAway->conversation))->toBe(['away', 'chatbot_menu'])
+        ->and(chatbotKinds($withoutAway->conversation))->toBe(['chatbot_menu']);
+});

@@ -430,7 +430,9 @@ function save(): void {
                     <span class="text-sm text-muted-foreground">
                         {{
                             form.is_enabled
-                                ? `Contesta solo cuando alguien escribe por primera vez a ${connection.name}.`
+                                ? rows.length === 0
+                                    ? `Saluda cada vez que alguien empieza una conversación en ${connection.name}, también cuando vuelve a escribir después de terminada.`
+                                    : `Contesta solo cuando alguien escribe por primera vez a ${connection.name}.`
                                 : 'Nadie lo recibe. Enciéndelo cuando esté listo.'
                         }}
                     </span>

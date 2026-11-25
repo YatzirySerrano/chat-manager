@@ -143,11 +143,17 @@ class SendAutomaticMessages implements ShouldQueue
             }
         }
 
-        // A chatbot without options only greets: within hours its welcome
-        // takes the place of the usual one, and nothing waits for an answer.
-        if ($type === ConversationEventType::Created
-            && $this->hours->isOpenAt($department, now())
-            && ($greeting = $this->menus->greetingOnly($connection)) !== null) {
+        // A chatbot without options only greets, at the start of every cycle
+        // the customer starts: a new conversation or one their message
+        // reopened (closing each request is the usual flow, so most cycles
+        // are reopenings). Its welcome takes the place of the usual one;
+        // outside hours the away message, when there is one, goes first, as
+        // with the menu. Nothing waits for an answer.
+        if (($greeting = $this->menus->greetingOnly($connection)) !== null) {
+            if (! $this->hours->isOpenAt($department, now())) {
+                $this->greet($conversation, $connection, $department, $record);
+            }
+
             $this->queueMessage->handle($conversation, new AutomaticMessagePlan(AutomaticMessageKind::ChatbotMenu, $greeting, 'chatbot'), $conversation->reopen_count, $record->id);
 
             return;

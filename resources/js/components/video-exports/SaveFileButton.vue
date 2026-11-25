@@ -309,6 +309,15 @@ function openDialog(): void {
 
 const segments = computed(() => listing.value?.segments ?? []);
 
+// A deep path scrolls inside its row: keep the current folder in view.
+const crumbs = ref<HTMLElement | null>(null);
+
+watch(segments, () => {
+    void nextTick(() => {
+        crumbs.value?.scrollTo({ left: crumbs.value.scrollWidth });
+    });
+});
+
 function enter(name: string): void {
     void load([...segments.value, name].join('/'));
 }
@@ -557,7 +566,9 @@ const sizeLabel = computed(() => formatFileSize(props.options.size_bytes));
         </template>
 
         <Dialog v-model:open="open">
-            <DialogContent class="gap-0 overflow-hidden p-0 sm:max-w-xl">
+            <DialogContent
+                class="grid-cols-1 gap-0 overflow-hidden p-0 sm:max-w-xl"
+            >
                 <DialogHeader
                     class="flex-row items-center gap-3 px-5 pt-5 pb-4 text-left"
                 >
@@ -586,7 +597,11 @@ const sizeLabel = computed(() => formatFileSize(props.options.size_bytes));
                     </div>
                 </DialogHeader>
 
-                <form class="grid" novalidate @submit.prevent="submit">
+                <form
+                    class="grid min-w-0 grid-cols-1"
+                    novalidate
+                    @submit.prevent="submit"
+                >
                     <!-- The file -->
                     <div
                         class="mx-5 flex items-center gap-3 rounded-xl border bg-surface-sunken p-2"
@@ -639,8 +654,8 @@ const sizeLabel = computed(() => formatFileSize(props.options.size_bytes));
                     </div>
 
                     <!-- Where -->
-                    <div class="grid gap-2 px-5 pt-4">
-                        <div class="flex items-center gap-1">
+                    <div class="grid min-w-0 grid-cols-1 gap-2 px-5 pt-4">
+                        <div class="flex min-w-0 items-center gap-1">
                             <Tooltip>
                                 <TooltipTrigger as-child>
                                     <Button
@@ -661,6 +676,7 @@ const sizeLabel = computed(() => formatFileSize(props.options.size_bytes));
                                 <TooltipContent>Subir</TooltipContent>
                             </Tooltip>
                             <nav
+                                ref="crumbs"
                                 class="flex min-w-0 flex-1 [scrollbar-width:none] items-center gap-0.5 overflow-x-auto text-sm"
                                 aria-label="Carpeta actual"
                             >
@@ -877,7 +893,7 @@ const sizeLabel = computed(() => formatFileSize(props.options.size_bytes));
                     </div>
 
                     <!-- Name -->
-                    <div class="grid gap-2 px-5 pt-4">
+                    <div class="grid min-w-0 grid-cols-1 gap-2 px-5 pt-4">
                         <div class="flex items-center gap-1.5">
                             <Label for="save-file-name">Nombre</Label>
                             <Tooltip>

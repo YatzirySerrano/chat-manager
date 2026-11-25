@@ -289,3 +289,24 @@ test('a chatbot without options greets outside business hours too: after the awa
     expect(chatbotKinds($withAway->conversation))->toBe(['away', 'chatbot_menu'])
         ->and(chatbotKinds($withoutAway->conversation))->toBe(['chatbot_menu']);
 });
+
+test('a chatbot without options welcomes when the first person takes the conversation, unless this cycle already had it', function () {
+    $this->menu->allOptions()->delete();
+    $this->menu->forceFill(['is_enabled' => false, 'greeting' => 'Hemos recibido tu solicitud, {{userName}}.'])->save();
+    $agent = User::factory()->agent()->inDepartments([$this->reception])->create();
+
+    // It arrived while the chatbot was off: only the usual welcome.
+    $missed = receiveWhatsapp($this->connection, '5215512345678', 'Hola')->conversation->refresh();
+    $this->menu->forceFill(['is_enabled' => true])->save();
+
+    app(AcceptConversation::class)->handle($missed, $agent);
+
+    expect(chatbotKinds($missed))->toBe(['welcome', 'chatbot_menu'])
+        ->and(chatbotLast($missed)->body)->toBe('Hemos recibido tu solicitud, Laura Pérez.');
+
+    // Already welcomed by the chatbot on arrival: taking it does not repeat it.
+    $greeted = receiveWhatsapp($this->connection, '5215587654321', 'Hola')->conversation->refresh();
+    app(AcceptConversation::class)->handle($greeted, $agent);
+
+    expect(chatbotKinds($greeted))->toBe(['chatbot_menu']);
+});

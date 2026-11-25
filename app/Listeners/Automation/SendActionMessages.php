@@ -9,7 +9,9 @@ use App\Models\Conversation;
 use App\Models\ConversationEvent;
 use App\Models\User;
 use App\Services\Automation\AutomaticMessageKind;
+use App\Services\Automation\AutomaticMessagePlan;
 use App\Services\Automation\AutomaticMessages;
+use App\Services\Chatbot\ChatbotMenus;
 use App\Support\Queues;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
@@ -18,6 +20,8 @@ use Illuminate\Support\Facades\Log;
  * Sends the connection's automatic messages for the team's actions on a
  * conversation, once per conversation event:
  *
+ * - the chatbot's welcome (a chatbot without options), before anything
+ *   else, when the first person takes it and this cycle has not had it;
  * - «Agente asignado» when a person takes it with nobody attending it
  *   before: accepted, assigned by hand, assigned automatically, or
  *   transferred straight to an agent from a queue. Not when the agent who
@@ -64,6 +68,7 @@ class SendActionMessages implements ShouldQueue
     public function __construct(
         private AutomaticMessages $messages,
         private QueueAutomaticMessage $queueMessage,
+        private ChatbotMenus $menus,
     ) {}
 
     public function viaQueue(): string
@@ -100,6 +105,13 @@ class SendActionMessages implements ShouldQueue
             return;
         }
 
+        // The first person to take it (accepting, with an exception or not,
+        // or assigning it): the chatbot's welcome goes first when this cycle
+        // has not had it yet, before anybody writes.
+        if ($kind === AutomaticMessageKind::AgentAssigned) {
+            $this->welcomeFirst($conversation, $record);
+        }
+
         $agent = $record->to_user_id === null ? null : User::query()->find($record->to_user_id, ['id', 'name']);
         $plan = $this->messages->action($connection, $kind, $agent);
 
@@ -129,6 +141,28 @@ class SendActionMessages implements ShouldQueue
         }
 
         $this->queueMessage->handleAction($conversation, $plan, $record);
+    }
+
+    /**
+     * The welcome of a chatbot without options, once per cycle: its
+     * reference is the one the cycle's start uses (SendAutomaticMessages),
+     * so a welcome already sent is never repeated. Not for imported
+     * conversations, a conversation the team started, nor an event
+     * processed too late.
+     */
+    private function welcomeFirst(Conversation $conversation, ConversationEvent $record): void
+    {
+        $greeting = $this->menus->greetingOnly($conversation->channelConnection);
+
+        if ($greeting === null
+            || $conversation->isImported()
+            || $conversation->isHistoryOnly()
+            || $conversation->last_inbound_at === null
+            || $record->created_at->lessThan(now()->subMinutes(SendAutomaticMessages::MAX_GREETING_DELAY_MINUTES))) {
+            return;
+        }
+
+        $this->queueMessage->handle($conversation, new AutomaticMessagePlan(AutomaticMessageKind::ChatbotMenu, $greeting, 'chatbot'), $conversation->reopen_count, $record->id);
     }
 
     /**

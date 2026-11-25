@@ -397,3 +397,23 @@ test('the root folder setting defaults to VIDEOS and is saved cleaned', function
     app()->forgetScopedInstances();
     expect(app(PlatformSettings::class)->get('video_exports.root_folder'))->toBe('Videos 2026 abc');
 });
+
+test('the browser also lists the files of the folder, newest first, without hidden or partial copies', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $folder = 'VIDEOS/ORIZABA/11-Noviembre 2026/Solicitud/03-11-2026';
+    Storage::disk('videos')->put("{$folder}/LUZ ELENA.mp4", 'video-bytes');
+    Storage::disk('videos')->put("{$folder}/JOSE ALBERTO.mp4", 'more-video-bytes');
+    Storage::disk('videos')->put("{$folder}/.JOSE ALBERTO.mp4.abc123.part", 'partial');
+    touch(Storage::disk('videos')->path("{$folder}/LUZ ELENA.mp4"), now()->subDay()->getTimestamp());
+
+    $this->actingAs($admin)->getJson(route('video-exports.folders.index', ['path' => 'ORIZABA/11-Noviembre 2026/Solicitud/03-11-2026']))
+        ->assertOk()
+        ->assertJsonPath('folders', [])
+        ->assertJsonPath('files.0.name', 'JOSE ALBERTO.mp4')
+        ->assertJsonPath('files.0.size', 16)
+        ->assertJsonPath('files.1.name', 'LUZ ELENA.mp4')
+        ->assertJsonCount(2, 'files');
+
+    // A folder with sub folders only has no files.
+    $this->actingAs($admin)->getJson(route('video-exports.folders.index', ['path' => 'ORIZABA']))->assertJsonPath('files', []);
+});

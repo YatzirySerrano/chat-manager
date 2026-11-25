@@ -146,6 +146,73 @@ class VideoFolders
     }
 
     /**
+     * The files of a folder, newest first (hidden names, links and the
+     * partial copies still being written left out), so whoever saves sees
+     * what the folder already holds. At most `$limit` of them.
+     *
+     * @param  list<string>  $segments
+     * @return list<array{name: string, size: int|null, modified_at: string|null}>
+     *
+     * @throws StorageUnavailable|ValidationException
+     */
+    public function files(array $segments, int $limit = 200): array
+    {
+        $disk = $this->ready();
+
+        if ($segments === [] && ! $this->exists([])) {
+            return [];
+        }
+
+        $this->assertExists($segments);
+
+        try {
+            if ($this->isLocal($disk)) {
+                $path = $this->localPath($segments);
+                $entries = @scandir($path);
+
+                if ($entries === false) {
+                    throw new StorageUnavailable('read_failed', $disk);
+                }
+
+                $files = [];
+
+                foreach ($entries as $entry) {
+                    $full = $path.'/'.$entry;
+
+                    if (str_starts_with($entry, '.') || is_link($full) || ! is_file($full)) {
+                        continue;
+                    }
+
+                    $size = @filesize($full);
+                    $modified = @filemtime($full);
+                    $files[] = ['name' => $entry, 'size' => $size === false ? null : $size, 'modified' => $modified === false ? null : $modified];
+                }
+            } else {
+                $storage = Storage::disk($disk);
+                $files = [];
+
+                foreach ($storage->files($this->pathOnDisk($segments)) as $file) {
+                    $name = basename($file);
+
+                    if (! str_starts_with($name, '.')) {
+                        $files[] = ['name' => $name, 'size' => $storage->size($file), 'modified' => $storage->lastModified($file)];
+                    }
+                }
+            }
+        } catch (Throwable $exception) {
+            throw $this->unavailable($disk, $exception);
+        }
+
+        usort($files, fn (array $a, array $b): int => ($b['modified'] ?? 0) <=> ($a['modified'] ?? 0) ?: strnatcasecmp($a['name'], $b['name']));
+
+        return array_map(fn (array $file): array => [
+            'name' => $file['name'],
+            'size' => $file['size'],
+            'modified_at' => $file['modified'] === null ? null : date(DATE_ATOM, $file['modified']),
+        ], array_slice($files, 0, $limit));
+    }
+
+    /**
      * Creates a sub folder with a clean, SMB-safe name and returns that name.
      *
      * @param  list<string>  $segments  The parent folder.

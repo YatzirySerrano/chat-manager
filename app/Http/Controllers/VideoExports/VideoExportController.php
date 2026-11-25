@@ -138,7 +138,7 @@ class VideoExportController extends Controller
 
     /**
      * @param  list<string>  $segments
-     * @return array{root: string, path: string, segments: list<string>, folders: list<string>}
+     * @return array{root: string, path: string, segments: list<string>, folders: list<string>, files: list<array{name: string, size: int|null, modified_at: string|null}>}
      */
     private function listing(array $segments): array
     {
@@ -147,6 +147,8 @@ class VideoExportController extends Controller
             'path' => implode('/', $segments),
             'segments' => $segments,
             'folders' => $this->folders->list($segments),
+            // What the folder already holds, newest first.
+            'files' => $this->folders->files($segments),
         ];
     }
 

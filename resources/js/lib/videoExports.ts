@@ -55,6 +55,14 @@ export type VideoFolderListing = {
     path: string;
     segments: string[];
     folders: string[];
+    /** Files already in the folder, newest first. */
+    files: VideoFolderFile[];
+};
+
+export type VideoFolderFile = {
+    name: string;
+    size: number | null;
+    modified_at: string | null;
 };
 
 type KindMeta = {

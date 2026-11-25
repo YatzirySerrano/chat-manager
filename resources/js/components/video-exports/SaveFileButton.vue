@@ -38,7 +38,8 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { formatFileSize } from '@/lib/format';
+import { FILE_TONE_CLASSES, fileBadge } from '@/lib/conversations/media';
+import { formatDateTime, formatFileSize } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
     FILE_KINDS,
@@ -296,6 +297,24 @@ function proposedName(): string {
     );
 }
 
+/* Where this file already went: the dialog opens there and says so. */
+const savedName = computed(() =>
+    current.value?.path ? current.value.path.split('/').pop() || null : null,
+);
+const savedHere = computed(
+    () =>
+        current.value?.status === 'saved' &&
+        listing.value !== null &&
+        listing.value.path === current.value.folder,
+);
+const savedWhen = computed(() =>
+    current.value?.saved_at ? formatDateTime(current.value.saved_at) : '',
+);
+
+function isThisCopy(name: string): boolean {
+    return savedHere.value && savedName.value === name;
+}
+
 function openDialog(): void {
     fileName.value = proposedName();
     fileNameError.value = undefined;
@@ -303,8 +322,15 @@ function openDialog(): void {
     newFolder.value = '';
     newFolderError.value = undefined;
     open.value = true;
-    // Where the person saved last (the server falls back to the root).
-    void load(listing.value ? listing.value.path : undefined);
+    // Where this file was saved, else where the person saved last (the
+    // server falls back to the root).
+    void load(
+        current.value?.status === 'saved'
+            ? current.value.folder
+            : listing.value
+              ? listing.value.path
+              : undefined,
+    );
 }
 
 const segments = computed(() => listing.value?.segments ?? []);
@@ -653,6 +679,65 @@ const sizeLabel = computed(() => formatFileSize(props.options.size_bytes));
                         </div>
                     </div>
 
+                    <!-- Already saved (or on its way): where, so nobody saves it twice by mistake. -->
+                    <div
+                        v-if="
+                            current && (current.status === 'saved' || pending)
+                        "
+                        class="mx-5 mt-3 flex items-start gap-2 rounded-xl border px-3 py-2 text-sm"
+                        :class="
+                            current.status === 'saved'
+                                ? 'border-success/40 bg-success-soft text-success-soft-foreground'
+                                : 'border-primary/30 bg-primary-soft text-primary-soft-foreground'
+                        "
+                        role="status"
+                        data-save-file-already
+                    >
+                        <CircleCheck
+                            v-if="current.status === 'saved'"
+                            class="mt-0.5 size-4 shrink-0"
+                            aria-hidden="true"
+                        />
+                        <LoaderCircle
+                            v-else
+                            class="mt-0.5 size-4 shrink-0 animate-spin"
+                            aria-hidden="true"
+                        />
+                        <p class="min-w-0 [overflow-wrap:anywhere]">
+                            <template v-if="current.status === 'saved'">
+                                Ya está guardado en
+                                <span class="font-semibold">{{
+                                    [
+                                        listing?.root ?? 'Synology',
+                                        current.folder,
+                                    ]
+                                        .filter(Boolean)
+                                        .join(' / ')
+                                }}</span>
+                                <template v-if="savedName">
+                                    como
+                                    <span class="font-semibold">{{
+                                        savedName
+                                    }}</span></template
+                                ><template v-if="savedWhen">
+                                    ({{ savedWhen }})</template
+                                >. Si lo guardas otra vez se crea otra copia.
+                            </template>
+                            <template v-else>
+                                Se está guardando en
+                                <span class="font-semibold">{{
+                                    [
+                                        listing?.root ?? 'Synology',
+                                        current.folder,
+                                    ]
+                                        .filter(Boolean)
+                                        .join(' / ')
+                                }}</span
+                                >. Puedes cerrar esta ventana.
+                            </template>
+                        </p>
+                    </div>
+
                     <!-- Where -->
                     <div class="grid min-w-0 grid-cols-1 gap-2 px-5 pt-4">
                         <div class="flex min-w-0 items-center gap-1">
@@ -839,34 +924,110 @@ const sizeLabel = computed(() => formatFileSize(props.options.size_bytes));
                                     Reintentar
                                 </Button>
                             </div>
-                            <ul
+                            <div
                                 v-else-if="
-                                    listing && listing.folders.length > 0
+                                    listing &&
+                                    (listing.folders.length > 0 ||
+                                        listing.files.length > 0)
                                 "
-                                class="grid grid-cols-2 gap-1.5 sm:grid-cols-3"
+                                class="grid gap-2"
                             >
-                                <li
-                                    v-for="folder in listing.folders"
-                                    :key="folder"
-                                    class="min-w-0"
+                                <ul
+                                    v-if="listing.folders.length > 0"
+                                    class="grid grid-cols-2 gap-1.5 sm:grid-cols-3"
                                 >
-                                    <button
-                                        type="button"
-                                        class="group/folder flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-12"
-                                        :title="folder"
-                                        :aria-label="`Abrir carpeta ${folder}`"
-                                        @click="enter(folder)"
+                                    <li
+                                        v-for="folder in listing.folders"
+                                        :key="folder"
+                                        class="min-w-0"
                                     >
-                                        <Folder
-                                            class="size-5 shrink-0 fill-primary/15 text-primary transition-transform duration-(--duration-fast) group-hover/folder:scale-110"
-                                            aria-hidden="true"
-                                        />
-                                        <span class="min-w-0 flex-1 truncate">{{
-                                            folder
-                                        }}</span>
-                                    </button>
-                                </li>
-                            </ul>
+                                        <button
+                                            type="button"
+                                            class="group/folder flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-12"
+                                            :title="folder"
+                                            :aria-label="`Abrir carpeta ${folder}`"
+                                            @click="enter(folder)"
+                                        >
+                                            <Folder
+                                                class="size-5 shrink-0 fill-primary/15 text-primary transition-transform duration-(--duration-fast) group-hover/folder:scale-110"
+                                                aria-hidden="true"
+                                            />
+                                            <span
+                                                class="min-w-0 flex-1 truncate"
+                                                >{{ folder }}</span
+                                            >
+                                        </button>
+                                    </li>
+                                </ul>
+                                <!-- What the folder already holds (read only). -->
+                                <section
+                                    v-if="listing.files.length > 0"
+                                    aria-label="Archivos en esta carpeta"
+                                    data-video-files
+                                >
+                                    <p
+                                        class="px-1.5 pb-1 text-xs font-medium text-muted-foreground"
+                                    >
+                                        Archivos en esta carpeta ({{
+                                            listing.files.length
+                                        }})
+                                    </p>
+                                    <ul class="grid gap-0.5">
+                                        <li
+                                            v-for="file in listing.files"
+                                            :key="file.name"
+                                            class="flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm"
+                                            :class="
+                                                isThisCopy(file.name)
+                                                    ? 'bg-success-soft text-success-soft-foreground'
+                                                    : ''
+                                            "
+                                            :title="file.name"
+                                        >
+                                            <span
+                                                class="grid h-6 w-9 shrink-0 place-items-center rounded text-[0.5625rem] font-bold tracking-wide uppercase"
+                                                :class="
+                                                    FILE_TONE_CLASSES[
+                                                        fileBadge(
+                                                            file.name,
+                                                            null,
+                                                        ).tone
+                                                    ]
+                                                "
+                                                aria-hidden="true"
+                                                >{{
+                                                    fileBadge(file.name, null)
+                                                        .label
+                                                }}</span
+                                            >
+                                            <span
+                                                class="min-w-0 flex-1 truncate"
+                                                >{{ file.name }}</span
+                                            >
+                                            <span
+                                                v-if="isThisCopy(file.name)"
+                                                class="shrink-0 text-xs font-semibold"
+                                                >Este archivo</span
+                                            >
+                                            <span
+                                                class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                                                >{{
+                                                    [
+                                                        formatFileSize(
+                                                            file.size,
+                                                        ),
+                                                        formatDateTime(
+                                                            file.modified_at,
+                                                        ),
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(' · ')
+                                                }}</span
+                                            >
+                                        </li>
+                                    </ul>
+                                </section>
+                            </div>
                             <div
                                 v-else-if="!creating"
                                 class="flex h-full flex-col items-center justify-center gap-2 text-center"

@@ -767,9 +767,13 @@ test('the earlier request is only named to someone who can see it or take it', f
         ->assertJsonPath('conversation.acceptance.blocking_conversation_id', null);
     expect(queueRow($this, $watcher, $behind, ['view' => 'general'])['acceptance'])->toMatchArray(['code' => 'queue_order', 'blocking_conversation_id' => null]);
 
-    // Whoever takes requests from that queue is still told which one goes first.
+    // Whoever takes requests from that queue is still told which one goes first, by name.
+    $head->contact->forceFill(['name' => 'José Alberto'])->save();
+    $since = $head->fresh()->queued_at->setTimezone((string) app(PlatformSettings::class)->get('general.timezone', 'America/Mexico_City'))->locale('es')->translatedFormat('j M, g:i a');
+
     $this->actingAs($this->agent)->getJson(route('conversations.preview', $behind))
-        ->assertJsonPath('conversation.acceptance.blocking_conversation_id', $head->id);
+        ->assertJsonPath('conversation.acceptance.blocking_conversation_id', $head->id)
+        ->assertJsonPath('conversation.acceptance.message', "Se atiende por orden de llegada: primero va la solicitud de José Alberto, que espera desde el {$since}.");
 });
 
 /**

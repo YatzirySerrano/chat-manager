@@ -11,6 +11,7 @@ use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\PlatformSettings;
 use App\Services\ResolvedRules;
 use App\Services\ServiceRules;
 use Carbon\CarbonImmutable;
@@ -95,7 +96,7 @@ class QueueRules
      * What a page of rows shares while it is being described (describing()):
      * the head of each department's queue and each viewer's own limits.
      *
-     * @var array{heads: array<int, Conversation|null>, agents: array<int, array{load: int, pending: bool}>, departments: array<int, Department|null>, visible: array<string, bool>}|null
+     * @var array{heads: array<int, Conversation|null>, agents: array<int, array{load: int, pending: bool}>, departments: array<int, Department|null>, visible: array<string, bool>, blockers: array<int, string>}|null
      */
     private static ?array $page = null;
 
@@ -529,7 +530,7 @@ class QueueRules
             return $callback();
         }
 
-        self::$page = ['heads' => [], 'agents' => [], 'departments' => [], 'visible' => []];
+        self::$page = ['heads' => [], 'agents' => [], 'departments' => [], 'visible' => [], 'blockers' => []];
 
         try {
             return $callback();
@@ -559,13 +560,18 @@ class QueueRules
         $block = $this->describedBlock($conversation, $now);
 
         if ($block !== null) {
+            $blocker = $this->disclosedBlocker($block, $viewer, $canAccept);
+
             return [
                 'allowed' => false,
                 'available' => false,
                 'code' => $block->code,
-                'message' => $block->message,
+                // Whoever may know the earlier request is told which one it is.
+                'message' => $block->code === self::QUEUE_ORDER && $blocker !== null
+                    ? $this->queueOrderMessageFor($blocker)
+                    : $block->message,
                 'available_at' => $block->availableAt?->toIso8601String(),
-                'blocking_conversation_id' => $this->disclosedBlocker($block, $viewer, $canAccept),
+                'blocking_conversation_id' => $blocker,
                 'overridable' => $canAccept && $viewer !== null && $viewer->holdsPermission(Permission::OverrideQueueRules),
             ];
         }
@@ -584,6 +590,35 @@ class QueueRules
             'blocking_conversation_id' => null,
             'overridable' => false,
         ];
+    }
+
+    /**
+     * «Se atiende por orden de llegada: primero va la solicitud de José
+     * Alberto, que espera desde el 20 nov, 9:36 a. m.» The list is sorted by
+     * the last message, not by the queue, so the request to take first may
+     * be further down: the notice names it.
+     */
+    private function queueOrderMessageFor(int $conversationId): string
+    {
+        if (self::$page !== null && array_key_exists($conversationId, self::$page['blockers'])) {
+            return self::$page['blockers'][$conversationId];
+        }
+
+        $earlier = Conversation::query()->with('contact:id,name,profile_name')->find($conversationId, ['id', 'contact_id', 'queued_at', 'created_at']);
+        $name = trim((string) ($earlier?->contact?->name ?: $earlier?->contact?->profile_name));
+        $since = $earlier === null ? null : $this->clock($earlier);
+
+        $message = $earlier === null
+            ? self::QUEUE_ORDER_MESSAGE
+            : 'Se atiende por orden de llegada: primero va la solicitud de '.($name === '' ? 'otro cliente' : $name)
+                .($since === null ? '' : ', que espera desde el '.$since->setTimezone((string) app(PlatformSettings::class)->get('general.timezone', 'America/Mexico_City'))->locale('es')->translatedFormat('j M, g:i a'))
+                .'.';
+
+        if (self::$page !== null) {
+            self::$page['blockers'][$conversationId] = $message;
+        }
+
+        return $message;
     }
 
     /**

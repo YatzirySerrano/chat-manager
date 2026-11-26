@@ -119,9 +119,11 @@ class RegisterInboundContact
         // Only a WhatsApp id is a phone the provider verified; ids of other
         // channels (web chat visitors: 'wv:…' / 'wi:…') never enter the
         // phone matching, so people are never linked through them.
-        $phone = $sender->channel === ConnectionChannel::Whatsapp && ctype_digit($sender->externalId)
+        // A sender known only by a privacy id (LID) uses the phone the
+        // provider resolved for it, when there is one.
+        $phone = $sender->channel !== ConnectionChannel::Whatsapp ? null : (ctype_digit($sender->externalId)
             ? PhoneNumber::normalize('+'.$sender->externalId)
-            : null;
+            : $sender->phone);
 
         $candidates = $phone === null ? new EloquentCollection : Contact::query()
             ->where('phone_e164', $phone)
@@ -216,6 +218,12 @@ class RegisterInboundContact
                     $contact->name = mb_substr($sender->profileName, 0, 160);
                 }
             }
+        }
+
+        // A contact without phone (first seen by its privacy id) takes the
+        // one the provider resolved later; a phone already set never changes.
+        if ($contact->phone_e164 === null && $sender->phone !== null && $sender->channel === ConnectionChannel::Whatsapp) {
+            $contact->phone_e164 = $sender->phone;
         }
 
         $contact->forceFill([

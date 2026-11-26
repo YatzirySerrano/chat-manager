@@ -1,6 +1,8 @@
 <?php
 
 use App\Actions\Contacts\FindDuplicateContacts;
+use App\Actions\Conversations\SyncConversationTags;
+use App\Actions\Tags\SyncContactTags;
 use App\Actions\Tags\TagCatalogQuery;
 use App\Enums\AuditAction;
 use App\Enums\ConversationStatus;
@@ -257,4 +259,44 @@ test('the integration api tells whether the conversation contact is saved', func
         ->assertJsonPath('data.contact.is_saved', false);
     $this->withToken($plain)->getJson(route('api.v1.conversations.show', ['conversation' => $saved->id]))
         ->assertJsonPath('data.contact.is_saved', true);
+});
+
+test('tagging a provisional contact from its conversation saves it into the directory', function () {
+    $conversation = provisionalConversation($this->connection, $this->department);
+    $tag = Tag::factory()->create();
+    $agent = conversationUser(
+        [Permission::ViewConversations, Permission::ReplyConversations, Permission::ViewContacts, Permission::CreateContacts, Permission::AssignTags],
+        DataScope::Departments,
+        [$this->department],
+    );
+
+    app(SyncConversationTags::class)->handle($conversation, [$tag->id], $agent);
+
+    $contact = $conversation->contact->refresh();
+    expect($contact->isSaved())->toBeTrue()
+        ->and($contact->saved_by_user_id)->toBe($agent->id)
+        ->and(AuditLog::query()->where('action', AuditAction::ContactSaved)->sole()->properties)->toBe(['via' => 'tags']);
+});
+
+test('tagging a provisional contact without contacts.create leaves it provisional', function () {
+    $conversation = provisionalConversation($this->connection, $this->department);
+    $tag = Tag::factory()->create();
+    $agent = conversationUser(
+        [Permission::ViewConversations, Permission::ReplyConversations, Permission::ViewContacts, Permission::AssignTags],
+        DataScope::Departments,
+        [$this->department],
+    );
+
+    app(SyncConversationTags::class)->handle($conversation, [$tag->id], $agent);
+
+    expect($conversation->contact->refresh()->isSaved())->toBeFalse();
+});
+
+test('tagging a provisional contact from its page saves it into the directory', function () {
+    $conversation = provisionalConversation($this->connection, $this->department);
+    $tag = Tag::factory()->create();
+
+    app(SyncContactTags::class)->handle($conversation->contact, [$tag->id], $this->saver);
+
+    expect($conversation->contact->refresh()->isSaved())->toBeTrue();
 });

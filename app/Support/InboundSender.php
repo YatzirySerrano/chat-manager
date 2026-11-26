@@ -23,6 +23,12 @@ final readonly class InboundSender
 
     public ?string $profileName;
 
+    /**
+     * The phone (E.164) the provider resolved for a sender identified only by
+     * a privacy id (WhatsApp LID), when it knows it; null otherwise.
+     */
+    public ?string $phone;
+
     /** When the provider says the message was sent, in the application timezone. */
     public CarbonImmutable $occurredAt;
 
@@ -37,6 +43,7 @@ final readonly class InboundSender
         public string $messageId,
         CarbonImmutable $occurredAt,
         public ?ProviderReferral $referral = null,
+        ?string $phone = null,
     ) {
         if (preg_match(self::EXTERNAL_ID_PATTERN, $externalId) !== 1) {
             throw new InvalidArgumentException('The sender identity is missing or malformed.');
@@ -47,6 +54,7 @@ final readonly class InboundSender
         }
 
         $this->profileName = self::cleanName($profileName);
+        $this->phone = $phone !== null && preg_match('/^\d{5,20}$/', $phone) === 1 ? PhoneNumber::normalize('+'.$phone) : null;
         $this->occurredAt = $occurredAt->setTimezone(date_default_timezone_get());
     }
 

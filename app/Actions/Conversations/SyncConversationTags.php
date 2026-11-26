@@ -2,6 +2,7 @@
 
 namespace App\Actions\Conversations;
 
+use App\Actions\Contacts\SaveContactToDirectory;
 use App\Enums\AuditAction;
 use App\Events\Conversations\ConversationChanged;
 use App\Models\Conversation;
@@ -26,6 +27,7 @@ class SyncConversationTags
     public function __construct(
         private ConversationLifecycle $lifecycle,
         private AuditLogger $audit,
+        private SaveContactToDirectory $saveContact,
     ) {}
 
     /**
@@ -86,6 +88,13 @@ class SyncConversationTags
             // The tags live on the contact: its history shows the change too.
             if ($conversation->contact !== null) {
                 $this->audit->record(AuditAction::ContactTagsChanged, $conversation->contact, $changes, $actor);
+
+                // Tagging somebody means the team is working with them: an
+                // unknown sender becomes a saved contact listed in Contactos.
+                $contact = $conversation->contact;
+                if ($addedIds !== [] && ! $contact->isSaved() && $actor->can('saveToDirectory', $contact)) {
+                    $this->saveContact->promote($contact, $actor, 'tags');
+                }
             }
 
             ConversationChanged::dispatch($conversation->id, 'tags', $actor->id);

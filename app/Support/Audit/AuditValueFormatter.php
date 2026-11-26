@@ -148,6 +148,8 @@ final class AuditValueFormatter
         'conversation' => 'Desde la conversación',
         'contact' => 'Desde la ficha del contacto',
         'import' => 'Importación',
+        'tags' => 'Al etiquetarlo',
+        'backfill' => 'Recuperado (ya tenía etiquetas)',
     ];
 
     /**

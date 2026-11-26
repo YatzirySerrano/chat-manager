@@ -224,6 +224,12 @@ class ImportWhatsAppWebHistory
                 $name ??= $entry['payload']->profileName();
             }
 
+            $phone = null;
+
+            foreach ($entries as $entry) {
+                $phone ??= $entry['payload']->phone();
+            }
+
             try {
                 $registration = $this->registerContact->handle($connection, new InboundSender(
                     channel: ConnectionChannel::Whatsapp,
@@ -232,6 +238,7 @@ class ImportWhatsAppWebHistory
                     profileName: $name,
                     messageId: $last['id'],
                     occurredAt: $last['at'],
+                    phone: $phone,
                 ));
             } catch (InvalidArgumentException) {
                 $result['skipped'] += count($entries);

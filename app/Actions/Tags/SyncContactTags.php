@@ -2,6 +2,7 @@
 
 namespace App\Actions\Tags;
 
+use App\Actions\Contacts\SaveContactToDirectory;
 use App\Enums\AuditAction;
 use App\Models\Contact;
 use App\Models\Tag;
@@ -12,7 +13,7 @@ use Illuminate\Validation\ValidationException;
 
 class SyncContactTags
 {
-    public function __construct(private AuditLogger $audit) {}
+    public function __construct(private AuditLogger $audit, private SaveContactToDirectory $saveContact) {}
 
     /**
      * Replace the contact's tags with the given ones. Only active tags can be
@@ -69,6 +70,12 @@ class SyncContactTags
             ];
 
             $this->audit->record(AuditAction::ContactTagsChanged, $contact, $changes, $actor);
+
+            // Tagging somebody means the team is working with them: an
+            // unknown sender becomes a saved contact listed in Contactos.
+            if ($addedIds !== [] && ! $contact->isSaved() && $actor->can('saveToDirectory', $contact)) {
+                $this->saveContact->promote($contact, $actor, 'tags');
+            }
 
             return $changes;
         });

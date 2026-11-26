@@ -134,6 +134,7 @@ class WhatsAppWebEvents
                     profileName: $payload->profileName(),
                     messageId: $payload->storedId(),
                     occurredAt: $payload->occurredAt(),
+                    phone: $payload->phone(),
                 ),
                 type: $payload->type(),
                 body: $payload->body(),
@@ -231,6 +232,7 @@ class WhatsAppWebEvents
                     profileName: null,
                     messageId: $storedId,
                     occurredAt: $sentAt,
+                    phone: $payload->phone(),
                 ))->contact->id;
             } catch (InvalidArgumentException) {
                 return 'ignored';

@@ -65,6 +65,17 @@ final readonly class WhatsAppWebMessagePayload
         };
     }
 
+    /**
+     * Digits of the phone of the other person, which the service resolves
+     * from WhatsApp's LID mapping when the chat only names a privacy id.
+     */
+    public function phone(): ?string
+    {
+        $phone = $this->data['phone'] ?? null;
+
+        return is_string($phone) && preg_match('/^\d{5,20}$/', $phone) === 1 ? $phone : null;
+    }
+
     public function fromMe(): bool
     {
         return ($this->data['from_me'] ?? false) === true;

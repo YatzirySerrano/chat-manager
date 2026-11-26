@@ -77,6 +77,32 @@ class LocalMedia
         return (string) config('filesystems.disks.'.$this->diskName().'.root', storage_path('app/private/media-local'));
     }
 
+    /**
+     * Whether a file goes to the NAS (MEDIA_SYNC_TYPES): with "video" only
+     * videos do (they are what fills the server); images, PDF and the rest
+     * stay here, served at once and never touching the NAS.
+     */
+    public function syncable(string $path, ?string $absolute = null): bool
+    {
+        if (strtolower((string) config('attachments.storage.local_first.sync_types', 'video')) === 'all') {
+            return true;
+        }
+
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+        if (in_array($extension, ['mp4', 'mov', 'm4v', '3gp', '3gpp', 'webm', 'mkv', 'avi', 'mpeg', 'mpg', 'ogv'], true)) {
+            return true;
+        }
+
+        if ($extension !== '' || $absolute === null || ! is_file($absolute)) {
+            return false;
+        }
+
+        $mime = @mime_content_type($absolute);
+
+        return is_string($mime) && str_starts_with($mime, 'video/');
+    }
+
     public function hasLocal(string $disk, string $path): bool
     {
         // A copy this process cannot read (wrong owner) counts as absent: the
@@ -123,7 +149,7 @@ class LocalMedia
      */
     public function pendingBytes(bool $fresh = false): int
     {
-        $compute = fn (): int => (int) MediaReplica::query()->where('state', '!=', MediaReplica::SYNCED)->sum('size_bytes');
+        $compute = fn (): int => (int) MediaReplica::query()->whereIn('state', [MediaReplica::PENDING, MediaReplica::CONFLICT])->sum('size_bytes');
 
         if ($fresh) {
             return $compute();
@@ -175,7 +201,7 @@ class LocalMedia
                     'disk' => $disk,
                     'path' => ltrim($path, '/'),
                     'origin' => MediaReplica::ORIGIN_UPLOAD,
-                    'state' => MediaReplica::PENDING,
+                    'state' => $this->syncable($path, $final) ? MediaReplica::PENDING : MediaReplica::KEPT,
                     'size_bytes' => $size,
                     'sha256' => $hash,
                     'attempts' => 0,
@@ -211,7 +237,9 @@ class LocalMedia
         $this->forgetPendingBytes();
         Cache::put('storage:local-media:last-write', now()->getTimestamp(), 86400 * 30);
 
-        SyncMediaReplica::dispatch($replica->id)->afterCommit();
+        if ($replica->state === MediaReplica::PENDING) {
+            SyncMediaReplica::dispatch($replica->id)->afterCommit();
+        }
     }
 
     /**

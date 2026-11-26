@@ -88,9 +88,12 @@ return [
         'local_first' => [
             'enabled' => (bool) env('MEDIA_LOCAL_FIRST', true),
             'disk' => 'media_local',
-            'pending_max_bytes' => (int) env('MEDIA_LOCAL_PENDING_MAX_BYTES', 80 * 1024 ** 3),
-            'cache_max_bytes' => (int) env('MEDIA_LOCAL_CACHE_MAX_BYTES', 60 * 1024 ** 3),
-            'retention_days' => (int) env('MEDIA_LOCAL_RETENTION_DAYS', 30),
+            'pending_max_bytes' => (int) env('MEDIA_LOCAL_PENDING_MAX_BYTES', 40 * 1024 ** 3),
+            'cache_max_bytes' => (int) env('MEDIA_LOCAL_CACHE_MAX_BYTES', 15 * 1024 ** 3),
+            'retention_days' => (int) env('MEDIA_LOCAL_RETENTION_DAYS', 2),
+            // What is copied to the NAS: "video" (only videos; images, PDF and
+            // the rest stay on this server only) or "all".
+            'sync_types' => (string) env('MEDIA_SYNC_TYPES', 'video'),
             'min_free_bytes' => (int) env('MEDIA_LOCAL_MIN_FREE_BYTES', 40 * 1024 ** 3),
             'sync_batch' => (int) env('MEDIA_SYNC_BATCH', 20),
             'sync_lease_seconds' => (int) env('MEDIA_SYNC_LEASE_SECONDS', 900),

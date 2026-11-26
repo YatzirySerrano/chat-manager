@@ -40,6 +40,9 @@ class MediaReplica extends Model
 
     public const CONFLICT = 'conflict';
 
+    /** Kept on this server only (MEDIA_SYNC_TYPES leaves it out of the NAS); never pruned. */
+    public const KEPT = 'kept';
+
     public const ORIGIN_UPLOAD = 'upload';
 
     public const ORIGIN_CACHE = 'cache';

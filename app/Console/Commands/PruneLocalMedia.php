@@ -43,7 +43,10 @@ class PruneLocalMedia extends Command
             ->whereRaw('COALESCE(last_accessed_at, synced_at, created_at) < ?', [now()->subDays($retentionDays)])
             ->orderBy('id')
             ->limit($limit)
-            ->get(['id', 'disk', 'path', 'size_bytes']);
+            ->get(['id', 'disk', 'path', 'size_bytes'])
+            // Images and PDF stay here (MEDIA_SYNC_TYPES): only the kind
+            // that goes to the NAS is removed once it is verified there.
+            ->filter(fn (MediaReplica $replica): bool => $local->syncable($replica->path));
 
         foreach ($expired as $replica) {
             $freed += $this->remove($local, $replica, $dryRun);
@@ -51,7 +54,9 @@ class PruneLocalMedia extends Command
         }
 
         $cacheMax = max(0, (int) config('attachments.storage.local_first.cache_max_bytes', 20 * 1024 ** 3));
-        $cacheBytes = (int) $this->candidates()->sum('size_bytes') - ($dryRun ? $freed : 0);
+        $cacheBytes = (int) $this->candidates()->get(['path', 'size_bytes'])
+            ->filter(fn (MediaReplica $replica): bool => $local->syncable($replica->path))
+            ->sum('size_bytes') - ($dryRun ? $freed : 0);
         $free = @disk_free_space($local->root());
         $needed = max(
             $cacheBytes - $cacheMax,
@@ -66,6 +71,10 @@ class PruneLocalMedia extends Command
                 ->orderByRaw('COALESCE(last_accessed_at, synced_at, created_at)')
                 ->limit($limit - $removed)
                 ->cursor() as $replica) {
+                if (! $local->syncable($replica->path)) {
+                    continue;
+                }
+
                 $bytes = $this->remove($local, $replica, $dryRun);
                 $freed += $bytes;
                 $needed -= $bytes;

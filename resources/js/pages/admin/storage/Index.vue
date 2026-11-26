@@ -647,6 +647,18 @@ const pollCopy = computed(() => {
                             recuperaciones</span
                         >
                     </p>
+                    <p v-if="localFirst.sync.sync_types !== 'all'">
+                        <span class="text-muted-foreground"
+                            >Solo en el servidor (imágenes, PDF y otros):</span
+                        >
+                        <span class="font-medium tabular-nums">
+                            {{ localFirst.sync.kept_files }} archivos ·
+                            {{ bytes(localFirst.sync.kept_bytes) }}</span
+                        >
+                        <span class="text-muted-foreground">
+                            (al Synology solo se copian los videos)</span
+                        >
+                    </p>
                     <p v-if="localFirst.sync.conflict_files > 0">
                         <span class="text-muted-foreground"
                             >Requieren revisión:</span

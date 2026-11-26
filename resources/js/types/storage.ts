@@ -75,6 +75,9 @@ export type StorageLocalFirst = {
         cached_files: number;
         cached_bytes: number;
         conflict_files: number;
+        kept_files: number;
+        kept_bytes: number;
+        sync_types: string;
         synced_last_hour: number;
         bytes_per_second: number | null;
         last_sync_at: string | null;

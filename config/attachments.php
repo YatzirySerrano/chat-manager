@@ -91,9 +91,11 @@ return [
             'pending_max_bytes' => (int) env('MEDIA_LOCAL_PENDING_MAX_BYTES', 40 * 1024 ** 3),
             'cache_max_bytes' => (int) env('MEDIA_LOCAL_CACHE_MAX_BYTES', 15 * 1024 ** 3),
             'retention_days' => (int) env('MEDIA_LOCAL_RETENTION_DAYS', 2),
-            // What is copied to the NAS: "video" (only videos; images, PDF and
-            // the rest stay on this server only) or "all".
-            'sync_types' => (string) env('MEDIA_SYNC_TYPES', 'video'),
+            // What is copied to the NAS: "all" (everything; once verified there
+            // the local copy is pruned after retention_days, so the server
+            // does not fill up) or "video" (images, PDF and the rest stay on
+            // this server only, never pruned).
+            'sync_types' => (string) env('MEDIA_SYNC_TYPES', 'all'),
             'min_free_bytes' => (int) env('MEDIA_LOCAL_MIN_FREE_BYTES', 40 * 1024 ** 3),
             'sync_batch' => (int) env('MEDIA_SYNC_BATCH', 20),
             'sync_lease_seconds' => (int) env('MEDIA_SYNC_LEASE_SECONDS', 900),

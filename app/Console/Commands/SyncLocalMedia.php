@@ -61,6 +61,13 @@ class SyncLocalMedia extends Command
         $limit = max(1, (int) ($this->option('limit') ?: config('attachments.storage.local_first.sync_batch', 60)));
         $dispatched = 0;
 
+        // Files kept here only while MEDIA_SYNC_TYPES left them out go to the
+        // NAS too once it includes them (then they can be pruned here).
+        if (strtolower((string) config('attachments.storage.local_first.sync_types', 'all')) === 'all') {
+            MediaReplica::query()->where('state', MediaReplica::KEPT)->limit(500)
+                ->update(['state' => MediaReplica::PENDING, 'next_attempt_at' => now(), 'updated_at' => now()]);
+        }
+
         foreach (MediaReplica::query()->where('state', MediaReplica::PENDING)->distinct()->pluck('disk') as $disk) {
             $disk = (string) $disk;
 

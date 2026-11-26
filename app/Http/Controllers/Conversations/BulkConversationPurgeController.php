@@ -53,7 +53,9 @@ class BulkConversationPurgeController extends Controller
         }
 
         $deleted = $purge->step($scope, $actor, self::CHUNK, $batchId);
-        $remaining = $purge->count($scope, $batchId);
+        // The staging rows (Whaticket import) are dropped after the
+        // conversations, so they count as remaining work until they are gone.
+        $remaining = $purge->count($scope, $batchId) + $purge->stagingCount($scope, $batchId);
         $done = $remaining === 0;
 
         // The staging and the summary audit entry are written once, at the end.

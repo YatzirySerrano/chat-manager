@@ -321,10 +321,14 @@ class MountHealth
             }
 
             $recent = array_slice($history, -3);
+            $recentFailures = count(array_filter($recent, fn (array $entry): bool => $entry['problem'] !== null));
 
-            return count($recent) >= 3 && count(array_filter($recent, fn (array $entry): bool => $entry['problem'] !== null)) === 3
-                ? 'disconnected'
-                : 'intermittent';
+            return match (true) {
+                count($recent) >= 3 && $recentFailures === 3 => 'disconnected',
+                // A single slow answer among good ones: slow, not gone.
+                $failures <= 1 => 'degraded',
+                default => 'intermittent',
+            };
         }
 
         $previous = $history[count($history) - 2] ?? null;

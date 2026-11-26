@@ -62,7 +62,7 @@ return [
         'video_exports_disk' => env('VIDEO_EXPORTS_DISK'),
         'mount' => [
             'health_ttl_seconds' => (int) env('MEDIA_MOUNT_HEALTH_TTL', 90),
-            'probe_timeout_seconds' => (float) env('MEDIA_MOUNT_PROBE_TIMEOUT', 10),
+            'probe_timeout_seconds' => (float) env('MEDIA_MOUNT_PROBE_TIMEOUT', 25),
             'verify_hash' => (bool) env('MEDIA_MOUNT_VERIFY_HASH', true),
             // A probe slower than this marks the NAS "degraded".
             'slow_ms' => (int) env('MEDIA_MOUNT_SLOW_MS', 3000),
@@ -89,8 +89,8 @@ return [
             'enabled' => (bool) env('MEDIA_LOCAL_FIRST', true),
             'disk' => 'media_local',
             'pending_max_bytes' => (int) env('MEDIA_LOCAL_PENDING_MAX_BYTES', 80 * 1024 ** 3),
-            'cache_max_bytes' => (int) env('MEDIA_LOCAL_CACHE_MAX_BYTES', 20 * 1024 ** 3),
-            'retention_days' => (int) env('MEDIA_LOCAL_RETENTION_DAYS', 7),
+            'cache_max_bytes' => (int) env('MEDIA_LOCAL_CACHE_MAX_BYTES', 60 * 1024 ** 3),
+            'retention_days' => (int) env('MEDIA_LOCAL_RETENTION_DAYS', 30),
             'min_free_bytes' => (int) env('MEDIA_LOCAL_MIN_FREE_BYTES', 40 * 1024 ** 3),
             'sync_batch' => (int) env('MEDIA_SYNC_BATCH', 20),
             'sync_lease_seconds' => (int) env('MEDIA_SYNC_LEASE_SECONDS', 900),

@@ -71,15 +71,18 @@ class StorageStatus
 
         $warnings = [];
 
-        // Only a NAS that is really down (not mounted, or several probes failed
-        // in a row) is "sin conexión"; a slow or intermittent one is said so.
-        $nasDown = $localFirst !== null && in_array($localFirst['nas']['state'], ['disconnected', 'unmounted'], true);
-        $nasShaky = $localFirst !== null && ! $nasDown && in_array($localFirst['nas']['state'], ['intermittent', 'recovering'], true);
+        // Local first: the operation depends only on this server. The NAS
+        // being slow or away is not a warning; only copies stuck for a long
+        // time (or in conflict) are, because they wait for someone.
+        $stuckSince = $localFirst['sync']['oldest_pending_at'] ?? null;
+        $stuckHours = is_string($stuckSince) ? Carbon::parse($stuckSince)->diffInMinutes(now()) / 60 : 0;
 
-        if ($problem === null && $nasDown) {
-            $warnings[] = 'Operación disponible. Los archivos se están guardando temporalmente en el servidor y se sincronizarán automáticamente cuando el almacenamiento remoto esté disponible.';
-        } elseif ($problem === null && $nasShaky) {
-            $warnings[] = 'Operación disponible. El Synology está respondiendo lento o a ratos; los archivos se guardan en el servidor y se copian cuando responde.';
+        if ($problem === null && $localFirst !== null && $stuckHours >= 6) {
+            $warnings[] = 'Hay archivos esperando copia al Synology desde hace más de '.(int) floor($stuckHours).' horas. Siguen guardados en el servidor y se pueden ver; revisa la conexión con el NAS.';
+        }
+
+        if ($problem === null && $localFirst !== null && ($localFirst['sync']['conflict_files'] ?? 0) > 0) {
+            $warnings[] = 'Algunos archivos necesitan revisión antes de copiarse al Synology (php artisan media:sync --status). Siguen disponibles en el servidor.';
         }
 
         if ($problem === null) {
@@ -89,7 +92,7 @@ class StorageStatus
                     : "Los adjuntos ya ocupan {$usage['percent']} % del espacio contratado.";
             }
 
-            if ($age === null || $age > $staleAfter) {
+            if ($localFirst === null && ($age === null || $age > $staleAfter)) {
                 $warnings[] = 'No hay una comprobación reciente del almacenamiento: revisa que el programador de tareas esté activo.';
             }
 
@@ -108,15 +111,13 @@ class StorageStatus
 
         return [
             'state' => $state,
-            'headline' => match (true) {
-                $problem === null && $nasDown => 'Operación disponible · Synology sin conexión',
-                $problem === null && $nasShaky => 'Operación disponible · Synology intermitente',
-                default => $this->headline($state, $kind),
-            },
+            'headline' => $localFirst !== null && $problem === null
+                ? ($state === 'ok' ? 'Todo funcionando' : 'Todo funcionando, con avisos')
+                : $this->headline($state, $kind),
             'message' => match (true) {
                 $problem !== null => ucfirst(MediaDisk::explain($problem)).'.',
                 $warnings !== [] => implode(' ', $warnings),
-                $localFirst !== null => 'Los archivos se guardan primero en el servidor y se copian al Synology poco a poco, verificados por tamaño y huella.',
+                $localFirst !== null => 'Los archivos se guardan en el servidor y se pueden ver y descargar al instante; en segundo plano se copian al Synology, verificados.'.(($localFirst['sync']['pending_files'] ?? 0) > 0 ? ' '.$localFirst['sync']['pending_files'].' en camino.' : ' Copias al día.'),
                 default => $this->healthyMessage($kind),
             },
             'problem' => $problem,

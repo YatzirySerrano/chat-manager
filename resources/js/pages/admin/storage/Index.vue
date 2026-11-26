@@ -58,13 +58,13 @@ const current = ref<StorageStatus>(props.status);
 /* Local first: this server keeps the files, the NAS receives copies. */
 const localFirst = computed(() => current.value.local_first);
 const NAS_STATES: Record<string, { label: string; tone: string }> = {
-    operational: { label: 'Operativo', tone: 'text-success' },
-    degraded: { label: 'Degradado (lento)', tone: 'text-warning' },
-    intermittent: { label: 'Intermitente', tone: 'text-warning' },
-    disconnected: { label: 'Desconectado', tone: 'text-destructive' },
-    unmounted: { label: 'Desmontado', tone: 'text-destructive' },
-    recovering: { label: 'Recuperándose', tone: 'text-warning' },
-    unknown: { label: 'Sin comprobar', tone: 'text-muted-foreground' },
+    operational: { label: 'Copiando', tone: 'text-success' },
+    degraded: { label: 'Copiando (lento)', tone: 'text-success' },
+    intermittent: { label: 'Copiando a ratos', tone: 'text-success' },
+    recovering: { label: 'Copiando', tone: 'text-success' },
+    disconnected: { label: 'En espera', tone: 'text-muted-foreground' },
+    unmounted: { label: 'En espera (no montado)', tone: 'text-warning' },
+    unknown: { label: 'En espera', tone: 'text-muted-foreground' },
 };
 const nasState = computed(
     () =>
@@ -547,10 +547,9 @@ const pollCopy = computed(() => {
                     :value="nasState.label"
                     :icon="HardDrive"
                     :hint="
-                        localFirst.nas.explanation ??
-                        (localFirst.nas.latency_ms !== null
-                            ? `Última prueba en ${localFirst.nas.latency_ms} ms, ${when(localFirst.nas.checked_at)}`
-                            : 'Sin comprobaciones recientes')
+                        localFirst.nas.problem === null
+                            ? `Respondió en ${localFirst.nas.latency_ms ?? '—'} ms, ${when(localFirst.nas.checked_at)}`
+                            : 'Las copias se reanudan solas en cuanto responde; ver y descargar no se afecta.'
                     "
                 />
                 <StatCard
@@ -685,7 +684,7 @@ const pollCopy = computed(() => {
 
                 <SurfaceCard
                     title="Historial del Synology"
-                    description="Cambios de estado detectados por la comprobación de cada minuto."
+                    description="Cómo ha respondido a las copias en segundo plano. No afecta a ver, enviar ni descargar archivos."
                     body-class="px-5 py-4"
                 >
                     <ul
@@ -711,7 +710,8 @@ const pollCopy = computed(() => {
                                 <span
                                     v-if="incident.problem"
                                     class="block text-xs text-pretty text-muted-foreground"
-                                    >{{ incident.problem }}</span
+                                    >Respondió lento; las copias esperaron y
+                                    siguieron solas.</span
                                 >
                             </span>
                         </li>

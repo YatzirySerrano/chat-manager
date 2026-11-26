@@ -321,6 +321,32 @@ useIntersectionObserver(
 const video = ref<HTMLVideoElement | null>(null);
 const playing = ref(false);
 const videoFailed = ref(false);
+const videoAttempt = ref(0);
+let videoRetryTimer: number | undefined;
+const videoSource = computed(() => {
+    const base = props.attachment.url;
+    const retried =
+        videoAttempt.value === 0
+            ? base
+            : `${base}${base.includes('?') ? '&' : '?'}r=${videoAttempt.value}`;
+
+    return props.gif ? retried : `${retried}#t=0.1`;
+});
+
+/* A file still on its way from the NAS can fail once: ask again, spaced out. */
+function onVideoError(): void {
+    if (videoAttempt.value < RETRY_DELAYS_MS.length) {
+        const delay = RETRY_DELAYS_MS[videoAttempt.value];
+        window.clearTimeout(videoRetryTimer);
+        videoRetryTimer = window.setTimeout(() => videoAttempt.value++, delay);
+
+        return;
+    }
+
+    videoFailed.value = true;
+}
+
+onBeforeUnmount(() => window.clearTimeout(videoRetryTimer));
 const videoSeconds = ref<number | null>(null);
 const videoLength = computed(() => videoSeconds.value ?? props.seconds);
 
@@ -497,7 +523,7 @@ function pauseVideo(): void {
                 <video
                     v-if="near"
                     ref="video"
-                    :src="gif ? attachment.url : `${attachment.url}#t=0.1`"
+                    :src="videoSource"
                     :controls="playing && !gif"
                     :autoplay="gif"
                     :loop="gif"
@@ -510,7 +536,7 @@ function pauseVideo(): void {
                     @loadedmetadata="onVideoMetadata"
                     @play="playing = true"
                     @ended="playing = false"
-                    @error="videoFailed = true"
+                    @error="onVideoError"
                     @click="gif && openViewer()"
                 />
                 <template v-if="gif">

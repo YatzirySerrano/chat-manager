@@ -922,7 +922,24 @@ const integrationConnected = computed(
                     :icon="AlarmClock"
                     class="scroll-mt-32"
                     title="Alertas de tiempo"
-                    description="Avisos en la campana (con sonido y notificación del sistema) cuando una conversación pasa de estos tiempos."
+                    description="Avisos automáticos cuando una conversación pasa de tiempo. Ahora se configuran en Seguimiento de atención → «Alertas automáticas», con escalones (5, 10, 15 min…), prioridad y mensaje propios."
+                    flush
+                >
+                    <div class="px-4 py-4 sm:px-6">
+                        <a
+                            href="/attention"
+                            class="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                            >Ir a Seguimiento de atención → Alertas
+                            automáticas</a
+                        >
+                    </div>
+                </SettingsSection>
+
+                <SettingsSection
+                    v-if="false"
+                    id="alertas-de-tiempo-legacy"
+                    :icon="AlarmClock"
+                    title="Alertas de tiempo"
                     flush
                 >
                     <div>

@@ -73,20 +73,30 @@ class PurgeConversationsInBulk
     }
 
     /**
-     * Deletes up to $limit conversations of the scope in the current request
-     * (no queue), so the screen can drive the erase a chunk at a time and show
-     * real progress. Returns how many were deleted this step.
+     * Deletes conversations of the scope in the current request (no queue), so
+     * the screen can drive the erase a chunk at a time and show real progress.
+     * Bounded BOTH by a count ($limit) and by time ($maxSeconds): heavy
+     * conversations (thousands of messages) can make a fixed count exceed the
+     * web server timeout, so the step returns as soon as either bound is hit,
+     * after erasing at least one. Returns how many were deleted this step.
      */
-    public function step(string $scope, User $actor, int $limit, ?int $batchId = null): int
+    public function step(string $scope, User $actor, int $limit, ?int $batchId = null, float $maxSeconds = 10.0): int
     {
+        $until = microtime(true) + $maxSeconds;
         $batch = $this->query($scope, $batchId)->orderBy('id')->limit(max(1, $limit))->get();
+        $deleted = 0;
 
         foreach ($batch as $conversation) {
             // Skip the per-conversation audit entry (finish() writes a summary).
             $this->deleteConversation->handle($conversation, $actor, false);
+            $deleted++;
+
+            if (microtime(true) >= $until) {
+                break;
+            }
         }
 
-        return $batch->count();
+        return $deleted;
     }
 
     /**

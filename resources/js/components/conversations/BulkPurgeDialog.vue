@@ -118,6 +118,15 @@ async function confirm(): Promise<void> {
             if (step.done) {
                 break;
             }
+
+            // Safety net: a step that erased nothing while work remains would
+            // loop forever. Stop and let the user retry.
+            if (step.deleted === 0) {
+                throw new HistoryRequestError(
+                    0,
+                    'No se pudo continuar el borrado. Vuelve a intentarlo.',
+                );
+            }
         }
 
         const removed = deleted.value;

@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Actions\Messaging\ChangeSentMessage;
 use App\Actions\Messaging\RecordMessageReaction;
 use App\Enums\AttachmentDeliveryMethod;
 use App\Enums\AttachmentStatus;
@@ -125,6 +126,9 @@ class ConversationMessageResource extends JsonResource
             'reactions' => RecordMessageReaction::of($metadata),
             'edited_at' => $this->edited_at?->toIso8601String(),
             'revoked_at' => $this->revoked_at?->toIso8601String(),
+            // Sent by a QR connection and still within WhatsApp's windows (ChangeSentMessage).
+            'can_edit' => ChangeSentMessage::editable($this->resource),
+            'can_delete' => ChangeSentMessage::deletable($this->resource),
             'is_historical' => (bool) $this->is_historical,
             'sent_from_phone' => ($metadata['sent_from_phone'] ?? false) === true,
             'attachments' => $this->whenLoaded('attachments', fn (): array => $this->attachments

@@ -7,6 +7,7 @@ import {
     CircleQuestionMark,
     Copy,
     FlaskConical,
+    Pencil,
     LayoutTemplate,
     Link2,
     Link2Off,
@@ -15,6 +16,7 @@ import {
     Plug,
     Reply,
     RotateCw,
+    Trash2,
     TriangleAlert,
     UserRound,
 } from '@lucide/vue';
@@ -101,6 +103,8 @@ const emit = defineEmits<{
     quote: [message: ConversationMessage];
     jump: [messageId: number];
     revokeLink: [message: ConversationMessage, attachment: MessageAttachment];
+    edit: [message: ConversationMessage];
+    delete: [message: ConversationMessage];
 }>();
 
 const outbound = computed(() => props.message.direction === 'outbound');
@@ -1237,7 +1241,13 @@ async function copyText(): Promise<void> {
 
             <!-- Quick actions, beside the bubble. -->
             <div
-                v-if="!revoked && (canQuote || copyable)"
+                v-if="
+                    !revoked &&
+                    (canQuote ||
+                        copyable ||
+                        message.can_edit ||
+                        message.can_delete)
+                "
                 class="absolute top-0.5"
                 :class="[
                     ROW_ACTIONS,
@@ -1268,6 +1278,26 @@ async function copyText(): Promise<void> {
                 >
                     <Copy class="size-3.5" aria-hidden="true" />
                     <span class="sr-only">Copiar el texto del mensaje</span>
+                </button>
+                <button
+                    v-if="message.can_edit"
+                    type="button"
+                    :class="ROW_ACTION_BUTTON"
+                    title="Editar el mensaje en WhatsApp"
+                    @click="emit('edit', message)"
+                >
+                    <Pencil class="size-3.5" aria-hidden="true" />
+                    <span class="sr-only">Editar el mensaje en WhatsApp</span>
+                </button>
+                <button
+                    v-if="message.can_delete"
+                    type="button"
+                    :class="ROW_ACTION_BUTTON"
+                    title="Eliminar para todos en WhatsApp"
+                    @click="emit('delete', message)"
+                >
+                    <Trash2 class="size-3.5" aria-hidden="true" />
+                    <span class="sr-only">Eliminar para todos en WhatsApp</span>
                 </button>
             </div>
         </div>

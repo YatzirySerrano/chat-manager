@@ -569,6 +569,17 @@ export function createBaileysFactory(options: {
                 return { id: sent.key.id, timestamp };
             },
 
+            async modify(jid, messageId, change) {
+                const key = { remoteJid: jid, fromMe: true, id: messageId };
+
+                await socket.sendMessage(
+                    jid,
+                    change.kind === 'edit'
+                        ? { text: change.text, edit: key }
+                        : { delete: key },
+                );
+            },
+
             async resolveJid(digits) {
                 const [result] = (await socket.onWhatsApp(digits)) ?? [];
 

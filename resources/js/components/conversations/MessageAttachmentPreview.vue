@@ -9,7 +9,13 @@ import {
     Play,
 } from '@lucide/vue';
 import { useIntersectionObserver } from '@vueuse/core';
-import { computed, defineAsyncComponent, inject, onBeforeUnmount, ref } from 'vue';
+import {
+    computed,
+    defineAsyncComponent,
+    inject,
+    onBeforeUnmount,
+    ref,
+} from 'vue';
 import AudioPlayer from '@/components/conversations/AudioPlayer.vue';
 import { CUSTOM_CHAT_COLORS } from '@/lib/chatAppearance';
 import {

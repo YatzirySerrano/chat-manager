@@ -108,6 +108,33 @@ class WhatsAppWebTransport implements MessageTransport
     }
 
     /**
+     * Edits (new text) or deletes for everyone a message this connection
+     * sent, in the same chat it went to.
+     *
+     * @throws WhatsAppTransportUnavailable|MetaGraphException
+     */
+    public function modify(Message $message, string $kind, ?string $text = null): void
+    {
+        $message->loadMissing(['conversation.channelConnection', 'conversation.contact']);
+        $connection = $message->conversation->channelConnection;
+        $providerId = $connection === null ? null : self::providerId($connection->id, $message->whatsapp_message_id);
+
+        if ($connection === null || ! $connection->isWhatsAppWeb() || $providerId === null) {
+            throw new WhatsAppTransportUnavailable('Este mensaje no se envió por una conexión de WhatsApp con QR.');
+        }
+
+        if ($connection->webSessionState() !== WhatsAppWebState::Connected) {
+            throw new WhatsAppTransportUnavailable($connection->sendingBlockReason() ?? 'La sesión de WhatsApp Web no está conectada.');
+        }
+
+        try {
+            $this->client->modifyMessage($connection->id, $this->recipient($message), $providerId, $kind, $text);
+        } catch (WhatsAppWebException $exception) {
+            throw $this->translate($exception, $connection);
+        }
+    }
+
+    /**
      * Who receives the message: the JID of the chat when WhatsApp Web
      * already saw this person ("…@s.whatsapp.net", or "…@lid" when WhatsApp
      * never gave a phone); otherwise the digits of the identity known from

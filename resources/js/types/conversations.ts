@@ -466,6 +466,10 @@ export type ConversationMessage = {
     edited_at?: string | null;
     /** When the sender deleted the message for everyone. */
     revoked_at?: string | null;
+    /** The team may still edit it in WhatsApp (QR connection, text, within 15 minutes). */
+    can_edit?: boolean;
+    /** The team may still delete it for everyone in WhatsApp (QR connection, within 48 hours). */
+    can_delete?: boolean;
     /** Reactions left on the message. */
     reactions?: MessageReaction[] | null;
     /** Brought in with the history of the linked WhatsApp, not received live. */

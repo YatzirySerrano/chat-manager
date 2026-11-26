@@ -111,6 +111,20 @@ class WhatsAppWebClient
     }
 
     /**
+     * Edits the text of a message the session sent, or deletes it for
+     * everyone ($kind "edit" or "delete"), in the chat of $to.
+     */
+    public function modifyMessage(int $connectionId, string $to, string $providerMessageId, string $kind, ?string $text = null): void
+    {
+        $this->json('POST', "/v1/sessions/{$connectionId}/modify", array_filter([
+            'to' => $to,
+            'provider_message_id' => $providerMessageId,
+            'kind' => $kind,
+            'text' => $text,
+        ], fn (mixed $value): bool => $value !== null));
+    }
+
+    /**
      * What WhatsApp shares about one contact through the session: picture
      * (a temporary URL on WhatsApp's CDN), "about" and business profile.
      * Each part is null when the contact keeps it private or has none.

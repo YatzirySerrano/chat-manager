@@ -15,6 +15,7 @@ import type { DeliveryResult } from '../src/outbox.js';
 import { signedHeaders } from '../src/signing.js';
 import type { EventEnvelope } from '../src/types.js';
 import type {
+    WaChange,
     WaConnection,
     WaEvent,
     WaFactory,
@@ -108,11 +109,20 @@ export class FakeSocket {
         this.emitEvent(event);
     }
 
+    readonly modifiedMessages: {
+        jid: string;
+        messageId: string;
+        change: WaChange;
+    }[] = [];
+
     readonly connection: WaConnection = {
         send: async (jid, content, { messageId, quoted }) => {
             this.sentMessages.push({ jid, content, messageId, quoted });
 
             return this.sendBehaviour(messageId);
+        },
+        modify: async (jid, messageId, change) => {
+            this.modifiedMessages.push({ jid, messageId, change });
         },
         resolveJid: async (digits) => this.directory.get(digits) ?? null,
         phoneForLid: async () => null,

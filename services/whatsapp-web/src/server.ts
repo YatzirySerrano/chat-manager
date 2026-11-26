@@ -190,7 +190,7 @@ export function createControlServer(options: ServerOptions): Server {
         }
 
         const match =
-            /^\/v1\/sessions\/(\d{1,12})(?:\/(start|stop|logout|messages|media|profile))?$/.exec(
+            /^\/v1\/sessions\/(\d{1,12})(?:\/(start|stop|logout|messages|modify|media|profile))?$/.exec(
                 path,
             );
 
@@ -228,6 +228,40 @@ export function createControlServer(options: ServerOptions): Server {
                 await manager.send(
                     connectionId,
                     outboundMessage(parseJson(body)),
+                ),
+            );
+        } else if (action === 'modify' && method === 'POST') {
+            const request = parseJson(body);
+            const to = request.to;
+            const messageId = request.provider_message_id;
+            const kind = request.kind;
+            const text = request.text;
+
+            if (
+                typeof to !== 'string' ||
+                to === '' ||
+                to.length > 200 ||
+                typeof messageId !== 'string' ||
+                !/^[A-Za-z0-9._:-]{1,128}$/.test(messageId) ||
+                (kind !== 'edit' && kind !== 'delete') ||
+                (kind === 'edit' &&
+                    (typeof text !== 'string' ||
+                        text.trim() === '' ||
+                        text.length > 4096))
+            ) {
+                throw new ApiError(422, 'invalid_request');
+            }
+
+            json(
+                response,
+                200,
+                await manager.modify(
+                    connectionId,
+                    to,
+                    messageId,
+                    kind === 'edit'
+                        ? { kind: 'edit', text: text as string }
+                        : { kind: 'delete' },
                 ),
             );
         } else if (action === 'profile' && method === 'POST') {

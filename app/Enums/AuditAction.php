@@ -64,6 +64,10 @@ enum AuditAction: string
     case ContactTagsChanged = 'contact.tags_changed';
     case ConversationTagsChanged = 'conversation.tags_changed';
     case MessageRetriedWithDuplicateRisk = 'conversation.message_retried_duplicate_risk';
+
+    case MessageEdited = 'conversation.message_edited';
+
+    case MessageDeletedForEveryone = 'conversation.message_deleted_for_everyone';
     case AttachmentLinkRevoked = 'conversation.attachment_link_revoked';
     case ContactIdentityLinked = 'contact.identity_linked';
     case ContactReviewOpened = 'contact.review_opened';
@@ -206,6 +210,8 @@ enum AuditAction: string
             self::ContactTagsChanged => 'Etiquetas del contacto modificadas',
             self::ConversationTagsChanged => 'Etiquetas de la conversación modificadas',
             self::MessageRetriedWithDuplicateRisk => 'Reintento de un mensaje con entrega no confirmada (riesgo de duplicado)',
+            self::MessageEdited => 'Mensaje enviado editado en WhatsApp',
+            self::MessageDeletedForEveryone => 'Mensaje enviado eliminado para todos en WhatsApp',
             self::AttachmentLinkRevoked => 'Revocación del enlace de descarga de un archivo enviado',
             self::ContactIdentityLinked => 'Número de WhatsApp vinculado al contacto',
             self::ContactReviewOpened => 'Posible duplicado enviado a revisión',
@@ -306,13 +312,13 @@ enum AuditAction: string
             self::ConnectionWebLoggedOut, self::ConnectionWebSessionLost,
             self::HistoryImportFailed, self::ConversationCategoryDeleted, self::ConversationSlaBreached,
             self::ConversationPermanentlyDeleted, self::ConversationsBulkPurged, self::AuditLogPurged, self::RecordPermanentlyDeleted, self::ConnectionPermanentlyDeleted,
-            self::ChatbotRuleDeleted => 'danger',
+            self::ChatbotRuleDeleted, self::MessageDeletedForEveryone => 'danger',
             self::UserRoleChanged, self::UserPasswordReset, self::SettingsUpdated, self::RolePermissionsChanged,
             self::AppearanceUpdated, self::ConnectionCredentialsUpdated,
             self::ConnectionWebLinkRequested, self::ConnectionWebDisconnected, self::ConnectionWebReconnectRequested,
             self::DepartmentHoursUpdated, self::ContactOriginClassified, self::ContactIdentityLinked,
             self::ContactReviewOpened, self::TeamChatParticipantRemoved, self::TeamChatParticipantRoleChanged,
-            self::TeamChatGroupArchived, self::SystemJobRetried, self::SystemJobForgotten, self::MessageRetriedWithDuplicateRisk,
+            self::TeamChatGroupArchived, self::SystemJobRetried, self::SystemJobForgotten, self::MessageRetriedWithDuplicateRisk, self::MessageEdited,
             self::ImportRollbackRequested, self::ImportRolledBack,
             self::AuthPasswordChanged, self::AuthPasswordResetByLink, self::AuthRecoveryCodesRegenerated,
             self::WebChatKeyRotated, self::WebChatIdentitySecretRotated,

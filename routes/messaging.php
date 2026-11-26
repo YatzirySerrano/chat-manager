@@ -7,6 +7,7 @@ use App\Http\Controllers\Messaging\ConversationTemplateController;
 use App\Http\Controllers\Messaging\MessageRetryController;
 use App\Http\Controllers\Messaging\MessageTemplateController;
 use App\Http\Controllers\Messaging\MessageTemplateSyncController;
+use App\Http\Controllers\Messaging\SentMessageController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -28,6 +29,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('conversations/{conversation}/messages/{message}/retry', [MessageRetryController::class, 'store'])
         ->middleware('throttle:30,1')
         ->name('conversations.messages.retry');
+    Route::put('conversations/{conversation}/messages/{message}', [SentMessageController::class, 'update'])
+        ->middleware('throttle:30,1')
+        ->name('conversations.messages.update');
+    Route::delete('conversations/{conversation}/messages/{message}', [SentMessageController::class, 'destroy'])
+        ->middleware('throttle:30,1')
+        ->name('conversations.messages.destroy');
     Route::post('conversations/{conversation}/messages/{message}/attachments/{attachment}/revoke-link', [AttachmentLinkRevocationController::class, 'store'])
         ->middleware('throttle:30,1')
         ->name('conversations.messages.attachments.revoke-link');

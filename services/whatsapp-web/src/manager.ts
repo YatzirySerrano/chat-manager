@@ -11,7 +11,7 @@ import {
     type SessionSnapshot,
 } from './types.js';
 import { ensurePrivateDir, KeyedQueue, type Vault } from './vault.js';
-import type { WaFactory, WaProfile } from './wa.js';
+import type { WaChange, WaFactory, WaProfile } from './wa.js';
 
 /**
  * Owns every session of the process: one per connection id, each with its
@@ -152,6 +152,15 @@ export class SessionManager {
         message: OutboundMessage,
     ): Promise<{ provider_message_id: string; timestamp: number }> {
         return (await this.known(connectionId)).send(message);
+    }
+
+    async modify(
+        connectionId: number,
+        to: string,
+        messageId: string,
+        change: WaChange,
+    ): Promise<{ modified: true }> {
+        return (await this.known(connectionId)).modify(to, messageId, change);
     }
 
     async profile(connectionId: number, to: string): Promise<WaProfile> {

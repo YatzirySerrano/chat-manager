@@ -34,6 +34,7 @@ import { ensurePrivateDir, type Vault } from './vault.js';
 import {
     CLOSE,
     WA_STATUS,
+    type WaChange,
     type WaConnection,
     type WaEvent,
     type WaFactory,
@@ -420,6 +421,53 @@ export class Session {
         this.sending.set(message.idempotency_key, task);
 
         return task;
+    }
+
+    /**
+     * Edits the text of, or deletes for everyone, a message this device
+     * sent earlier (identified by WhatsApp's id) in the chat of `to`.
+     */
+    async modify(to: string, messageId: string, change: WaChange): Promise<{ modified: true }> {
+        const connection = this.connection;
+
+        if (this.state !== 'connected' || connection === null) {
+            throw new ApiError(409, 'not_connected', { state: this.state });
+        }
+
+        const jid = await this.recipient(connection, to);
+
+        try {
+            await withTimeout(
+                connection.modify(jid, messageId, change),
+                this.options.limits.sendTimeoutMs,
+                () => new ApiError(504, 'send_timeout'),
+            );
+        } catch (error) {
+            if (error instanceof ApiError) {
+                throw error;
+            }
+
+            this.options.logger.error(
+                {
+                    connection_id: this.connectionId,
+                    to: maskJid(jid),
+                    kind: change.kind,
+                    err: safeErrorMessage(error),
+                },
+                'A message could not be changed',
+            );
+
+            if (this.state !== 'connected') {
+                throw new ApiError(409, 'not_connected', { state: this.state });
+            }
+
+            throw new ApiError(500, 'internal');
+        }
+
+        this.lastOutboundAt = this.seconds();
+        this.lastEventAt = this.lastOutboundAt;
+
+        return { modified: true };
     }
 
     /**

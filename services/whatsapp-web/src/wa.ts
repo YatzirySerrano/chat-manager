@@ -107,12 +107,19 @@ export type WaProfile = {
     business: WaBusinessProfile | null;
 };
 
+export type WaChange = { kind: 'edit'; text: string } | { kind: 'delete' };
+
 export interface WaConnection {
     send(
         jid: string,
         content: WaOutgoing,
         options: { messageId: string; quoted: WaQuoted | null },
     ): Promise<{ id: string; timestamp: number }>;
+    /**
+     * Changes a message this device sent: a new text ("edit") or "delete
+     * for everyone" ("delete"), as the WhatsApp apps do.
+     */
+    modify(jid: string, messageId: string, change: WaChange): Promise<void>;
     /** The WhatsApp JID registered for a phone number, or null when it has no account. */
     resolveJid(digits: string): Promise<string | null>;
     /** Phone number (digits) behind an @lid identifier, when WhatsApp shared the mapping. */

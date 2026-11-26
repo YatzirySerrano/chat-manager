@@ -24,6 +24,8 @@ import ChatDivider from '@/components/chat/ChatDivider.vue';
 import ChatHistoryStart from '@/components/chat/ChatHistoryStart.vue';
 import ChatJumpButton from '@/components/chat/ChatJumpButton.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import FormDialog from '@/components/FormDialog.vue';
+import { Textarea } from '@/components/ui/textarea';
 import MessageBubble from '@/components/conversations/MessageBubble.vue';
 import { groupByCalendarDay } from '@/components/conversations/dayGroups';
 import { todayKey } from '@/components/conversations/messageFormat';
@@ -36,7 +38,11 @@ import { useStickToBottom } from '@/composables/useStickToBottom';
 import { MEDIA_GALLERY, viewerKind } from '@/lib/conversations/media';
 import type { ViewerItem } from '@/lib/conversations/media';
 import { platformTimezone } from '@/lib/format';
-import { retry as retryRoute } from '@/routes/conversations/messages';
+import {
+    destroy as destroyMessageRoute,
+    retry as retryRoute,
+    update as updateMessageRoute,
+} from '@/routes/conversations/messages';
 import { revokeLink as revokeLinkRoute } from '@/routes/conversations/messages/attachments';
 import type {
     ConversationEvent,
@@ -576,6 +582,123 @@ async function retry(message: ConversationMessage): Promise<void> {
     }
 }
 
+/*
+ * Editing and "delete for everyone" of a message the team sent by a QR
+ * connection (WhatsApp Web): WhatsApp applies it first, then the chat
+ * refreshes the message.
+ */
+const editHttp = useHttp<{ body: string }, unknown>({ body: '' });
+const deleteHttp = useHttp<Record<string, never>, unknown>({});
+const editing = ref<ConversationMessage | null>(null);
+const deleting = ref<ConversationMessage | null>(null);
+const changingMessage = ref(false);
+const editOpen = computed({
+    get: () => editing.value !== null,
+    set: (open: boolean) => {
+        if (!open && !changingMessage.value) {
+            editing.value = null;
+        }
+    },
+});
+const deleteOpen = computed({
+    get: () => deleting.value !== null,
+    set: (open: boolean) => {
+        if (!open && !changingMessage.value) {
+            deleting.value = null;
+        }
+    },
+});
+
+function requestEdit(message: ConversationMessage): void {
+    editHttp.body = message.body ?? '';
+    editing.value = message;
+}
+
+function requestDelete(message: ConversationMessage): void {
+    deleting.value = message;
+}
+
+function firstError(errors: Record<string, string>, fallback: string): string {
+    return Object.values(errors)[0] ?? fallback;
+}
+
+async function confirmEdit(): Promise<void> {
+    const message = editing.value;
+
+    if (!message || changingMessage.value) {
+        return;
+    }
+
+    changingMessage.value = true;
+    let rejected = false;
+
+    try {
+        await editHttp.put(
+            updateMessageRoute.url({
+                conversation: props.conversation.id,
+                message: message.id,
+            }),
+            {
+                onError: (errors) => {
+                    rejected = true;
+                    toast.error(
+                        firstError(errors, 'No se pudo editar el mensaje.'),
+                    );
+                },
+            },
+        );
+
+        if (!rejected) {
+            toast.success('Mensaje editado en WhatsApp.');
+            emit('refresh', { messages: [message.id] });
+            changingMessage.value = false;
+            editing.value = null;
+        }
+    } catch {
+        toast.error('No se pudo editar el mensaje. Inténtalo de nuevo.');
+    } finally {
+        changingMessage.value = false;
+    }
+}
+
+async function confirmDelete(): Promise<void> {
+    const message = deleting.value;
+
+    if (!message || changingMessage.value) {
+        return;
+    }
+
+    changingMessage.value = true;
+    let rejected = false;
+
+    try {
+        await deleteHttp.delete(
+            destroyMessageRoute.url({
+                conversation: props.conversation.id,
+                message: message.id,
+            }),
+            {
+                onError: (errors) => {
+                    rejected = true;
+                    toast.error(
+                        firstError(errors, 'No se pudo eliminar el mensaje.'),
+                    );
+                },
+            },
+        );
+
+        if (!rejected) {
+            toast.success('Mensaje eliminado para todos en WhatsApp.');
+            emit('refresh', { messages: [message.id] });
+        }
+    } catch {
+        toast.error('No se pudo eliminar el mensaje. Inténtalo de nuevo.');
+    } finally {
+        changingMessage.value = false;
+        deleting.value = null;
+    }
+}
+
 /* Revocation of a customer's secure download link (link-delivered files). */
 const revokeHttp = useHttp<Record<string, never>, unknown>({});
 const revokingAttachmentId = ref<number | null>(null);
@@ -782,6 +905,8 @@ defineExpose({ scrollToBottom });
                             :revoking-attachment-id="revokingAttachmentId"
                             @jump="jumpTo"
                             @revoke-link="requestRevokeLink"
+                            @edit="requestEdit"
+                            @delete="requestDelete"
                         />
                         <TimelineNote
                             v-else-if="item.kind === 'note'"
@@ -833,6 +958,33 @@ defineExpose({ scrollToBottom });
             confirm-label="Reintentar de todas formas"
             destructive
             @confirm="confirmRiskyRetry"
+        />
+
+        <FormDialog
+            v-model:open="editOpen"
+            title="Editar mensaje"
+            description="WhatsApp cambia el texto para el cliente y lo marca como editado. Solo se puede durante los primeros 15 minutos."
+            submit-label="Guardar cambio"
+            :processing="changingMessage"
+            :submit-disabled="editHttp.body.trim() === ''"
+            @submit="confirmEdit"
+        >
+            <Textarea
+                v-model="editHttp.body"
+                rows="4"
+                maxlength="4096"
+                aria-label="Nuevo texto del mensaje"
+            />
+        </FormDialog>
+
+        <ConfirmDialog
+            v-model:open="deleteOpen"
+            title="¿Eliminar para todos?"
+            description="El mensaje se borra también en el WhatsApp del cliente; aquí queda como «Mensaje eliminado»."
+            confirm-label="Eliminar para todos"
+            destructive
+            :processing="changingMessage"
+            @confirm="confirmDelete"
         />
 
         <ConfirmDialog

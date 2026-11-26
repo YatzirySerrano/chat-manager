@@ -11,13 +11,13 @@ use App\Models\Conversation;
 use App\Models\User;
 use App\Services\WhatsAppWeb\WhatsAppWebContactProfiles;
 use App\Services\WhatsAppWeb\WhatsAppWebException;
+use App\Support\Attachments\MediaResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -142,8 +142,12 @@ class ContactAvatarController extends Controller
 
         abort_unless($identity instanceof ContactIdentity && $identity->hasAvatar(), 404);
 
-        $disk = Storage::disk((string) $identity->avatar_disk);
-        $path = (string) $identity->avatar_path;
+        // The local copy first; the NAS only while it answers (a list of
+        // chats asks for many pictures at once: never one SMB round per stat).
+        $location = MediaResponse::open((string) $identity->avatar_disk, (string) $identity->avatar_path);
+        abort_if($location === null, 404);
+        $disk = $location['filesystem'];
+        $path = $location['path'];
 
         try {
             $exists = $disk->exists($path);

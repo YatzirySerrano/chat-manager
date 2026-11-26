@@ -3,11 +3,14 @@
 namespace App\Console\Commands;
 
 use App\Enums\AttachmentStatus;
+use App\Jobs\CacheMediaLocally;
 use App\Jobs\WarmMediaThumbnail;
 use App\Models\MessageAttachment;
 use App\Models\TeamChat\TeamAttachment;
+use App\Services\Storage\LocalMedia;
 use App\Services\Storage\MediaPaths;
 use App\Services\Storage\MediaThumbnails;
+use App\Services\Storage\MountHealth;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 
@@ -37,7 +40,20 @@ class WarmMediaThumbnails extends Command
                 return;
             }
 
-            $needsPreview = $thumbnails->supports($mime, $size) && ! Storage::disk($disk)->exists(MediaPaths::thumbnailFor($path));
+            // Previews of the NAS live on this server: checked here, never on the share.
+            $local = app(LocalMedia::class);
+            $mounted = MountHealth::settings($disk) !== null;
+            $needsPreview = $thumbnails->supports($mime, $size) && ($mounted
+                ? ! is_file($local->absolute($disk, MediaPaths::thumbnailFor($path)))
+                : ! Storage::disk($disk)->exists(MediaPaths::thumbnailFor($path)));
+
+            // Only on the NAS: brought here first (media-fetch), which makes the preview.
+            if ($needsPreview && $mounted && ! $local->hasLocal($disk, $path)) {
+                CacheMediaLocally::dispatch($disk, $path, $mime);
+                $queued++;
+
+                return;
+            }
 
             if (! $needsPreview && ($measured || ! WarmMediaThumbnail::worthIt($mime, $size, true))) {
                 return;

@@ -11,7 +11,6 @@ use App\Models\MessageAttachment;
 use App\Support\Attachments\AttachmentDownloadLink;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\Response;
@@ -47,9 +46,7 @@ class AttachmentLinkController extends Controller
         // Revoked by the agent (RevokeAttachmentLink): gone for good.
         abort_if(AttachmentDownloadLink::isRevoked($file->message), 410);
 
-        $disk = Storage::disk($file->disk);
-
-        abort_unless($this->storedFileExists($disk, $file), 404);
+        $stored = $this->openStoredFile($file);
 
         Log::info('Descarga de un archivo enviado como enlace seguro.', [
             'attachment_id' => $file->id,
@@ -73,8 +70,6 @@ class AttachmentLinkController extends Controller
             'X-Robots-Tag' => 'noindex, nofollow',
         ];
 
-        return $this->storedFileResponse($file, fn (): Response => config("filesystems.disks.{$file->disk}.driver") === 'local'
-            ? response()->file($disk->path($file->path), $headers)
-            : $disk->response($file->path, $name, $headers, 'attachment'));
+        return $this->storedFileResponse($file, fn (): Response => $this->sendStoredFile($stored, $name, $headers, 'attachment'));
     }
 }

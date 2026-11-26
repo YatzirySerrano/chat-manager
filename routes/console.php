@@ -47,6 +47,12 @@ Schedule::command('attachments:recover-stale')->everyFifteenMinutes()->withoutOv
 // Media disk mounted from a NAS (MEDIA_DISK=nas only): bounded health probe whose cached result gates file writes.
 Schedule::command('storage:mount-health')->everyMinute()->withoutOverlapping(5)->when(fn (): bool => app(MediaDisk::class)->isMount());
 
+// Local first (LocalMedia): files kept on this server are copied to the NAS gradually, only while it answers.
+Schedule::command('media:sync')->everyMinute()->withoutOverlapping(5)->when(fn (): bool => app(MediaDisk::class)->isMount());
+// Local copies already verified on the NAS: retention and space pressure (pending files are never removed).
+Schedule::command('media:prune-local')->hourly()->withoutOverlapping(60);
+Schedule::command('media:sync --reconcile')->dailyAt('05:10')->withoutOverlapping(60);
+
 // WhatsApp Web (QR): the stored state of each session follows the Node service (down, restarted, session lost).
 Schedule::command('whatsapp-web:sync')->everyMinute()->withoutOverlapping(5)->when(fn (): bool => (bool) config('whatsapp_web.enabled') && app(InternalSignature::class)->isConfigured());
 

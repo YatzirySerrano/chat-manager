@@ -3,6 +3,7 @@
 namespace App\Services\Storage;
 
 use GdImage;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -25,6 +26,9 @@ class MediaThumbnails
 {
     /** Longest side of a preview, in pixels (a bubble shows up to 288 px; 2x screens). */
     public const EDGE = 640;
+
+    /** Images that need no preview (already small, transparent, unusual). */
+    private const WITHOUT_PREFIX = 'media-thumbnails:none:';
 
     /**
      * Previews written next to the original by an earlier version (WebP
@@ -81,15 +85,28 @@ class MediaThumbnails
     }
 
     /**
-     * The preview of a stored image, made now if it does not exist yet.
-     * Null when the original should be used instead.
+     * The preview of an image, made the first time it is asked for. Null
+     * when none applies (unsupported type, already small, transparent PNG,
+     * a disk that does not answer): the caller serves the original.
      *
-     * @return array{path: string, mime: string, width: int|null, height: int|null}|null
+     * Previews of a mounted disk (the NAS) are made and kept on this server
+     * (LocalMedia, "{disk}/Miniaturas del sistema/..."), from the local copy
+     * of the original. A web request never reads the NAS to make one: with
+     * only a NAS copy it serves the NAS's own earlier preview, if any, and
+     * the file is brought here in the background (CacheMediaLocally), which
+     * makes the preview. "No preview needed" is remembered, so a small photo
+     * is not opened again on every view.
+     *
+     * @return array{disk: string, path: string, mime: string, width: int|null, height: int|null}|null
      */
     public function ensure(string $disk, string $path, string $mime, ?int $sizeBytes = null): ?array
     {
-        if (! $this->supports($mime, $sizeBytes)) {
+        if (! $this->supports($mime, $sizeBytes) || $this->knownWithout($disk, $path)) {
             return null;
+        }
+
+        if (MountHealth::settings($disk) !== null) {
+            return $this->ensureForMount($disk, $path, strtolower($mime));
         }
 
         $type = 'image/jpeg';
@@ -100,7 +117,7 @@ class MediaThumbnails
             $filesystem = Storage::disk($disk);
 
             if ($filesystem->exists($target)) {
-                return ['path' => $target, 'mime' => $type, 'width' => null, 'height' => null];
+                return ['disk' => $disk, 'path' => $target, 'mime' => $type, 'width' => null, 'height' => null];
             }
 
             $local = config("filesystems.disks.{$disk}.driver") === 'local';
@@ -113,6 +130,8 @@ class MediaThumbnails
             $made = $this->make($source, strtolower($mime));
 
             if ($made === null) {
+                $this->rememberWithout($disk, $path);
+
                 return null;
             }
 
@@ -122,7 +141,7 @@ class MediaThumbnails
                 return null;
             }
 
-            return ['path' => $target, 'mime' => $type, 'width' => $width, 'height' => $height];
+            return ['disk' => $disk, 'path' => $target, 'mime' => $type, 'width' => $width, 'height' => $height];
         } catch (Throwable $exception) {
             Log::warning('Could not make the preview of an image.', ['disk' => $disk, 'exception' => $exception::class]);
 
@@ -135,11 +154,77 @@ class MediaThumbnails
     }
 
     /**
-     * Size in pixels (upright) of a stored image no preview is made of (a
-     * GIF, a sticker, a picture already small), so the chat can still reserve
-     * its box. Only the header is read: the whole file on a local disk is
-     * never decoded, and a remote one is read up to its first 256 kB. Null
-     * when it cannot be told.
+     * @return array{disk: string, path: string, mime: string, width: int|null, height: int|null}|null
+     */
+    private function ensureForMount(string $disk, string $path, string $mime): ?array
+    {
+        $local = app(LocalMedia::class);
+        $thumbnail = MediaPaths::thumbnailFor($path);
+        $target = $local->absolute($disk, $thumbnail);
+
+        if (is_file($target)) {
+            return ['disk' => $local->diskName(), 'path' => $local->localPath($disk, $thumbnail), 'mime' => 'image/jpeg', 'width' => null, 'height' => null];
+        }
+
+        if (! $local->hasLocal($disk, $path)) {
+            // Only on the NAS: its earlier preview (made there by an older
+            // version) while it answers, never the original read here.
+            try {
+                if ($local->remoteReadable($disk) && Storage::disk($disk)->exists($thumbnail)) {
+                    return ['disk' => $disk, 'path' => $thumbnail, 'mime' => 'image/jpeg', 'width' => null, 'height' => null];
+                }
+            } catch (Throwable) {
+                // The original is served instead.
+            }
+
+            return null;
+        }
+
+        try {
+            $made = $this->make($local->absolute($disk, $path), $mime);
+
+            if ($made === null) {
+                $this->rememberWithout($disk, $path);
+
+                return null;
+            }
+
+            [$bytes, $width, $height] = $made;
+
+            if (! $local->filesystem()->put($local->localPath($disk, $thumbnail), $bytes, ['visibility' => 'private'])) {
+                return null;
+            }
+
+            return ['disk' => $local->diskName(), 'path' => $local->localPath($disk, $thumbnail), 'mime' => 'image/jpeg', 'width' => $width, 'height' => $height];
+        } catch (Throwable $exception) {
+            Log::warning('Could not make the preview of an image.', ['disk' => $disk, 'exception' => $exception::class]);
+
+            return null;
+        }
+    }
+
+    private function knownWithout(string $disk, string $path): bool
+    {
+        try {
+            return Cache::has(self::WITHOUT_PREFIX.sha1($disk.'|'.$path));
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function rememberWithout(string $disk, string $path): void
+    {
+        try {
+            Cache::put(self::WITHOUT_PREFIX.sha1($disk.'|'.$path), 1, 86400 * 30);
+        } catch (Throwable) {
+            // Only saves work.
+        }
+    }
+
+    /**
+     * Width and height of an image as it is shown (EXIF orientation
+     * applied), or null. Reads the local copy when there is one; a file only
+     * on a NAS that is not answering is not measured.
      *
      * @return array{width: int, height: int}|null
      */
@@ -152,14 +237,18 @@ class MediaThumbnails
         }
 
         try {
-            $filesystem = Storage::disk($disk);
+            $file = app(LocalMedia::class)->open($disk, $path, cacheOnRead: false);
 
-            if (config("filesystems.disks.{$disk}.driver") === 'local') {
-                $source = $filesystem->path($path);
+            if ($file === null) {
+                return null;
+            }
+
+            if ($file['absolute'] !== null) {
+                $source = $file['absolute'];
                 $info = is_file($source) ? @getimagesize($source) : false;
                 $orientation = $info !== false && $mime === 'image/jpeg' ? $this->orientation($source) : 1;
             } else {
-                $stream = $filesystem->readStream($path);
+                $stream = $file['filesystem']->readStream($file['path']);
                 $head = is_resource($stream) ? (string) stream_get_contents($stream, 256 * 1024) : '';
 
                 if (is_resource($stream)) {

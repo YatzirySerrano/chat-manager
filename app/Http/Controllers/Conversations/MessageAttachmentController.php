@@ -7,13 +7,12 @@ use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Services\Storage\MediaPaths;
 use App\Services\Storage\MediaThumbnails;
-use App\Support\Attachments\RangedStream;
+use App\Support\Attachments\MediaResponse;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\Response;
@@ -54,12 +53,10 @@ class MessageAttachmentController extends ConversationOperationController
         abort_unless($message->conversation_id === $conversation->id && $attachment->message_id === $message->id, 404);
         abort_if($attachment->path === null || $attachment->path === '', 404, 'El archivo todavía no está disponible.');
 
-        // Each file is read from the disk it was saved on (a row on "local"
-        // keeps working after MEDIA_DISK changes).
-        $disk = Storage::disk($attachment->disk);
         $path = $attachment->path;
         $mime = strtolower($attachment->mime_type);
         $variant = 'original';
+        $source = $attachment->disk;
 
         // `?thumb=1`: the small preview the chat bubble shows (MediaThumbnails).
         // Same authorization, headers and revalidation as the original, and
@@ -68,6 +65,7 @@ class MessageAttachmentController extends ConversationOperationController
             $thumbnail = $thumbnails->ensure($attachment->disk, $path, $mime, $attachment->size_bytes);
 
             if ($thumbnail !== null) {
+                $source = $thumbnail['disk'];
                 $path = $thumbnail['path'];
                 $mime = $thumbnail['mime'];
                 $variant = 'thumb';
@@ -75,27 +73,16 @@ class MessageAttachmentController extends ConversationOperationController
             }
         }
 
-        try {
-            $exists = $disk->exists($path);
-            $modifiedAt = $exists ? $disk->lastModified($path) : 0;
-            $local = config("filesystems.disks.{$attachment->disk}.driver") === 'local';
-            $size = $exists && ! $local ? (int) $disk->size($path) : 0;
-        } catch (Throwable $exception) {
-            Log::warning('Media storage unavailable while serving an attachment.', ['attachment_id' => $attachment->getKey(), 'disk' => $attachment->disk, 'exception' => $exception::class]);
-
-            abort(503, 'El almacenamiento de archivos no responde en este momento. Inténtalo de nuevo en unos minutos.');
-        }
-
-        abort_unless($exists, 404, 'El archivo ya no está disponible.');
-
         $inline = in_array($mime, self::INLINE, true) && ! $request->boolean('download');
         // A file that came without a name (photos, voice notes) downloads
         // with the readable one it was filed under, extension included.
-        $name = $attachment->file_name ?? ($variant === 'original' && ! MediaPaths::isLegacy($path) ? basename($path) : 'archivo');
+        $name = $attachment->file_name ?? ($variant === 'original' && ! MediaPaths::isLegacy((string) $attachment->path) ? basename((string) $attachment->path) : 'archivo');
         $name = $name === '' ? 'archivo' : $name;
 
-        $lastModified = Date::createFromTimestamp($modifiedAt);
-        $etag = sha1(implode('|', [$attachment->getKey(), $path, $lastModified->getTimestamp(), $mime, $inline ? 'inline' : 'attachment', $variant]));
+        // The file behind an attachment never changes: its validators come
+        // from the row, so a revalidation (304) touches no disk at all.
+        $lastModified = Date::instance($attachment->created_at ?? now()->startOfDay());
+        $etag = sha1(implode('|', [$attachment->getKey(), $path, $attachment->size_bytes, $mime, $inline ? 'inline' : 'attachment', $variant]));
 
         $headers = [
             'Content-Type' => $inline ? $mime : 'application/octet-stream',
@@ -118,12 +105,21 @@ class MessageAttachmentController extends ConversationOperationController
             return $notModified;
         }
 
-        // A local file answers byte ranges by itself; a remote one is streamed
-        // through RangedStream, so a video can be sought (and plays in Safari,
-        // which only accepts ranged answers) without holding it in memory.
-        $response = $local
-            ? response()->file($disk->path($path), $headers)
-            : RangedStream::response($request, fn () => $disk->readStream($path), $size, $headers);
+        // The local copy when there is one; the NAS only while it answers
+        // (503 with Retry-After otherwise, never a request left hanging).
+        $file = MediaResponse::open($source, $path, $variant === 'original' ? $attachment->size_bytes : null, $variant === 'original' ? $attachment->mime_type : null, ['attachment_id' => $attachment->getKey()]);
+
+        abort_if($file === null, 404, 'El archivo ya no está disponible.');
+
+        $size = $variant === 'original' && $attachment->size_bytes !== null && $attachment->size_bytes > 0 ? $attachment->size_bytes : null;
+
+        try {
+            $response = MediaResponse::make($request, $file, $headers, $size);
+        } catch (Throwable $exception) {
+            Log::warning('Media storage unavailable while serving an attachment.', ['attachment_id' => $attachment->getKey(), 'disk' => $source, 'exception' => $exception::class]);
+
+            abort(503, 'El almacenamiento de archivos no responde en este momento. Inténtalo de nuevo en unos minutos.', ['Retry-After' => '30']);
+        }
 
         return $this->revalidated($response, $etag, $lastModified);
     }

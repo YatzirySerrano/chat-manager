@@ -3,10 +3,10 @@
 namespace App\Concerns;
 
 use App\Models\User;
+use App\Support\Attachments\MediaResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
@@ -21,8 +21,11 @@ trait ServesUserAvatars
     {
         abort_unless($user->hasAvatar(), 404);
 
-        $disk = Storage::disk((string) $user->avatar_disk);
-        $path = (string) $user->avatar_path;
+        // The local copy first; the NAS only while it answers.
+        $location = MediaResponse::open((string) $user->avatar_disk, (string) $user->avatar_path);
+        abort_if($location === null, 404);
+        $disk = $location['filesystem'];
+        $path = $location['path'];
 
         try {
             $exists = $disk->exists($path);

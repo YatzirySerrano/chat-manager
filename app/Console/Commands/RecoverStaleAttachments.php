@@ -5,9 +5,9 @@ namespace App\Console\Commands;
 use App\Enums\AttachmentStatus;
 use App\Events\Conversations\ConversationChanged;
 use App\Exceptions\StorageUnavailable;
-use App\Jobs\DownloadInboundMedia;
 use App\Models\MessageAttachment;
 use App\Services\Storage\MediaDisk;
+use App\Support\Attachments\MediaDownloads;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -118,14 +118,21 @@ class RecoverStaleAttachments extends Command
     {
         $requeued = 0;
 
-        foreach ($this->batch($query, $limit) as $attachment) {
+        foreach ($this->batch($query, $limit, withSource: true) as $attachment) {
+            // A row no job can fetch any more is left for the expiry steps.
+            if (! MediaDownloads::recoverable($attachment)) {
+                continue;
+            }
+
             $updated = MessageAttachment::query()
                 ->whereKey($attachment->id)
                 ->where('status', $fromStatus)
                 ->update(['status' => AttachmentStatus::Pending, 'error_code' => null, 'updated_at' => now()]);
 
             if ($updated > 0) {
-                DownloadInboundMedia::dispatch($attachment->id);
+                // The job of the file's own channel (WhatsApp Web and Telegram
+                // files used to go to the Meta job, which left them pending).
+                MediaDownloads::dispatch($attachment);
                 $requeued++;
             }
         }
@@ -137,8 +144,14 @@ class RecoverStaleAttachments extends Command
      * @param  Builder<MessageAttachment>  $query
      * @return Collection<int, MessageAttachment>
      */
-    private function batch(Builder $query, int $limit): Collection
+    private function batch(Builder $query, int $limit, bool $withSource = false): Collection
     {
+        if ($withSource) {
+            return $query->with('message:id,conversation_id,metadata', 'message.conversation:id,connection_id', 'message.conversation.channelConnection')
+                ->orderBy('id')->limit($limit)
+                ->get(['id', 'message_id', 'whatsapp_media_id', 'provider_reference']);
+        }
+
         return $query->with('message:id,conversation_id')->orderBy('id')->limit($limit)->get(['id', 'message_id']);
     }
 

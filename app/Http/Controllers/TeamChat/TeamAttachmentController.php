@@ -8,13 +8,12 @@ use App\Models\TeamChat\TeamAttachment;
 use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamThread;
 use App\Services\Storage\MediaThumbnails;
-use App\Support\Attachments\RangedStream;
+use App\Support\Attachments\MediaResponse;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\Response;
@@ -49,13 +48,7 @@ class TeamAttachmentController extends Controller
 
         abort_if($message->isDeleted() || $attachment->isPurged(), 404);
 
-        $disk = Storage::disk($attachment->disk);
-
-        if ($attachment->path === null || ! $disk->exists($attachment->path)) {
-            Log::warning('Falta el archivo de un adjunto del chat interno.', ['attachment_id' => $attachment->id]);
-
-            abort(404);
-        }
+        abort_if($attachment->path === null || $attachment->path === '', 404);
 
         /*
          * Revalidation after the week of private caching: the stored file
@@ -77,6 +70,15 @@ class TeamAttachmentController extends Controller
             return $notModified;
         }
 
+        // The local copy first; the NAS only while it answers (503 otherwise).
+        $stored = MediaResponse::open($attachment->disk, $attachment->path, $attachment->size_bytes, $attachment->mime_type, ['team_attachment_id' => $attachment->id]);
+
+        if ($stored === null) {
+            Log::warning('Falta el archivo de un adjunto del chat interno.', ['attachment_id' => $attachment->id]);
+
+            abort(404);
+        }
+
         /*
          * `?thumb=1`: the small preview of an image the bubble shows
          * (MediaThumbnails keeps it in the system folder of the same private
@@ -94,12 +96,19 @@ class TeamAttachmentController extends Controller
             if ($thumbnail !== null) {
                 $this->rememberDimensions($attachment, $thumbnail['width'], $thumbnail['height']);
 
-                return $this->cached($disk->response($thumbnail['path'], (pathinfo($attachment->original_name, PATHINFO_FILENAME) ?: 'imagen').'.jpg', [
-                    'Content-Type' => $thumbnail['mime'],
-                    'X-Content-Type-Options' => 'nosniff',
-                    'Referrer-Policy' => 'no-referrer',
-                    'Content-Security-Policy' => self::SANDBOX,
-                ], 'inline'), $etag, $lastModified);
+                $preview = MediaResponse::open($thumbnail['disk'], $thumbnail['path']);
+
+                if ($preview !== null) {
+                    $previewName = (pathinfo($attachment->original_name, PATHINFO_FILENAME) ?: 'imagen').'.jpg';
+
+                    return $this->cached(MediaResponse::make($request, $preview, [
+                        'Content-Type' => $thumbnail['mime'],
+                        'Content-Disposition' => HeaderUtils::makeDisposition(HeaderUtils::DISPOSITION_INLINE, $previewName, Str::ascii($previewName) !== '' ? str_replace(['%', '/', '\\'], '', Str::ascii($previewName)) : 'imagen.jpg'),
+                        'X-Content-Type-Options' => 'nosniff',
+                        'Referrer-Policy' => 'no-referrer',
+                        'Content-Security-Policy' => self::SANDBOX,
+                    ]), $etag, $lastModified);
+                }
             }
         }
 
@@ -134,16 +143,17 @@ class TeamAttachmentController extends Controller
                 Str::ascii($attachment->original_name) !== '' ? str_replace(['%', '/', '\\'], '', Str::ascii($attachment->original_name)) : 'archivo',
             );
 
-            $response = config("filesystems.disks.{$attachment->disk}.driver") === 'local'
-                ? response()->file($disk->path($attachment->path), $headers)
-                : RangedStream::response($request, fn () => $disk->readStream($attachment->path), (int) $disk->size($attachment->path), $headers);
-
-            return $this->cached($response, $etag, $lastModified);
+            return $this->cached(MediaResponse::make($request, $stored, $headers, $attachment->size_bytes), $etag, $lastModified);
         }
 
-        return $this->cached($inline
-            ? $disk->response($attachment->path, $attachment->original_name, $headers, 'inline')
-            : $disk->download($attachment->path, $attachment->original_name, $headers), $etag, $lastModified);
+        $fallback = Str::ascii($attachment->original_name) !== '' ? str_replace(['%', '/', '\\'], '', Str::ascii($attachment->original_name)) : 'archivo';
+        $headers['Content-Disposition'] = HeaderUtils::makeDisposition(
+            $inline ? HeaderUtils::DISPOSITION_INLINE : HeaderUtils::DISPOSITION_ATTACHMENT,
+            $attachment->original_name,
+            $fallback,
+        );
+
+        return $this->cached(MediaResponse::make($request, $stored, $headers, $attachment->size_bytes), $etag, $lastModified);
     }
 
     /**

@@ -10,11 +10,11 @@ use App\Models\Message;
 use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamThread;
 use App\Services\LinkPreviews\LinkPreviews;
+use App\Support\Attachments\MediaResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
@@ -65,9 +65,10 @@ class LinkPreviewController extends Controller
 
         abort_if($disk === null || $path === null || $mime === null || ! in_array($mime, LinkPreviews::ICON_TYPES, true), 404);
 
+        $location = MediaResponse::open($disk, $path);
+
         try {
-            $filesystem = Storage::disk($disk);
-            $contents = $filesystem->exists($path) ? $filesystem->get($path) : null;
+            $contents = $location === null ? null : $location['filesystem']->get($location['path']);
         } catch (Throwable $exception) {
             Log::warning('Media storage unavailable while serving a link preview image.', ['link_preview_id' => $linkPreview->id, 'exception' => $exception::class]);
 

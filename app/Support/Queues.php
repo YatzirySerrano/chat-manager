@@ -23,6 +23,12 @@ final class Queues
 
     public const MEDIA = 'media';
 
+    /** Copies of local files to the NAS (own workers: a hung share never blocks media downloads). */
+    public const MEDIA_SYNC = 'media-sync';
+
+    /** Files only on the NAS brought back to the server's local cache, and their previews. */
+    public const MEDIA_FETCH = 'media-fetch';
+
     public const DEFAULT = 'default';
 
     public const EXPORTS = 'exports';

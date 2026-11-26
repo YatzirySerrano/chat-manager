@@ -10,6 +10,7 @@ use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\Storage\LocalMedia;
 use App\Services\Storage\MediaDisk;
 use App\Services\Storage\MediaThumbnails;
 use App\Services\Storage\MountHealth;
@@ -182,9 +183,23 @@ class DeleteConversationPermanently
                 continue;
             }
 
+            // Local first: the copy on this server goes now; a file that never
+            // reached the NAS has nothing else to remove.
+            if ($this->mediaDisk->isMount($file['disk'])) {
+                $local = app(LocalMedia::class);
+                $onlyHere = $local->pending($file['disk'], $file['path']);
+                $local->forget($file['disk'], $file['path']);
+
+                if ($onlyHere) {
+                    $deleted++;
+
+                    continue;
+                }
+            }
+
             // A share that is not mounted leaves an empty local directory:
             // deleting there would "succeed" without touching the real file.
-            if ($this->mediaDisk->isMount($file['disk']) && $this->mounts->cheapProblem($file['disk']) !== null) {
+            if ($this->mediaDisk->isMount($file['disk']) && ($this->mounts->cheapProblem($file['disk']) !== null || ! $this->mounts->remoteAllowed($file['disk']))) {
                 $pending++;
 
                 Log::warning('A file of a permanently deleted conversation stays on a storage that is not available.', [

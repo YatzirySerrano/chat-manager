@@ -10,7 +10,6 @@ use App\Enums\MessageDirection;
 use App\Http\Controllers\Controller;
 use App\Models\MessageAttachment;
 use App\Services\Meta\MediaFileName;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\Response;
@@ -42,9 +41,7 @@ class MetaMediaController extends Controller
         abort_if($file === null || blank($file->path) || $file->message->direction !== MessageDirection::Outbound
             || ! in_array($channel, [ConnectionChannel::Messenger, ConnectionChannel::Instagram], true), 404);
 
-        $disk = Storage::disk($file->disk);
-
-        abort_unless($this->storedFileExists($disk, $file), 404);
+        $stored = $this->openStoredFile($file);
 
         // Meta names the customer's file after this header (the URL path
         // carries only the id), so it always has a name with its extension.
@@ -62,8 +59,6 @@ class MetaMediaController extends Controller
             'X-Robots-Tag' => 'noindex, nofollow',
         ];
 
-        return $this->storedFileResponse($file, fn (): Response => config("filesystems.disks.{$file->disk}.driver") === 'local'
-            ? response()->file($disk->path((string) $file->path), $headers)
-            : $disk->response((string) $file->path, $name, $headers, 'attachment'));
+        return $this->storedFileResponse($file, fn (): Response => $this->sendStoredFile($stored, $name, $headers, 'attachment'));
     }
 }

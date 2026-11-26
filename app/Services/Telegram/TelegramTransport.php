@@ -13,9 +13,9 @@ use App\Services\Messaging\MessageTransport;
 use App\Services\Meta\MetaGraphException;
 use App\Services\Meta\SendResult;
 use App\Services\Meta\WhatsAppTransportUnavailable;
+use App\Services\Storage\LocalMedia;
 use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\Attachments\ChannelAttachmentPolicy;
-use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 /**
@@ -173,7 +173,8 @@ class TelegramTransport implements MessageTransport
     private function open(MessageAttachment $attachment)
     {
         try {
-            $stream = Storage::disk($attachment->disk)->readStream((string) $attachment->path);
+            $location = app(LocalMedia::class)->open($attachment->disk, (string) $attachment->path, cacheOnRead: false);
+            $stream = $location === null ? null : $location['filesystem']->readStream($location['path']);
         } catch (Throwable) {
             $stream = null;
         }

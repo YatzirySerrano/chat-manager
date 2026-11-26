@@ -19,7 +19,6 @@ use App\Services\Conversations\ConversationTimeline;
 use App\Services\Migration\History\HistoryArchive;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -143,15 +142,14 @@ class HistoryImportArchiveController extends Controller
         abort_unless($belongs, 404);
         abort_unless($attachment->status === AttachmentStatus::Available && is_string($attachment->path) && $attachment->path !== '', 404, 'Archivo histórico no disponible.');
 
-        $disk = Storage::disk($attachment->disk);
-        abort_unless($this->storedFileExists($disk, $attachment), 404, 'Archivo histórico no disponible.');
+        $stored = $this->openStoredFile($attachment);
 
         $mime = strtolower($attachment->mime_type);
         $inline = ! $request->boolean('download') && Str::startsWith($mime, self::INLINE_PREFIXES);
         $name = $attachment->file_name ?? 'archivo';
         $fallback = str_replace(['%', '/', '\\'], '', Str::ascii($name)) ?: 'archivo';
 
-        return $this->storedFileResponse($attachment, fn (): HttpResponse => $disk->response((string) $attachment->path, $name, [
+        return $this->storedFileResponse($attachment, fn (): HttpResponse => $this->sendStoredFile($stored, $name, [
             'Content-Type' => $inline ? $mime : 'application/octet-stream',
             'Content-Disposition' => HeaderUtils::makeDisposition($inline ? HeaderUtils::DISPOSITION_INLINE : HeaderUtils::DISPOSITION_ATTACHMENT, $name, $fallback),
             'X-Content-Type-Options' => 'nosniff',

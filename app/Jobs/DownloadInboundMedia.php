@@ -220,7 +220,7 @@ class DownloadInboundMedia implements ShouldQueue
      * CDN URL of a Messenger or Instagram attachment (kept in the message
      * content by ReceiveInboundMessage); null for WhatsApp media ids.
      */
-    private static function sourceUrl(MessageAttachment $attachment): ?string
+    public static function sourceUrl(MessageAttachment $attachment): ?string
     {
         $content = $attachment->message->metadata['content'] ?? null;
 
@@ -236,8 +236,16 @@ class DownloadInboundMedia implements ShouldQueue
      */
     private function retryLater(MessageAttachment $attachment, string $reason = 'download_failed'): void
     {
+        // A storage failure is ours, not the file's: it never uses up the
+        // download budget nor marks the file unavailable for good.
+        if ($reason === StorageUnavailable::CODE) {
+            self::parkForStorage($attachment->id);
+        }
+
         if ($this->attempts() >= $this->tries) {
-            $this->markUnavailable($attachment, $reason);
+            if ($reason !== StorageUnavailable::CODE) {
+                $this->markUnavailable($attachment, $reason);
+            }
 
             return;
         }
@@ -255,8 +263,32 @@ class DownloadInboundMedia implements ShouldQueue
 
         if ($attachment !== null) {
             Log::warning('WhatsApp media could not be downloaded after every attempt.', ['attachment_id' => $attachment->id]);
-            $this->markUnavailable($attachment, $exception instanceof StorageUnavailable ? StorageUnavailable::CODE : 'download_failed');
+            if ($exception instanceof StorageUnavailable) {
+                // Still pending: attachments:recover-stale downloads it again.
+                self::parkForStorage($attachment->id);
+
+                return;
+            }
+
+            $this->markUnavailable($attachment, 'download_failed');
         }
+    }
+
+    /**
+     * The file stays "pending" with the storage reason (shown as waiting,
+     * downloaded again by attachments:recover-stale once storage answers),
+     * and this attempt is not counted.
+     */
+    public static function parkForStorage(int $attachmentId): void
+    {
+        MessageAttachment::query()
+            ->whereKey($attachmentId)
+            ->where('status', AttachmentStatus::Pending)
+            ->update([
+                'error_code' => StorageUnavailable::CODE,
+                'download_attempts' => DB::raw('CASE WHEN download_attempts > 0 THEN download_attempts - 1 ELSE 0 END'),
+                'updated_at' => now(),
+            ]);
     }
 
     private function markUnavailable(MessageAttachment $attachment, string $reason): void

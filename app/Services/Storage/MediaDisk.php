@@ -111,7 +111,15 @@ class MediaDisk
         }
 
         if ($config['driver'] === 'local' && $this->isMount($disk)) {
-            return $this->mountProblem($disk);
+            if ($this->route($disk) === 'local') {
+                return null;
+            }
+
+            // Straight to the NAS (local first off, or no room left here).
+            $mount = MountHealth::configurationProblem($disk) ?? $this->mountProblem($disk);
+            $local = app(LocalMedia::class);
+
+            return $mount === null || ! $local->enabledFor($disk) ? $mount : ($local->localProblem() ?? $mount);
         }
 
         if ($config['driver'] === 'local') {
@@ -175,6 +183,13 @@ class MediaDisk
             throw new StorageUnavailable('read_failed', $disk, 'No fue posible leer el archivo para guardarlo. Inténtalo de nuevo.');
         }
 
+        if ($this->isMount($disk) && $this->route($disk, $size) === 'local') {
+            fclose($stream);
+            app(LocalMedia::class)->store($localPath, $disk, $path, $size);
+
+            return ['disk' => $disk, 'path' => $path];
+        }
+
         if ($this->isMount($disk)) {
             try {
                 $this->putOnMount($disk, $stream, $path, $size);
@@ -234,12 +249,18 @@ class MediaDisk
 
         $write = function () use ($localPath, $directory, $stem, $suffix, $disk): array {
             $filesystem = Storage::disk($disk);
+            // Written here first: the name is checked against the local copies
+            // and the replica rows, never by asking the NAS.
+            $localFirst = $this->isMount($disk) && $this->route($disk, is_file($localPath) ? (int) filesize($localPath) : 0) === 'local';
+            $local = app(LocalMedia::class);
 
             for ($order = 1; $order <= 999; $order++) {
                 $name = $stem.($order === 1 ? '' : " ({$order})").$suffix;
 
                 try {
-                    $taken = $filesystem->exists($directory.'/'.$name);
+                    $taken = $localFirst
+                        ? $local->taken($disk, $directory.'/'.$name)
+                        : $filesystem->exists($directory.'/'.$name);
                 } catch (Throwable $exception) {
                     $this->logFailure('write_failed', $disk, $exception);
 
@@ -272,12 +293,93 @@ class MediaDisk
             return;
         }
 
+        if ($this->isMount($disk)) {
+            $local = app(LocalMedia::class);
+            $onlyHere = $local->pending($disk, $path);
+            $local->forget($disk, $path);
+
+            // A file that never reached the NAS has nothing there; a dead
+            // share is never touched (the copy there, if any, stays orphaned).
+            if ($onlyHere || ! app(MountHealth::class)->remoteAllowed($disk)) {
+                return;
+            }
+        }
+
         try {
             // The preview of the image, if any (MediaThumbnails keeps it in its own folder).
             Storage::disk($disk)->delete([$path, ...MediaThumbnails::pathsFor($path)]);
         } catch (Throwable $exception) {
             $this->logFailure('delete_failed', $disk, $exception);
         }
+    }
+
+    /**
+     * Where a new file of the disk is written: "local" (this server first,
+     * synchronized to the NAS later), or "direct" (straight to the disk:
+     * local first is off, or the server has no room left for it).
+     */
+    public function route(string $disk, int $incomingBytes = 0): string
+    {
+        $local = app(LocalMedia::class);
+
+        if (! $local->enabledFor($disk) || MountHealth::configurationProblem($disk) !== null) {
+            return 'direct';
+        }
+
+        return $local->localProblem($incomingBytes) === null ? 'local' : 'direct';
+    }
+
+    /**
+     * Copies a file kept on this server to its final path on the mounted
+     * disk (SyncMediaReplica): temporary file, atomic rename, size and
+     * SHA-256 of the remote copy checked against the local one. A file
+     * already there is accepted when identical ("identical") and never
+     * replaced otherwise ("remote_conflict").
+     *
+     * @return string "copied" or "identical"
+     *
+     * @throws StorageUnavailable
+     */
+    public function copyToMount(string $disk, string $source, string $path, int $size, string $sha256): string
+    {
+        $problem = MountHealth::configurationProblem($disk) ?? app(MountHealth::class)->cheapProblem($disk);
+
+        if ($problem !== null) {
+            throw new StorageUnavailable($problem, $disk);
+        }
+
+        $final = (string) MountHealth::settings($disk)['root'].'/'.ltrim($path, '/');
+        clearstatcache(true, $final);
+
+        if (file_exists($final)) {
+            if (@filesize($final) === $size && @hash_file('sha256', $final) === $sha256) {
+                return 'identical';
+            }
+
+            throw new StorageUnavailable('remote_conflict', $disk);
+        }
+
+        $stream = @fopen($source, 'rb');
+
+        if ($stream === false) {
+            throw new StorageUnavailable('local_missing', $disk);
+        }
+
+        try {
+            $hash = $this->putOnMount($disk, $stream, ltrim($path, '/'), $size, true);
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+        }
+
+        if ($hash !== $sha256) {
+            @unlink($final);
+
+            throw new StorageUnavailable('verify_failed', $disk);
+        }
+
+        return 'copied';
     }
 
     /**
@@ -387,6 +489,15 @@ class MediaDisk
             'marker_missing' => 'no se encontró el archivo de identidad del almacenamiento (MEDIA_MOUNT_MARKER) en la carpeta montada: el NAS no está montado o es otra carpeta',
             'marker_mismatch' => 'el archivo de identidad de la carpeta montada no coincide con MEDIA_MOUNT_ID: es otro almacenamiento',
             'probe_timeout' => 'el NAS no respondió a tiempo a la prueba de salud (montaje caído o red lenta)',
+            'probe_stuck' => 'una prueba anterior del NAS sigue bloqueada en el servidor (el montaje no responde); no se lanzan más pruebas hasta que termine',
+            'probe_busy' => 'hay una prueba del NAS en curso',
+            'health_unknown' => 'todavía no hay una comprobación del NAS (revisa que el programador de tareas esté activo)',
+            'remote_unavailable' => 'el NAS no responde en este momento',
+            'remote_conflict' => 'en el NAS ya existe otro archivo con el mismo nombre; la copia local se conserva',
+            'local_missing' => 'la copia local del archivo ya no existe',
+            'local_full' => 'el disco del servidor llegó al espacio libre mínimo reservado (MEDIA_LOCAL_MIN_FREE_BYTES)',
+            'local_pending_full' => 'hay demasiados archivos esperando copiarse al NAS (MEDIA_LOCAL_PENDING_MAX_BYTES) y el NAS no responde',
+            'local_unwritable' => 'no se pudo escribir en la carpeta local de archivos del servidor (MEDIA_LOCAL_ROOT)',
             default => 'el almacenamiento de archivos no respondió',
         };
     }
@@ -411,10 +522,11 @@ class MediaDisk
      * is still the expected storage. Nothing is left behind on failure.
      *
      * @param  resource  $stream
+     * @return string The SHA-256 of the written file.
      *
      * @throws StorageUnavailable
      */
-    private function putOnMount(string $disk, $stream, string $path, int $size): void
+    private function putOnMount(string $disk, $stream, string $path, int $size, bool $alwaysVerifyHash = false): string
     {
         $root = (string) MountHealth::settings($disk)['root'];
         $final = $root.'/'.$path;
@@ -484,7 +596,7 @@ class MediaDisk
                 throw new StorageUnavailable('verify_failed', $disk);
             }
 
-            if ((bool) config('attachments.storage.mount.verify_hash', true) && @hash_file('sha256', $final) !== $hash) {
+            if (($alwaysVerifyHash || (bool) config('attachments.storage.mount.verify_hash', true)) && @hash_file('sha256', $final) !== $hash) {
                 throw new StorageUnavailable('verify_failed', $disk);
             }
 
@@ -494,6 +606,8 @@ class MediaDisk
             if ($problem !== null) {
                 throw new StorageUnavailable($problem, $disk);
             }
+
+            return $hash;
         } catch (StorageUnavailable $exception) {
             if ($renamed) {
                 @unlink($final);

@@ -64,6 +64,45 @@ return [
             'health_ttl_seconds' => (int) env('MEDIA_MOUNT_HEALTH_TTL', 90),
             'probe_timeout_seconds' => (float) env('MEDIA_MOUNT_PROBE_TIMEOUT', 10),
             'verify_hash' => (bool) env('MEDIA_MOUNT_VERIFY_HASH', true),
+            // A probe slower than this marks the NAS "degraded".
+            'slow_ms' => (int) env('MEDIA_MOUNT_SLOW_MS', 3000),
+        ],
+        /*
+        | Local first (App\Services\Storage\LocalMedia): new files of a
+        | mounted disk (the NAS) are written to the "media_local" disk of this
+        | server first, served from there and copied to the NAS by the
+        | media-sync workers (verified by size and SHA-256). The NAS state only
+        | gates the remote copy, never sending or receiving files.
+        |
+        | - pending_max_bytes: files not yet on the NAS (never deleted here);
+        |   past it new files go straight to the NAS when it answers.
+        | - cache_max_bytes / retention_days: synchronized copies kept here to
+        |   be served without touching the NAS; pruned by media:prune-local.
+        | - min_free_bytes: free space always left on the server's disk.
+        | - sync_*: batch per minute, retry backoff (seconds, with jitter),
+        |   consecutive failures that open the circuit and its pause.
+        | - remote_reads: HTTP may stream a file that is only on the NAS while
+        |   its last health check passed; it is also copied here
+        |   (cache_on_read_max_bytes) so the next view is local.
+        */
+        'local_first' => [
+            'enabled' => (bool) env('MEDIA_LOCAL_FIRST', true),
+            'disk' => 'media_local',
+            'pending_max_bytes' => (int) env('MEDIA_LOCAL_PENDING_MAX_BYTES', 80 * 1024 ** 3),
+            'cache_max_bytes' => (int) env('MEDIA_LOCAL_CACHE_MAX_BYTES', 20 * 1024 ** 3),
+            'retention_days' => (int) env('MEDIA_LOCAL_RETENTION_DAYS', 7),
+            'min_free_bytes' => (int) env('MEDIA_LOCAL_MIN_FREE_BYTES', 40 * 1024 ** 3),
+            'sync_batch' => (int) env('MEDIA_SYNC_BATCH', 60),
+            'sync_lease_seconds' => (int) env('MEDIA_SYNC_LEASE_SECONDS', 900),
+            'sync_backoff_base' => (int) env('MEDIA_SYNC_BACKOFF_BASE', 30),
+            'sync_backoff_max' => (int) env('MEDIA_SYNC_BACKOFF_MAX', 3600),
+            'breaker_failures' => (int) env('MEDIA_SYNC_BREAKER_FAILURES', 5),
+            'breaker_seconds' => (int) env('MEDIA_SYNC_BREAKER_SECONDS', 300),
+            'remote_reads' => (bool) env('MEDIA_REMOTE_READS', true),
+            'cache_on_read_max_bytes' => (int) env('MEDIA_CACHE_ON_READ_MAX_BYTES', 64 * 1024 ** 2),
+            'sync_timeout_seconds' => (int) env('MEDIA_SYNC_TIMEOUT', 600),
+            // nginx "internal" location aliased to MEDIA_LOCAL_ROOT (e.g. /_media-local/); empty = PHP sends the file.
+            'x_accel_prefix' => env('MEDIA_X_ACCEL_PREFIX', ''),
         ],
     ],
 

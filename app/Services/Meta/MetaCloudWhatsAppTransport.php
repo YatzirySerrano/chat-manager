@@ -8,6 +8,7 @@ use App\Models\Connection;
 use App\Models\ContactIdentity;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Services\Storage\LocalMedia;
 use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\Storage;
@@ -261,18 +262,18 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
         }
 
         try {
-            $disk = Storage::disk($attachment->disk);
-            $exists = $disk->exists($attachment->path);
+            // The local copy first; the NAS only while it answers.
+            $location = app(LocalMedia::class)->open($attachment->disk, $attachment->path, cacheOnRead: false);
         } catch (Throwable) {
             throw self::storageUnreadable();
         }
 
-        if (! $exists) {
+        if ($location === null) {
             throw new MetaGraphException('El archivo adjunto ya no existe en el almacenamiento.', rejected: true, kind: MetaGraphException::INVALID_REQUEST);
         }
 
         try {
-            $stream = $disk->readStream($attachment->path);
+            $stream = $location['filesystem']->readStream($location['path']);
         } catch (Throwable) {
             throw self::storageUnreadable();
         }

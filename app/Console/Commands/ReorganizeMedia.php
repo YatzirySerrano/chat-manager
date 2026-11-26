@@ -7,6 +7,7 @@ use App\Models\Contact;
 use App\Models\HistoryImportMessage;
 use App\Models\MessageAttachment;
 use App\Models\TeamChat\TeamAttachment;
+use App\Services\Storage\LocalMedia;
 use App\Services\Storage\MediaDisk;
 use App\Services\Storage\MediaPaths;
 use App\Services\Storage\MediaThumbnails;
@@ -213,6 +214,16 @@ class ReorganizeMedia extends Command
     private function move(string $type, string $disk, string $from, array $placement, bool $apply, MediaDisk $mediaDisk, MountHealth $mounts): void
     {
         $this->assertAvailable($disk, $mediaDisk, $mounts);
+
+        // Local first: a file whose NAS copy is not verified yet, or that has a
+        // copy on this server, is left where it is (moving it on the NAS would
+        // split it from its local copy).
+        if ($mediaDisk->isMount($disk) && (app(LocalMedia::class)->pending($disk, $from) || app(LocalMedia::class)->hasLocal($disk, $from))) {
+            $this->totals['missing']++;
+            $this->report($from, null, 'tiene copia en el servidor (almacenamiento local primero); no se mueve');
+
+            return;
+        }
 
         $filesystem = Storage::disk($disk);
 

@@ -11,7 +11,6 @@ use App\Models\WebChatSession;
 use App\Services\WebChat\VisitorSessions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\Response;
@@ -54,9 +53,7 @@ class VisitorAttachmentController extends Controller
 
         abort_if($file === null || $file->path === null || $file->path === '', 404);
 
-        $disk = Storage::disk($file->disk);
-
-        abort_unless($this->storedFileExists($disk, $file), 404);
+        $stored = $this->openStoredFile($file);
 
         $mime = strtolower($file->mime_type);
         $inline = in_array($mime, self::INLINE, true);
@@ -74,8 +71,6 @@ class VisitorAttachmentController extends Controller
             'Referrer-Policy' => 'no-referrer',
         ];
 
-        return $this->storedFileResponse($file, fn (): Response => config("filesystems.disks.{$file->disk}.driver") === 'local'
-            ? response()->file($disk->path($file->path), $headers)
-            : $disk->response($file->path, $name, $headers, $inline ? 'inline' : 'attachment'));
+        return $this->storedFileResponse($file, fn (): Response => $this->sendStoredFile($stored, $name, $headers, $inline ? 'inline' : 'attachment'));
     }
 }

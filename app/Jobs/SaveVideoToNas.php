@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\VideoExportStatus;
 use App\Exceptions\StorageUnavailable;
 use App\Models\VideoExport;
+use App\Services\Storage\LocalMedia;
 use App\Services\Storage\MediaDisk;
 use App\Services\Storage\MediaPaths;
 use App\Services\VideoExports\VideoExports;
@@ -15,7 +16,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -173,14 +173,19 @@ class SaveVideoToNas implements ShouldQueue
      */
     private function localCopy(string $disk, string $path): ?array
     {
-        $filesystem = Storage::disk($disk);
-
         try {
-            if (config("filesystems.disks.{$disk}.driver") === 'local') {
-                $local = $filesystem->path($path);
+            $location = app(LocalMedia::class)->open($disk, $path, cacheOnRead: false);
 
-                return is_file($local) ? [$local, null] : null;
+            if ($location === null) {
+                return null;
             }
+
+            if ($location['absolute'] !== null) {
+                return [$location['absolute'], null];
+            }
+
+            $filesystem = $location['filesystem'];
+            $path = $location['path'];
 
             $temporary = (string) tempnam(sys_get_temp_dir(), 'video-export-');
             $input = $filesystem->readStream($path);

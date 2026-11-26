@@ -126,6 +126,8 @@ return [
         'media' => env('QUEUE_NAME_MEDIA', 'media'),
         'notifications' => env('QUEUE_NAME_NOTIFICATIONS', 'notifications'),
         'exports' => env('QUEUE_NAME_EXPORTS', 'exports'),
+        'media-sync' => env('QUEUE_NAME_MEDIA_SYNC', 'media-sync'),
+        'media-fetch' => env('QUEUE_NAME_MEDIA_FETCH', 'media-fetch'),
         'default' => env('QUEUE_NAME_DEFAULT', 'default'),
     ],
 

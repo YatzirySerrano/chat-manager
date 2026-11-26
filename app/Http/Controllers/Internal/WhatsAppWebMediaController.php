@@ -12,7 +12,6 @@ use App\Services\Meta\MediaFileName;
 use App\Services\WhatsAppWeb\InternalSignature;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -64,9 +63,7 @@ class WhatsAppWebMediaController extends Controller
         abort_if($file === null || blank($file->path) || $file->message->direction !== MessageDirection::Outbound
             || $connection === null || ! $connection->isWhatsAppWeb() || $connection->isDeleted(), 404);
 
-        $disk = Storage::disk($file->disk);
-
-        abort_unless($this->storedFileExists($disk, $file), 404);
+        $stored = $this->openStoredFile($file);
 
         $name = MediaFileName::withExtension($file->file_name, $file->mime_type);
         $headers = [
@@ -76,9 +73,7 @@ class WhatsAppWebMediaController extends Controller
             'X-Robots-Tag' => 'noindex, nofollow',
         ];
 
-        return $this->storedFileResponse($file, fn (): Response => config("filesystems.disks.{$file->disk}.driver") === 'local'
-            ? response()->file($disk->path((string) $file->path), $headers)
-            : $disk->response((string) $file->path, $name, $headers, 'attachment'));
+        return $this->storedFileResponse($file, fn (): Response => $this->sendStoredFile($stored, $name, $headers, 'attachment'));
     }
 
     private static function queryString(Request $request, string $key): ?string

@@ -118,6 +118,22 @@ return [
             ],
         ],
 
+        /*
+        | Local first copy of the media of a mounted disk (the NAS): every new
+        | file is written here first and synchronized to the NAS afterwards by
+        | the media-sync workers (App\Services\Storage\LocalMedia). Files of
+        | disk "nas" live here under "nas/{path}", thumbnails under
+        | "nas/.thumbnails/...". Private, never served by URL.
+        */
+        'media_local' => [
+            'driver' => 'local',
+            'root' => (string) (env('MEDIA_LOCAL_ROOT') ?: storage_path('app/private/media-local')),
+            'serve' => false,
+            'throw' => false,
+            'report' => false,
+            'visibility' => 'private',
+        ],
+
     ],
 
     /*

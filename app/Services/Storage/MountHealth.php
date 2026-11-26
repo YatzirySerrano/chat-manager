@@ -2,7 +2,9 @@
 
 namespace App\Services\Storage;
 
+use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
@@ -34,6 +36,9 @@ use function Illuminate\Support\php_binary;
 class MountHealth
 {
     private const CACHE_PREFIX = 'storage:mount-health:';
+
+    /** Probes kept to tell the state (about ten minutes at one per minute). */
+    private const HISTORY = 10;
 
     /**
      * @param  list<string>|null  $command  Probe process to run instead of the artisan probe (tests).
@@ -166,39 +171,231 @@ class MountHealth
     }
 
     /**
-     * The cached result of the last probe; when there is none, the probe
-     * runs now (bounded by the timeout) and its result is cached.
+     * The cached result of the last probe. When there is none, a console
+     * process (scheduler, workers, commands) runs the probe now (bounded,
+     * one at a time); a web request never does: it gets "health_unknown"
+     * and is not held by a share that may be dead.
      */
     public function cachedProblem(string $disk): ?string
     {
         $last = $this->lastCheck($disk);
 
-        return $last !== null ? $last['problem'] : $this->refresh($disk);
+        if ($last !== null) {
+            return $last['problem'];
+        }
+
+        return app()->runningInConsole() ? $this->refresh($disk) : 'health_unknown';
+    }
+
+    /**
+     * Whether remote operations (copies to the NAS, reads of files only on
+     * the NAS) may touch the share now: the last cached probe passed. Never
+     * probes.
+     */
+    public function remoteAllowed(string $disk): bool
+    {
+        $last = $this->lastCheck($disk);
+
+        return $last !== null && $last['problem'] === null;
     }
 
     /**
      * Runs the full probe in a separate process with a hard timeout and
      * caches the outcome (a hung or crashed probe counts as unavailable).
+     * Only one physical check runs at a time: a concurrent call, or one made
+     * while a previous probe is still stuck in the kernel (a process blocked
+     * on CIFS cannot be killed), gets the last known result instead of
+     * piling up another process on the share.
      */
     public function refresh(string $disk): ?string
     {
-        $problem = $this->runProbe($disk);
-        $this->record($disk, $problem);
+        $stuck = $this->stuckProbe($disk);
 
-        return $problem;
+        if ($stuck !== null) {
+            $this->record($disk, 'probe_stuck');
+
+            return 'probe_stuck';
+        }
+
+        $lock = null;
+
+        try {
+            $store = $this->cache->getStore();
+            $lock = $store instanceof LockProvider ? $store->lock(self::CACHE_PREFIX.'probe:'.$disk, (int) ceil($this->timeoutSeconds()) + 30) : null;
+
+            if ($lock !== null && ! $lock->get()) {
+                return $this->lastCheck($disk)['problem'] ?? 'probe_busy';
+            }
+        } catch (Throwable) {
+            $lock = null;
+        }
+
+        try {
+            $started = microtime(true);
+            $problem = $this->runProbe($disk);
+            $this->record($disk, $problem, (int) round((microtime(true) - $started) * 1000));
+
+            return $problem;
+        } finally {
+            try {
+                $lock?->release();
+            } catch (Throwable) {
+                // It expires by itself.
+            }
+        }
     }
 
-    public function record(string $disk, ?string $problem): void
+    public function record(string $disk, ?string $problem, ?int $latencyMs = null): void
     {
         try {
-            $this->cache->put(self::CACHE_PREFIX.$disk, ['problem' => $problem, 'checked_at' => now()->getTimestamp()], $this->ttlSeconds());
+            $this->cache->put(self::CACHE_PREFIX.$disk, ['problem' => $problem, 'checked_at' => now()->getTimestamp(), 'latency_ms' => $latencyMs], $this->ttlSeconds());
+
+            $history = $this->history($disk);
+            $previous = $history === [] ? null : self::stateOf($history);
+            $history[] = ['problem' => $problem, 'latency_ms' => $latencyMs, 'at' => now()->getTimestamp()];
+            $history = array_slice($history, -self::HISTORY, self::HISTORY);
+            $this->cache->put(self::CACHE_PREFIX.'history:'.$disk, $history, 86400);
+            $state = self::stateOf($history);
+
+            if ($state !== $previous) {
+                $this->recordEvent($disk, $state, $previous, $problem, $latencyMs);
+            }
         } catch (Throwable $exception) {
             Log::warning('Media mount health could not be cached.', ['disk' => $disk, 'exception' => $exception::class]);
         }
     }
 
     /**
-     * @return array{problem: string|null, checked_at: int}|null
+     * Last probes (oldest first), at most HISTORY of them.
+     *
+     * @return list<array{problem: string|null, latency_ms: int|null, at: int}>
+     */
+    public function history(string $disk): array
+    {
+        try {
+            $value = $this->cache->get(self::CACHE_PREFIX.'history:'.$disk);
+        } catch (Throwable) {
+            return [];
+        }
+
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $history = [];
+
+        foreach ($value as $entry) {
+            if (is_array($entry) && is_int($entry['at'] ?? null)) {
+                $history[] = [
+                    'problem' => is_string($entry['problem'] ?? null) ? $entry['problem'] : null,
+                    'latency_ms' => is_int($entry['latency_ms'] ?? null) ? $entry['latency_ms'] : null,
+                    'at' => $entry['at'],
+                ];
+            }
+        }
+
+        return $history;
+    }
+
+    /**
+     * State of the NAS from its last probes: "operational", "degraded" (it
+     * answers, slowly), "intermittent" (it comes and goes), "disconnected"
+     * (the last probes failed), "unmounted" (the share is not mounted or is
+     * not the expected storage), "recovering" (it answers again after a
+     * failure) or "unknown" (no probe yet).
+     *
+     * @param  list<array{problem: string|null, latency_ms: int|null, at: int}>  $history
+     */
+    public static function stateOf(array $history): string
+    {
+        if ($history === []) {
+            return 'unknown';
+        }
+
+        $last = $history[count($history) - 1];
+        $failures = count(array_filter($history, fn (array $entry): bool => $entry['problem'] !== null));
+
+        if ($last['problem'] !== null) {
+            if (in_array($last['problem'], ['not_mounted', 'wrong_filesystem', 'marker_missing', 'marker_mismatch', 'not_configured'], true)) {
+                return 'unmounted';
+            }
+
+            $recent = array_slice($history, -3);
+
+            return count($recent) >= 3 && count(array_filter($recent, fn (array $entry): bool => $entry['problem'] !== null)) === 3
+                ? 'disconnected'
+                : 'intermittent';
+        }
+
+        $previous = $history[count($history) - 2] ?? null;
+
+        if ($previous !== null && $previous['problem'] !== null) {
+            return 'recovering';
+        }
+
+        if ($failures >= 2) {
+            return 'intermittent';
+        }
+
+        $slowMs = max(500, (int) config('attachments.storage.mount.slow_ms', 3000));
+
+        return ($last['latency_ms'] ?? 0) > $slowMs ? 'degraded' : 'operational';
+    }
+
+    public function state(string $disk): string
+    {
+        return self::stateOf($this->history($disk));
+    }
+
+    private function recordEvent(string $disk, string $state, ?string $previous, ?string $problem, ?int $latencyMs): void
+    {
+        try {
+            DB::table('media_health_events')->insert([
+                'disk' => $disk,
+                'state' => $state,
+                'previous_state' => $previous,
+                'problem' => $problem,
+                'latency_ms' => $latencyMs,
+                'created_at' => now(),
+            ]);
+        } catch (Throwable) {
+            // The incident history is informative only.
+        }
+
+        Log::info('Media mount state changed.', ['disk' => $disk, 'state' => $state, 'previous' => $previous, 'problem' => $problem]);
+    }
+
+    /**
+     * Pid of an earlier probe that outlived its timeout and is still alive
+     * (blocked in the kernel on the share), or null.
+     */
+    private function stuckProbe(string $disk): ?int
+    {
+        try {
+            $pid = $this->cache->get(self::CACHE_PREFIX.'stuck:'.$disk);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (! is_int($pid) || $pid <= 0) {
+            return null;
+        }
+
+        if (is_dir('/proc/'.$pid)) {
+            return $pid;
+        }
+
+        try {
+            $this->cache->forget(self::CACHE_PREFIX.'stuck:'.$disk);
+        } catch (Throwable) {
+            // Expires by itself.
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{problem: string|null, checked_at: int, latency_ms: int|null}|null
      */
     public function lastCheck(string $disk): ?array
     {
@@ -212,7 +409,11 @@ class MountHealth
             return null;
         }
 
-        return ['problem' => is_string($value['problem']) ? $value['problem'] : null, 'checked_at' => $value['checked_at']];
+        return [
+            'problem' => is_string($value['problem']) ? $value['problem'] : null,
+            'checked_at' => $value['checked_at'],
+            'latency_ms' => is_int($value['latency_ms'] ?? null) ? $value['latency_ms'] : null,
+        ];
     }
 
     public function forget(string $disk): void
@@ -238,11 +439,14 @@ class MountHealth
     {
         $command = $this->command ?? [php_binary(), base_path('artisan'), 'storage:mount-health', $disk, '--probe', '--no-interaction'];
 
+        $process = null;
+
         try {
             $process = new Process($command, base_path(), null, null, $this->timeoutSeconds());
             $process->run();
         } catch (ProcessTimedOutException) {
             Log::warning('Media mount health probe timed out.', ['disk' => $disk, 'timeout_seconds' => $this->timeoutSeconds()]);
+            $this->rememberIfStuck($disk, $process);
 
             return 'probe_timeout';
         } catch (Throwable $exception) {
@@ -261,5 +465,26 @@ class MountHealth
         }
 
         return $result['problem'];
+    }
+
+    /**
+     * A probe killed on timeout may survive in uninterruptible sleep (state
+     * D): its pid is remembered so no other probe is started on top of it.
+     */
+    private function rememberIfStuck(string $disk, ?Process $process): void
+    {
+        $pid = $process?->getPid();
+
+        if ($pid === null || ! is_dir('/proc/'.$pid)) {
+            return;
+        }
+
+        try {
+            $this->cache->put(self::CACHE_PREFIX.'stuck:'.$disk, $pid, 3600);
+        } catch (Throwable) {
+            // Best effort.
+        }
+
+        Log::warning('Media mount health probe is stuck on the share.', ['disk' => $disk, 'pid' => $pid]);
     }
 }

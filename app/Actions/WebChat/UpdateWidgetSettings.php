@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\WebChatWidgetRequest;
 use App\Models\User;
 use App\Models\WebChatWidget;
 use App\Services\AuditLogger;
+use App\Services\Storage\LocalMedia;
 use App\Services\Storage\MediaDisk;
 use App\Services\Storage\MediaPaths;
 use BackedEnum;
@@ -226,9 +227,9 @@ class UpdateWidgetSettings
 
         try {
             [$diskName, $path] = self::avatarLocation($path);
-            $disk = Storage::disk($diskName);
+            $location = app(LocalMedia::class)->open($diskName, $path);
 
-            return $disk->exists($path) ? $disk->get($path) : null;
+            return $location === null ? null : $location['filesystem']->get($location['path']);
         } catch (Throwable) {
             return null;
         }

@@ -1,37 +1,36 @@
 <script setup lang="ts">
-import { useForm } from "@inertiajs/vue3";
-import { Info } from "@lucide/vue";
-import { watch } from "vue";
-import FormDialog from "@/components/FormDialog.vue";
-import FormField from "@/components/FormField.vue";
-import { Input } from "@/components/ui/input";
-import { useFormValidation } from "@/composables/useFormValidation";
-import { maxLength, normalizers, required } from "@/lib/validation";
-import type { RouteDefinition } from "@/wayfinder";
+import { useForm } from '@inertiajs/vue3';
+import { Info } from '@lucide/vue';
+import { watch } from 'vue';
+import FormDialog from '@/components/FormDialog.vue';
+import FormField from '@/components/FormField.vue';
+import { Input } from '@/components/ui/input';
+import { useFormValidation } from '@/composables/useFormValidation';
+import { maxLength, normalizers, required } from '@/lib/validation';
+import type { RouteDefinition } from '@/wayfinder';
 
 /**
  * "Editar nombre": the official name of the contact, the one the whole team
- * sees in every conversation of the person. Unlike the private alias, it
- * changes the shared record; nothing else of the contact is touched.
+ * sees in every conversation of the person. It changes the shared record; nothing else of the contact is touched.
  */
 const props = defineProps<{
     name: string;
     profileName: string | null;
-    action: RouteDefinition<"put">;
+    action: RouteDefinition<'put'>;
 }>();
 
-const open = defineModel<boolean>("open", { required: true });
+const open = defineModel<boolean>('open', { required: true });
 
-const form = useForm<{ name: string }>({ name: "" });
+const form = useForm<{ name: string }>({ name: '' });
 
 const validation = useFormValidation(form, {
-    rules: { name: [required("Escribe el nombre."), maxLength(160)] },
+    rules: { name: [required('Escribe el nombre.'), maxLength(160)] },
     normalize: { name: normalizers.squish },
 });
 
 watch(open, (isOpen) => {
     if (isOpen) {
-        validation.load({ name: props.name || props.profileName || "" });
+        validation.load({ name: props.name || props.profileName || '' });
     }
 });
 
@@ -63,8 +62,7 @@ function submit(): void {
                 <Info class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>
                     Todos lo verán con este nombre, en esta y en sus demás
-                    conversaciones. Para un nombre solo visible para ti usa
-                    Alias personal.
+                    conversaciones.
                 </span>
             </p>
             <FormField

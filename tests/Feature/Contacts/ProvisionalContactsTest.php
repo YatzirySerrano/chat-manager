@@ -22,6 +22,7 @@ use App\Models\Tag;
 use App\Models\User;
 use App\Reports\Definitions\ContactsReport;
 use App\Reports\ReportContext;
+use App\Services\Conversations\ConversationRouter;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Event;
@@ -336,4 +337,26 @@ test('a contact reached through WhatsApp can be edited without phone or email', 
         ->assertSessionHasNoErrors();
 
     expect($contact->refresh()->name)->toBe('Josmar Mauricio');
+});
+
+test('assigning a contact to a department moves its conversations there and new ones arrive there', function () {
+    $orizaba = Department::factory()->create();
+    $conversation = provisionalConversation($this->connection, $this->department);
+    $contact = $conversation->contact;
+    $contact->forceFill(['saved_at' => now()])->save();
+    $editor = conversationUser(
+        [Permission::ViewConversations, Permission::ViewContacts, Permission::UpdateContacts],
+        DataScope::Departments,
+        [$this->department, $orizaba],
+    );
+    $outsider = conversationUser([Permission::ViewConversations, Permission::ViewContacts], DataScope::Departments, [$this->department]);
+
+    $this->actingAs($editor)
+        ->put(route('contacts.update', $contact), ['name' => $contact->name, 'phone' => '', 'email' => '', 'department_id' => $orizaba->id])
+        ->assertSessionHasNoErrors();
+
+    expect($conversation->refresh()->department_id)->toBe($orizaba->id)
+        ->and(Contact::query()->visibleTo($outsider)->whereKey($contact->id)->exists())->toBeFalse()
+        ->and(Contact::query()->visibleTo($editor)->whereKey($contact->id)->exists())->toBeTrue()
+        ->and(app(ConversationRouter::class)->route($this->connection, $contact->refresh())['department']?->id)->toBe($orizaba->id);
 });

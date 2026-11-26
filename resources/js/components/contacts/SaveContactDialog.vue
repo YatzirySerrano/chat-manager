@@ -120,8 +120,8 @@ function submit(confirmDuplicate = false): void {
             >
                 <Info class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>
-                    Esto actualiza el directorio compartido; para un nombre solo
-                    visible para ti usa Alias personal.
+                    Esto actualiza el directorio compartido: todo el equipo lo
+                    verá con este nombre.
                 </span>
             </p>
 

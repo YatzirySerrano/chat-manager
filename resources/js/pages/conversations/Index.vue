@@ -867,7 +867,7 @@ function onAliasSaved(): void {
                 @mark-read="markReadFromList"
                 @filter="filter"
                 @load-more="loadMore"
-                :can-edit-alias="true"
+                :can-edit-alias="false"
                 @edit-alias="(row) => (aliasTarget = row)"
                 @preview="(row) => (previewTarget = row)"
             />

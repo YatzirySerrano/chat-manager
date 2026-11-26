@@ -7,6 +7,7 @@ use App\Actions\Contacts\CreateContact;
 use App\Actions\Contacts\DeleteContact;
 use App\Actions\Contacts\FindDuplicateContacts;
 use App\Actions\Contacts\FlagHiddenDuplicates;
+use App\Actions\Contacts\MoveContactToDepartment;
 use App\Actions\Contacts\RestoreContact;
 use App\Actions\Contacts\UpdateContact;
 use App\Enums\ContactOriginType;
@@ -131,7 +132,9 @@ class ContactController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => "Contacto {$contact->name} creado."]);
 
-        return to_route('contacts.show', $contact);
+        // Assigned to a department the actor does not belong to: it is that
+        // department's contact now, out of the actor's reach.
+        return $request->user()->can('view', $contact) ? to_route('contacts.show', $contact) : to_route('contacts.index');
     }
 
     /**
@@ -206,9 +209,10 @@ class ContactController extends Controller
         ]);
     }
 
-    public function update(ContactRequest $request, Contact $contact, UpdateContact $updateContact, FindDuplicateContacts $findDuplicates, FlagHiddenDuplicates $flagHiddenDuplicates): RedirectResponse
+    public function update(ContactRequest $request, Contact $contact, UpdateContact $updateContact, FindDuplicateContacts $findDuplicates, FlagHiddenDuplicates $flagHiddenDuplicates, MoveContactToDepartment $moveToDepartment): RedirectResponse
     {
         $payload = $request->payload();
+        $previousDepartment = $contact->department_id;
 
         $phoneChanged = $payload['phone_e164'] !== null && $payload['phone_e164'] !== $contact->phone_e164;
         $emailChanged = $payload['email'] !== null && $payload['email'] !== mb_strtolower((string) $contact->email);
@@ -230,6 +234,11 @@ class ContactController extends Controller
                 $phoneChanged ? $payload['phone_e164'] : null,
                 $emailChanged ? $payload['email'] : null,
             );
+        }
+
+        // The contact now belongs to its department: its conversations go there.
+        if ($contact->department_id !== null && $contact->department_id !== $previousDepartment) {
+            $moveToDepartment->handle($contact, $request->user());
         }
 
         SaveToast::flash($changed, 'Contacto actualizado.');

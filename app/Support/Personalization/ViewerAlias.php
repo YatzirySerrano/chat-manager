@@ -10,6 +10,10 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\Relation;
 
 /**
+ * Private aliases are turned off (config personalization.contact_aliases,
+ * false by default): every person sees the contact's official name, the one
+ * in Contactos. Aliases already stored stay untouched in the database.
+ *
  * The viewer's private alias of a contact and the name shown to them. The
  * aliases are eager loaded for a whole page in one query, constrained to
  * the viewer (load()); reading them never queries and never trusts the
@@ -27,6 +31,9 @@ final class ViewerAlias
      */
     public static function load(Conversation|Collection $conversations, User $viewer): void
     {
+        if (! self::enabled()) {
+            return;
+        }
         $conversations = $conversations instanceof Conversation ? new Collection([$conversations]) : $conversations;
 
         // Contacts already loaded are kept (with what was loaded on them,
@@ -40,8 +47,16 @@ final class ViewerAlias
         }]);
     }
 
+    public static function enabled(): bool
+    {
+        return config('personalization.contact_aliases', false) === true;
+    }
+
     public static function of(Contact $contact, ?User $viewer): ?string
     {
+        if (! self::enabled()) {
+            return null;
+        }
         if ($viewer === null || ! $contact->relationLoaded('aliases')) {
             return null;
         }

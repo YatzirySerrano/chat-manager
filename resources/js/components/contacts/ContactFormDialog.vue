@@ -1,31 +1,31 @@
 <script setup lang="ts">
-import { router, useForm } from "@inertiajs/vue3";
-import { CircleCheck, Plus, Trash2, TriangleAlert } from "@lucide/vue";
-import { computed, onUnmounted, ref, watch } from "vue";
-import FormDialog from "@/components/FormDialog.vue";
-import FormField from "@/components/FormField.vue";
-import InputError from "@/components/InputError.vue";
-import { AppSelect } from "@/components/ui/app-select";
-import type { AppSelectOption } from "@/components/ui/app-select";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useFormValidation } from "@/composables/useFormValidation";
-import { formatPhone, normalizePhone } from "@/lib/phone";
+import { router, useForm } from '@inertiajs/vue3';
+import { CircleCheck, Plus, Trash2, TriangleAlert } from '@lucide/vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
+import FormDialog from '@/components/FormDialog.vue';
+import FormField from '@/components/FormField.vue';
+import InputError from '@/components/InputError.vue';
+import { AppSelect } from '@/components/ui/app-select';
+import type { AppSelectOption } from '@/components/ui/app-select';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { useFormValidation } from '@/composables/useFormValidation';
+import { formatPhone, normalizePhone } from '@/lib/phone';
 import {
     email,
     maxLength,
     normalizers,
     phone,
     required,
-} from "@/lib/validation";
-import type { FieldRule, FieldRules } from "@/lib/validation";
-import { save, show, store, update } from "@/routes/contacts";
+} from '@/lib/validation';
+import type { FieldRule, FieldRules } from '@/lib/validation';
+import { save, show, store, update } from '@/routes/contacts';
 import type {
     Contact,
     ContactDepartmentOption,
     DuplicateCheck,
     DuplicateContact,
-} from "@/types";
+} from '@/types';
 
 const MAX_CUSTOM_FIELDS = 10;
 
@@ -55,10 +55,10 @@ const departmentOptions = computed<AppSelectOption<number | null>[]>(() => {
         });
     }
 
-    return [{ value: null, label: "Sin departamento" }, ...options];
+    return [{ value: null, label: 'Sin departamento' }, ...options];
 });
 
-const open = defineModel<boolean>("open", { required: true });
+const open = defineModel<boolean>('open', { required: true });
 
 const isEditing = computed(() => props.contact !== null);
 
@@ -72,9 +72,9 @@ const form = useForm<{
     custom_fields: CustomFieldRow[];
     confirm_duplicate: boolean;
 }>({
-    name: "",
-    phone: "",
-    email: "",
+    name: '',
+    phone: '',
+    email: '',
     department_id: null,
     custom_fields: [],
     confirm_duplicate: false,
@@ -89,9 +89,9 @@ watch(open, (isOpen) => {
 
     duplicates.value = null;
     validation.load({
-        name: props.contact?.name ?? "",
-        phone: props.contact?.phone_e164 ?? "",
-        email: props.contact?.email ?? "",
+        name: props.contact?.name ?? '',
+        phone: props.contact?.phone_e164 ?? '',
+        email: props.contact?.email ?? '',
         department_id: props.contact?.department_id ?? null,
         custom_fields: Object.entries(props.contact?.custom_fields ?? {}).map(
             ([label, value]) => ({ label, value }),
@@ -111,7 +111,7 @@ watch(
     },
 );
 
-const stopFlashListener = router.on("flash", (event) => {
+const stopFlashListener = router.on('flash', (event) => {
     const check = event.detail.flash?.duplicates as DuplicateCheck | undefined;
 
     if (check && open.value) {
@@ -122,9 +122,9 @@ const stopFlashListener = router.on("flash", (event) => {
 onUnmounted(stopFlashListener);
 
 const normalizedPhone = computed(() => normalizePhone(form.phone));
-const phoneTyped = computed(() => form.phone.trim() !== "");
+const phoneTyped = computed(() => form.phone.trim() !== '');
 
-const squish = (value: string): string => value.trim().replace(/\s+/g, " ");
+const squish = (value: string): string => value.trim().replace(/\s+/g, ' ');
 
 /*
  * A contact that writes through a channel (WhatsApp, web chat…) is already
@@ -134,28 +134,28 @@ const reachedByChannel = computed(
     () =>
         (props.contact?.identities ?? []).length > 0 ||
         (props.contact !== null &&
-            props.contact.source !== "manual" &&
-            props.contact.source !== "import"),
+            props.contact.source !== 'manual' &&
+            props.contact.source !== 'import'),
 );
 
 const phoneOrEmail: FieldRule = (_value, data) =>
     !reachedByChannel.value &&
-    String(data.phone ?? "").trim() === "" &&
-    String(data.email ?? "").trim() === ""
-        ? "Captura al menos un teléfono o un correo electrónico."
+    String(data.phone ?? '').trim() === '' &&
+    String(data.email ?? '').trim() === ''
+        ? 'Captura al menos un teléfono o un correo electrónico.'
         : null;
 
 const validation = useFormValidation(form, {
     rules: () => {
         const rules: FieldRules = {
-            name: [required("Escribe el nombre."), maxLength(160)],
+            name: [required('Escribe el nombre.'), maxLength(160)],
             phone: [phoneOrEmail, maxLength(32), phone()],
             email: [phoneOrEmail, email(), maxLength(255)],
         };
 
         form.custom_fields.forEach((_field, index) => {
             rules[`custom_fields.${index}.label`] = [
-                required("Escribe el nombre del campo."),
+                required('Escribe el nombre del campo.'),
                 maxLength(60),
                 (value) => {
                     const label = squish(String(value)).toLowerCase();
@@ -164,12 +164,12 @@ const validation = useFormValidation(form, {
                     );
 
                     return firstIndex !== index
-                        ? "Cada campo personalizado debe tener un nombre distinto."
+                        ? 'Cada campo personalizado debe tener un nombre distinto.'
                         : null;
                 },
             ];
             rules[`custom_fields.${index}.value`] = [
-                required("Escribe el valor del campo."),
+                required('Escribe el valor del campo.'),
                 maxLength(500),
             ];
         });
@@ -188,13 +188,13 @@ const validation = useFormValidation(form, {
                 })),
             ),
     },
-    ignore: ["confirm_duplicate"],
+    ignore: ['confirm_duplicate'],
     requireChanges: isEditing,
 });
 
 function addCustomField(): void {
     if (form.custom_fields.length < MAX_CUSTOM_FIELDS) {
-        form.custom_fields.push({ label: "", value: "" });
+        form.custom_fields.push({ label: '', value: '' });
     }
 }
 
@@ -209,14 +209,14 @@ function removeCustomField(index: number): void {
  * identity stay as they are.
  */
 const canSaveDuplicate = (duplicate: DuplicateContact): boolean =>
-    !isEditing.value && !duplicate.is_saved && duplicate.status !== "archived";
+    !isEditing.value && !duplicate.is_saved && duplicate.status !== 'archived';
 
 function saveDuplicate(duplicate: DuplicateContact): void {
     router.post(
         save.url(duplicate.id),
         {
             name: form.name,
-            email: form.email.trim() !== "" ? form.email : duplicate.email,
+            email: form.email.trim() !== '' ? form.email : duplicate.email,
         },
         {
             preserveScroll: true,

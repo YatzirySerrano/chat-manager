@@ -266,12 +266,17 @@ class Contact extends Model
 
         match ($user->dataScope()) {
             DataScope::Global => null,
+            // A contact assigned to a department belongs to it: only that
+            // department (and whoever attends one of its conversations) sees it.
             DataScope::Departments => $query->where(fn (Builder $visible) => $visible
-                ->where('created_by_user_id', $user->id)
+                ->whereIn($query->qualifyColumn('department_id'), $user->departmentIds())
+                ->orWhereHas('conversations', fn (Builder $conversations) => $conversations->whereNull('history_only_at')->where('assigned_user_id', $user->id))
+                ->orWhere(fn (Builder $unassigned) => $unassigned->whereNull($query->qualifyColumn('department_id'))->where(fn (Builder $visible) => $visible
+                    ->where('created_by_user_id', $user->id)
                 // History archived as read-only (Whaticket import) never widens the reach.
-                ->orWhereHas('conversations', fn (Builder $conversations) => $conversations->whereNull('history_only_at')->where(fn (Builder $reachable) => $reachable
-                    ->where('assigned_user_id', $user->id)
-                    ->orWhereIn('department_id', $user->departmentIds())))),
+                    ->orWhereHas('conversations', fn (Builder $conversations) => $conversations->whereNull('history_only_at')->where(fn (Builder $reachable) => $reachable
+                        ->where('assigned_user_id', $user->id)
+                        ->orWhereIn('department_id', $user->departmentIds())))))),
             default => $query->where(fn (Builder $visible) => $visible
                 ->where('created_by_user_id', $user->id)
                 ->orWhereHas('conversations', fn (Builder $conversations) => $conversations->whereNull('history_only_at')->where('assigned_user_id', $user->id))),

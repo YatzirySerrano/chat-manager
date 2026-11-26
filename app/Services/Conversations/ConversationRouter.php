@@ -10,8 +10,10 @@ use App\Services\PlatformSettings;
 /**
  * Chooses the queue of a new conversation from explicit configuration only,
  * in this order: the department chosen on the contact, the connection's
- * default department, then the platform's default department. Each one
- * counts only while it is active and the connection may route to it (the
+ * default department, then the platform's default department. The contact's
+ * department wins whenever it is active, whatever connection the person
+ * writes through (the contact belongs to it: MoveContactToDepartment); the
+ * defaults count only while active and the connection may route to them (the
  * connection has no authorized departments, or it is among them). Without
  * such configuration the conversation stays without department, in the
  * queue only users with organization-wide scope see. No department is ever
@@ -35,7 +37,7 @@ class ConversationRouter
             ? null
             : Department::query()->active()->find($contact->department_id);
 
-        if ($allowed($contactDepartment)) {
+        if ($contactDepartment !== null) {
             return ['department' => $contactDepartment, 'routed_by' => 'contact'];
         }
 

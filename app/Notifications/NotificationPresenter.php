@@ -121,6 +121,7 @@ class NotificationPresenter
             NotificationKind::ConversationTransferred => $this->transferred($data, $viewer),
             NotificationKind::ConversationMessage => $this->message($data, $viewer, $occurrences),
             NotificationKind::ConversationQueueOverdue, NotificationKind::ConversationAttentionOverdue => $this->overdue($kind, $data, $viewer, $settled),
+            NotificationKind::ConversationCompleted => $this->completed($data, $viewer),
             NotificationKind::ChatbotReply => $this->chatbotReply($data, $viewer),
             NotificationKind::TeamChatMention, NotificationKind::TeamChatMessage => $this->teamChat($kind, $data, $viewer, $occurrences),
             NotificationKind::TeamChatDeskRequest => $this->deskRequest($data, $viewer, $occurrences, $settled),
@@ -335,6 +336,9 @@ class NotificationPresenter
         $this->aboutContact($conversation);
         $name = $this->contactName($conversation);
         $url = $this->routeOrNull('conversations.show', $conversation);
+        // The administrator's message for this escalation step, if any,
+        // replaces the default text while the alert still asks for an action.
+        $custom = is_string($data['message'] ?? null) && trim($data['message']) !== '' ? trim($data['message']) : null;
 
         if ($queue) {
             if ($conversation->status !== ConversationStatus::Pending || $conversation->assigned_user_id !== null) {
@@ -343,7 +347,7 @@ class NotificationPresenter
                 return ["La solicitud de {$name} esperó más de {$limit}", 'Ya la tomaron o salió de «Pendientes».', $url, true];
             }
 
-            return ["{$name} lleva más de {$limit} en «Pendientes»", 'La solicitud está lista para atención: tómala ya.', $url, true];
+            return ["{$name} lleva más de {$limit} en «Pendientes»", $custom ?? 'La solicitud está lista para atención: tómala ya.', $url, true];
         }
 
         if ($conversation->status !== ConversationStatus::Open || $conversation->assigned_user_id !== $viewer->id) {
@@ -352,7 +356,33 @@ class NotificationPresenter
             return ["La atención de {$name} pasó de {$limit}", 'La conversación ya se resolvió o ya no está a tu cargo.', $url, true];
         }
 
-        return ["Llevas más de {$limit} atendiendo a {$name}", 'Ya se superó el tiempo para resolver la solicitud.', $url, true];
+        return ["Llevas más de {$limit} atendiendo a {$name}", $custom ?? 'Ya se superó el tiempo para resolver la solicitud.', $url, true];
+    }
+
+    /**
+     * A request marked as completed, told to the whole team that can see it.
+     * The administrator's optional message replaces the default text.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{string, string|null, string|null, bool}
+     */
+    private function completed(array $data, User $viewer): array
+    {
+        $conversation = $this->visibleConversation($data['conversation_id'] ?? null, $viewer);
+
+        if ($conversation === null) {
+            return $this->noAccess('Solicitud completada');
+        }
+
+        $this->aboutContact($conversation);
+
+        $name = $this->contactName($conversation);
+        $actor = $this->userName($data['actor_id'] ?? null, $viewer);
+        $custom = is_string($data['message'] ?? null) && trim($data['message']) !== '' ? trim($data['message']) : null;
+        $body = $custom ?? (($actor !== null ? "{$actor} marcó como completada" : 'Se marcó como completada').' la solicitud'
+            .($conversation->department !== null ? " de {$conversation->department->name}" : '').'.');
+
+        return ["Solicitud completada: {$name}", $body, $this->routeOrNull('conversations.show', $conversation), true];
     }
 
     /**

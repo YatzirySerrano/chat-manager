@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Cache;
  *
  * @phpstan-type BusinessDay array{open: bool, start: string, end: string}
  * @phpstan-type Holiday array{date: string, label: string, recurring: bool}
+ * @phpstan-type AlertStep array{minutes: int, priority: string, message: string|null}
  * @phpstan-type SettingsShape array{
  *     general: array{platform_name: string, timezone: string},
  *     appearance: array{palette: string},
@@ -24,7 +25,7 @@ use Illuminate\Support\Facades\Cache;
  *     sla_alerts: array{agent_warning: bool, agent_breach: bool, supervisor_warning: bool, supervisor_breach: bool, reminder_minutes: int|null, reminder_limit: int},
  *     video_exports: array{root_folder: string},
  *     control_desk: array{farewell_enabled: bool, farewell_message: string},
- *     time_alerts: array{queue_enabled: bool, queue_minutes: int, attention_enabled: bool, attention_minutes: int},
+ *     time_alerts: array{queue_enabled: bool, queue_minutes: int, queue_steps: list<AlertStep>, attention_enabled: bool, attention_minutes: int, attention_steps: list<AlertStep>, completed_enabled: bool, completed_priority: string, completed_message: string|null},
  *     missing_info: array{intro: string, items: list<string>},
  * }
  */
@@ -221,14 +222,28 @@ class PlatformSettings
             ],
             // «Mesa de control»: the goodbye sent when a request is completed
             // with «Completar y despedir» ({{nombre}}, {{agente}}, {{saludo}}).
-            // «Alertas de tiempo» (conversations:time-alerts): a ready request
-            // waiting in Pendientes, and a conversation in attention, past
-            // these minutes alert whoever must act.
+            // «Alertas de tiempo» (conversations:time-alerts), configuradas en
+            // Seguimiento de atención → «Alertas automáticas»: una solicitud
+            // lista esperando en Pendientes, y una conversación en atención,
+            // avisan al pasar cada escalón (`*_steps`). Cada escalón tiene sus
+            // minutos, su prioridad y un mensaje propio opcional; se avisa una
+            // vez por escalón. `*_minutes` se conserva como el primer escalón
+            // por compatibilidad. `completed_*`: aviso a todo el equipo cuando
+            // una solicitud se marca como completada.
             'time_alerts' => [
                 'queue_enabled' => true,
                 'queue_minutes' => 5,
+                'queue_steps' => [
+                    ['minutes' => 5, 'priority' => 'urgent', 'message' => null],
+                ],
                 'attention_enabled' => true,
                 'attention_minutes' => 15,
+                'attention_steps' => [
+                    ['minutes' => 15, 'priority' => 'urgent', 'message' => null],
+                ],
+                'completed_enabled' => true,
+                'completed_priority' => 'informative',
+                'completed_message' => null,
             ],
             'control_desk' => [
                 'farewell_enabled' => false,

@@ -76,6 +76,34 @@ class NotificationRecipients
     }
 
     /**
+     * Everyone who should learn a request was completed: active users who can
+     * see the conversation (members of its department that ConversationAccess
+     * admits, or a role of global scope / root), minus the person who marked
+     * it complete, who already knows. Each one once.
+     *
+     * @return Collection<int, User>
+     */
+    public function forCompletedConversation(Conversation $conversation, ?int $exceptUserId = null): Collection
+    {
+        return User::query()
+            ->active()
+            ->withPermission(Permission::ViewConversations)
+            ->when($exceptUserId !== null, fn (Builder $query) => $query->whereKeyNot($exceptUserId))
+            ->where(fn (Builder $reach) => $reach
+                ->whereHas('roles', fn (Builder $roles) => $roles->where(fn (Builder $role) => $role
+                    ->where('is_root', true)
+                    ->orWhere('scope', DataScope::Global->value)))
+                ->when($conversation->department_id !== null, fn (Builder $query) => $query
+                    ->orWhereHas('departments', fn (Builder $departments) => $departments->whereKey($conversation->department_id))))
+            ->with(['roles.permissions', 'departments:id'])
+            ->orderBy('id')
+            ->limit(self::MAX_QUEUE_RECIPIENTS)
+            ->get()
+            ->filter(fn (User $user): bool => $this->access->canView($user, $conversation))
+            ->values();
+    }
+
+    /**
      * The user, if they can still see the conversation.
      */
     public function ifCanView(?int $userId, Conversation $conversation): ?User

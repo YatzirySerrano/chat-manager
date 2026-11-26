@@ -6,8 +6,12 @@ use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
 use App\Models\Conversation;
 use App\Models\User;
+use App\Notifications\ConversationCompletedNotification;
+use App\Notifications\NotificationRecipients;
 use App\Services\Conversations\ConversationLifecycle;
+use App\Services\PlatformSettings;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 
 /**
  * Ends the attention. The agent who attended it is kept for history, and
@@ -20,6 +24,8 @@ class CloseConversation
     public function __construct(
         private ConversationLifecycle $lifecycle,
         private AssignAutomatically $assignAutomatically,
+        private NotificationRecipients $recipients,
+        private PlatformSettings $settings,
     ) {}
 
     /**
@@ -55,7 +61,46 @@ class CloseConversation
 
             $this->assignAutomatically->distributeForAgentAfterCommit($conversation->assigned_user_id);
 
+            if ($completed) {
+                $this->alertCompletedAfterCommit($conversation, $actor);
+            }
+
             return $conversation;
+        });
+    }
+
+    /**
+     * «Alerta para todos»: once the completion is committed, tell everyone who
+     * can see the conversation (except the agent who completed it). Configured
+     * in Seguimiento de atención → «Alertas automáticas» (time_alerts.completed_*);
+     * off, nothing is sent. The whole alert is best-effort: a failure here
+     * never undoes the close (the recipients are resolved after commit).
+     */
+    private function alertCompletedAfterCommit(Conversation $conversation, User $actor): void
+    {
+        if (! (bool) $this->settings->get('time_alerts.completed_enabled', true)) {
+            return;
+        }
+
+        $priority = (string) $this->settings->get('time_alerts.completed_priority', 'informative');
+        $message = $this->settings->get('time_alerts.completed_message');
+        $message = is_string($message) && trim($message) !== '' ? trim($message) : null;
+
+        DB::afterCommit(function () use ($conversation, $actor, $priority, $message): void {
+            $people = $this->recipients->forCompletedConversation($conversation, $actor->id);
+
+            if ($people->isEmpty()) {
+                return;
+            }
+
+            Notification::send($people, new ConversationCompletedNotification(
+                $conversation->id,
+                $conversation->department_id,
+                $actor->id,
+                (string) ($conversation->completed_at?->getTimestamp() ?? now()->getTimestamp()),
+                $priority,
+                $message,
+            ));
         });
     }
 }

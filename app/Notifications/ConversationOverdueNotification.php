@@ -21,6 +21,11 @@ class ConversationOverdueNotification extends InAppNotification
     public const ATTENTION = 'attention';
 
     /**
+     * `$priority` and `$message` come from the configured escalation step
+     * («Alertas automáticas»): the urgency of this alert and an optional text
+     * that replaces the default. Each step alerts once per conversation and
+     * wait/attention start, so `$minutes` joins the sourceKey.
+     *
      * @param  'queue'|'attention'  $type
      */
     public function __construct(
@@ -29,6 +34,8 @@ class ConversationOverdueNotification extends InAppNotification
         public readonly ?int $departmentId,
         public readonly int $minutes,
         public readonly string $since,
+        public readonly string $priority = 'urgent',
+        public readonly ?string $message = null,
     ) {}
 
     public function kind(): NotificationKind
@@ -36,9 +43,17 @@ class ConversationOverdueNotification extends InAppNotification
         return $this->type === self::QUEUE ? NotificationKind::ConversationQueueOverdue : NotificationKind::ConversationAttentionOverdue;
     }
 
+    /**
+     * The step's urgency wins over the kind's base level.
+     */
+    public function level(): NotificationLevel
+    {
+        return NotificationLevel::tryFrom($this->priority) ?? NotificationLevel::Urgent;
+    }
+
     public function sourceKey(): string
     {
-        return "{$this->kind()->value}:{$this->conversationId}:{$this->since}";
+        return "{$this->kind()->value}:{$this->conversationId}:{$this->since}:{$this->minutes}";
     }
 
     public function payload(): array
@@ -47,6 +62,7 @@ class ConversationOverdueNotification extends InAppNotification
             'conversation_id' => $this->conversationId,
             'department_id' => $this->departmentId,
             'minutes' => $this->minutes,
+            'message' => $this->message,
         ];
     }
 }

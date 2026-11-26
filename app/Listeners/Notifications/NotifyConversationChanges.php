@@ -61,6 +61,7 @@ class NotifyConversationChanges implements ShouldQueue
      */
     private const NOTIFYING_EVENTS = [
         ConversationEventType::Created,
+        ConversationEventType::Accepted,
         ConversationEventType::Unassigned,
         ConversationEventType::Transferred,
         ConversationEventType::Reopened,
@@ -109,6 +110,7 @@ class NotifyConversationChanges implements ShouldQueue
         }
 
         $this->forgetForPreviousAgent($conversation, $record);
+        $this->withdrawQueueAlertsOnceTaken($conversation);
 
         match ($type) {
             // While the chatbot's welcome menu waits for the customer's choice
@@ -159,6 +161,29 @@ class NotifyConversationChanges implements ShouldQueue
                 'id' => null,
                 'kind' => null,
                 'reason' => 'access_lost',
+            ]);
+        }
+    }
+
+    /**
+     * Somebody attends the conversation now: the other agents' pending and
+     * message alerts about it are no longer theirs to act on, so they leave
+     * their bell (administrators keep them). Their open tabs reload the bell
+     * through the same `.notification` hint as forgetForPreviousAgent().
+     */
+    private function withdrawQueueAlertsOnceTaken(Conversation $conversation): void
+    {
+        if ($conversation->assigned_user_id === null) {
+            return;
+        }
+
+        $userIds = $this->center->withdrawQueueAlerts($conversation->id, [$conversation->assigned_user_id]);
+
+        if ($userIds !== []) {
+            $this->signals->toUsers($userIds, 'notification', [
+                'id' => null,
+                'kind' => null,
+                'reason' => 'taken',
             ]);
         }
     }

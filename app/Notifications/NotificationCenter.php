@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Enums\DataScope;
 use App\Models\User;
 use Closure;
 use Illuminate\Database\DetectsConcurrencyErrors;
@@ -110,6 +111,65 @@ class NotificationCenter
                 ->where('data->conversation_id', $conversationId)
                 ->toBase()->update(['read_at' => now()]),
         );
+    }
+
+    /**
+     * Someone took the conversation: its queue alerts (pending, customer
+     * messages while nobody attended it, queue overdue) are no longer news
+     * for the other agents, so they are marked read. The kept users (the
+     * new responsible) and people with organization-wide scope (the
+     * administrators, who follow everything) keep theirs. Returns the ids of
+     * the users whose notifications changed.
+     *
+     * @param  list<int>  $keepUserIds
+     * @return list<int>
+     */
+    public function withdrawQueueAlerts(int $conversationId, array $keepUserIds): array
+    {
+        $kinds = array_map(fn (NotificationKind $kind): string => $kind->value, [
+            NotificationKind::ConversationPending,
+            NotificationKind::ConversationMessage,
+            NotificationKind::ConversationQueueOverdue,
+        ]);
+
+        $rows = DatabaseNotification::query()
+            ->where('notifiable_type', (new User)->getMorphClass())
+            ->whereNull('read_at')
+            ->whereIn('kind', $kinds)
+            ->where('data->conversation_id', $conversationId)
+            ->whereNotIn('notifiable_id', $keepUserIds)
+            ->get(['id', 'notifiable_id', 'kind', 'data'])
+            // A pending notification folds a burst of conversations: it is
+            // only withdrawn when it is about this conversation alone.
+            ->filter(function (DatabaseNotification $notification) use ($conversationId): bool {
+                $ids = $notification->data['conversation_ids'] ?? null;
+
+                return $notification->kind !== NotificationKind::ConversationPending->value
+                    || ! is_array($ids)
+                    || array_values(array_map('intval', $ids)) === [$conversationId];
+            });
+
+        if ($rows->isEmpty()) {
+            return [];
+        }
+
+        $userIds = User::query()
+            ->whereKey($rows->pluck('notifiable_id')->unique()->all())
+            ->with('roles')
+            ->get()
+            ->filter(fn (User $user): bool => $user->dataScope() !== DataScope::Global)
+            ->modelKeys();
+        $userIds = array_values(array_map('intval', $userIds));
+
+        if ($userIds === []) {
+            return [];
+        }
+
+        $ids = $rows->filter(fn (DatabaseNotification $notification): bool => in_array((int) $notification->notifiable_id, $userIds, true))->modelKeys();
+
+        $this->retryingDeadlocks(fn (): int => DatabaseNotification::query()->whereKey($ids)->whereNull('read_at')->toBase()->update(['read_at' => now()]));
+
+        return $userIds;
     }
 
     /**

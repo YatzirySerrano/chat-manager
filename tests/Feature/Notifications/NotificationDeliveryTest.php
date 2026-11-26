@@ -400,3 +400,16 @@ test('a failing real-time server is tried once per job, never once per recipient
 
     expect($broadcaster->notificationAttempts)->toBe(2);
 });
+
+test('once a colleague takes a pending conversation its alerts leave my bell, but administrators keep them', function () {
+    $colleague = User::factory()->agent()->available()->inDepartments($this->department)->create();
+    $admin = User::factory()->administrator()->create();
+    $receipt = receiveWhatsapp($this->connection);
+
+    expect(notificationsOf($this->agent, NotificationKind::ConversationPending)->sole()->read_at)->toBeNull();
+
+    app(AcceptConversation::class)->handle($receipt->conversation, $colleague);
+
+    expect(notificationsOf($this->agent, NotificationKind::ConversationPending)->sole()->read_at)->not->toBeNull()
+        ->and(notificationsOf($admin, NotificationKind::ConversationPending)->sole()->read_at)->toBeNull();
+});

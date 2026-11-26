@@ -25,13 +25,33 @@ use Throwable;
  */
 final class MediaResponse
 {
+    public const GENERIC = 'El almacenamiento de archivos no responde en este momento. Inténtalo de nuevo en unos minutos.';
+
+    /**
+     * A 503 for a file: its own short page (never the maintenance screen,
+     * which is what errors/503 shows) or JSON, with Retry-After.
+     */
+    public static function unavailable(string $message): never
+    {
+        $headers = ['Retry-After' => '20', 'Cache-Control' => 'no-store'];
+        $request = request();
+
+        abort($request->expectsJson()
+            ? response()->json(['message' => $message, 'code' => StorageUnavailable::CODE], 503, $headers)
+            : response()->view('errors.file-unavailable', ['message' => $message], 503, $headers));
+    }
+
     /**
      * @param  array{filesystem: Filesystem, path: string, absolute: string|null, local: bool, remote: bool}  $file
      * @param  array<string, string>  $headers
      */
     public static function make(Request $request, array $file, array $headers, ?int $size = null): Response
     {
-        if ($file['absolute'] !== null && ! $file['remote']) {
+        if ($file['absolute'] !== null && ! $file['remote'] && ! is_readable($file['absolute'])) {
+            Log::warning('A local media copy is not readable by the web server; check the owner of MEDIA_LOCAL_ROOT.', ['path_hash' => sha1($file['absolute'])]);
+        }
+
+        if ($file['absolute'] !== null && ! $file['remote'] && is_readable($file['absolute'])) {
             $accel = self::accelPath($file['absolute']);
 
             if ($accel !== null) {
@@ -61,13 +81,13 @@ final class MediaResponse
         try {
             return app(LocalMedia::class)->open($disk, $path, true, $sizeBytes, $mime);
         } catch (StorageUnavailable $exception) {
-            $busy = $exception->reason === 'remote_busy';
+            Log::warning('A file could not be served.', [...$context, 'disk' => $disk, 'reason' => $exception->reason]);
 
-            abort(503, in_array($exception->reason, ['remote_unavailable', 'remote_busy'], true) ? $exception->getMessage() : 'El almacenamiento de archivos no responde en este momento. Inténtalo de nuevo en unos minutos.', ['Retry-After' => $busy ? '5' : '30', 'Cache-Control' => 'no-store']);
+            self::unavailable(in_array($exception->reason, ['remote_unavailable', 'remote_busy'], true) ? $exception->getMessage() : self::GENERIC);
         } catch (Throwable $exception) {
             Log::warning('Media storage unavailable while serving a file.', [...$context, 'disk' => $disk, 'exception' => $exception::class]);
 
-            abort(503, 'El almacenamiento de archivos no responde en este momento. Inténtalo de nuevo en unos minutos.', ['Retry-After' => '30']);
+            self::unavailable(self::GENERIC);
         }
     }
 

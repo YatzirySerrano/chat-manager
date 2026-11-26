@@ -45,7 +45,7 @@ trait ServesStoredAttachments
      */
     protected function sendStoredFile(array $location, string $name, array $headers, string $disposition): Response
     {
-        if ($location['absolute'] !== null && ! $location['remote']) {
+        if ($location['absolute'] !== null && ! $location['remote'] && is_readable($location['absolute'])) {
             return response()->file($location['absolute'], $headers);
         }
 
@@ -55,7 +55,7 @@ trait ServesStoredAttachments
             return $filesystem->response($location['path'], $name, $headers, $disposition);
         }
 
-        abort(503, 'El almacenamiento de archivos no responde en este momento. Inténtalo de nuevo en unos minutos.');
+        MediaResponse::unavailable(MediaResponse::GENERIC);
     }
 
     protected function storedFileExists(Filesystem $disk, MessageAttachment $file): bool
@@ -85,6 +85,6 @@ trait ServesStoredAttachments
             Log::warning('Media storage unavailable while serving an attachment.', ['attachment_id' => $file->getKey(), 'disk' => $file->disk, 'exception' => $exception::class]);
         }
 
-        abort(503, 'El almacenamiento de archivos no responde en este momento. Inténtalo de nuevo en unos minutos.');
+        MediaResponse::unavailable(MediaResponse::GENERIC);
     }
 }

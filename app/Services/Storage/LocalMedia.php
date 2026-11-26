@@ -79,7 +79,11 @@ class LocalMedia
 
     public function hasLocal(string $disk, string $path): bool
     {
-        return $path !== '' && is_file($this->absolute($disk, $path));
+        // A copy this process cannot read (wrong owner) counts as absent: the
+        // NAS copy is used instead of failing.
+        $absolute = $this->absolute($disk, $path);
+
+        return $path !== '' && is_file($absolute) && is_readable($absolute);
     }
 
     /**

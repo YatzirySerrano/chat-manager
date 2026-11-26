@@ -118,7 +118,7 @@ class MessageAttachmentController extends ConversationOperationController
         } catch (Throwable $exception) {
             Log::warning('Media storage unavailable while serving an attachment.', ['attachment_id' => $attachment->getKey(), 'disk' => $source, 'exception' => $exception::class]);
 
-            abort(503, 'El almacenamiento de archivos no responde en este momento. Inténtalo de nuevo en unos minutos.', ['Retry-After' => '30']);
+            MediaResponse::unavailable(MediaResponse::GENERIC);
         }
 
         return $this->revalidated($response, $etag, $lastModified);

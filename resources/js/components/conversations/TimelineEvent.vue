@@ -47,6 +47,11 @@ const detail = computed(() => {
                 ? `responsable: ${event.from_user}`
                 : 'sin responsable (en cola)',
         );
+    } else if (event.type === 'closed') {
+        // A close ends the request: it does not go to «Pendientes».
+        if (event.from_user) {
+            parts.push(`atendió: ${event.from_user}`);
+        }
     } else if (event.from_user || event.to_user) {
         parts.push(
             [event.from_user, event.to_user]

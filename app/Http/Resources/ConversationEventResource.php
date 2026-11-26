@@ -24,8 +24,8 @@ class ConversationEventResource extends JsonResource
             'id' => $this->id,
             'type' => $this->type->value,
             // «cerró la conversación»: read after the actor's name.
-            'action' => $this->type->action(),
-            'label' => $this->label(),
+            'action' => $this->completedClose() ? 'completó la solicitud' : $this->type->action(),
+            'label' => $this->completedClose() ? 'Solicitud completada' : $this->label(),
             'actor' => $protected->nameForRequest($this->actor, $request),
             'from_user' => $protected->nameForRequest($this->fromUser, $request),
             'to_user' => $protected->nameForRequest($this->toUser, $request),
@@ -47,6 +47,15 @@ class ConversationEventResource extends JsonResource
             ] : null,
             'created_at' => $this->created_at->toIso8601String(),
         ];
+    }
+
+    /**
+     * A close made with «Solicitud completada» (with or without farewell)
+     * reads as such in the timeline, not as a plain close.
+     */
+    private function completedClose(): bool
+    {
+        return $this->type === ConversationEventType::Closed && ($this->metadata['completed'] ?? false) === true;
     }
 
     /**

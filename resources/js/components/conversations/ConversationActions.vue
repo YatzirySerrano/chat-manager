@@ -13,7 +13,6 @@ import {
     Trash2,
     Undo2,
     UserPlus,
-    XCircle,
 } from '@lucide/vue';
 import { computed, defineAsyncComponent, inject, ref } from 'vue';
 import { toast } from 'vue-sonner';
@@ -464,22 +463,27 @@ const secondary = computed<Action[]>(() => {
         });
     }
 
-    if (can.value.close) {
-        if (!completeAsButton.value) {
+    /*
+     * The team attends requests: a request always ends as «Solicitud
+     * completada» (with or without the farewell), so the next message is a
+     * new request in «Pendientes». There is no plain «Cerrar conversación».
+     */
+    if (can.value.close && !completeAsButton.value) {
+        actions.push({
+            key: 'complete',
+            label: 'Solicitud completada',
+            icon: BadgeCheck,
+            run: () => openCompleted(true),
+        });
+
+        if (props.conversation.connection.farewell) {
             actions.push({
-                key: 'complete',
-                label: 'Solicitud completada',
-                icon: BadgeCheck,
-                run: openCompleted,
+                key: 'complete-silent',
+                label: 'Completada sin despedida',
+                icon: BellOff,
+                run: () => openCompleted(false),
             });
         }
-        actions.push({
-            key: 'close',
-            label: 'Cerrar conversación',
-            icon: XCircle,
-            destructive: true,
-            run: () => openReasonDialog('close'),
-        });
     }
 
     if (can.value.delete_permanently) {
@@ -537,7 +541,7 @@ const secondary = computed<Action[]>(() => {
             class="group/complete inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-success/35 bg-success-soft px-2.5 text-sm font-semibold text-success-soft-foreground shadow-(--shadow-control) transition-[background-color,border-color,box-shadow,scale] duration-(--duration-base) ease-(--ease-spring) outline-none hover:border-success/60 hover:shadow-(--shadow-lift) focus-visible:ring-[3px] focus-visible:ring-success/35 active:not-disabled:scale-95 disabled:pointer-events-none disabled:opacity-50 sm:@xl/chat-header:px-3.5 pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:justify-center"
             :disabled="processing"
             aria-label="Solicitud completada"
-            title="Cerrar la conversación como solicitud completada"
+            title="Terminar la solicitud y enviar la despedida; si vuelve a escribir, entra como solicitud nueva a «Pendientes»"
             data-conversation-action="complete"
             @click="openCompleted()"
         >
@@ -555,12 +559,14 @@ const secondary = computed<Action[]>(() => {
             class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border bg-background px-2.5 text-sm font-medium text-muted-foreground shadow-(--shadow-control) outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:justify-center"
             :disabled="processing"
             aria-label="Solicitud completada sin despedida"
-            title="Cerrar como solicitud completada sin enviar el mensaje de despedida"
+            title="Terminar la solicitud sin enviar la despedida; si vuelve a escribir, entra como solicitud nueva a «Pendientes»"
             data-conversation-action="complete-silent"
             @click="openCompleted(false)"
         >
             <BellOff class="size-4 shrink-0" aria-hidden="true" />
-            <span class="hidden sm:@xl/chat-header:inline">Sin despedida</span>
+            <span class="hidden sm:@xl/chat-header:inline"
+                >Completada sin despedida</span
+            >
         </button>
         <!--
             «menu-extra»: chat controls the header moves into this menu on
@@ -593,8 +599,6 @@ const secondary = computed<Action[]>(() => {
                         v-if="
                             index > 0 &&
                             (action.key === 'complete' ||
-                                (action.key === 'close' &&
-                                    secondary[index - 1]?.key !== 'complete') ||
                                 action.key === 'delete-permanently')
                         "
                     />

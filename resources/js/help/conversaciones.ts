@@ -20,7 +20,7 @@ const help: ModuleHelp = {
         'Revisa «Pendientes» y pulsa «Aceptar». A partir de ese momento tú eres el responsable y la conversación pasa a «En atención».',
         'Responde desde el compositor. Usa «Nota interna» para dejar contexto al equipo sin que el cliente lo vea.',
         'Si otra área debe atenderla, usa «Más acciones» → «Transferir». Se conservan mensajes, notas, etiquetas y procedencia, y no se envía nada al cliente.',
-        'Al terminar, «Cerrar conversación» (puedes indicar un motivo). Su historial se conserva y queda en «Cerradas».',
+        'Al terminar, «Solicitud completada» (envía la despedida) o «Completada sin despedida». Su historial se conserva en «Cerradas» y, si la persona vuelve a escribir, entra como solicitud nueva a «Pendientes».',
         'Si el cliente vuelve a escribir después del cierre, la conversación regresa a la bandeja para atenderla de nuevo.',
     ],
     fields: [

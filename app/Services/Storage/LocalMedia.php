@@ -299,24 +299,6 @@ class LocalMedia
                 throw new StorageUnavailable('remote_unavailable', $disk, 'El archivo está guardado en el NAS y el NAS no responde en este momento. Se mostrará en cuanto vuelva.');
             }
 
-            // A web request streams from the NAS only with a free slot
-            // (NasGate), held until the answer was sent; otherwise a quick
-            // 503 (the chat asks again) while the file is brought here.
-            if (! app()->runningInConsole()) {
-                $gate = app(NasGate::class);
-                $slot = $gate->acquire($disk, 'http', 300);
-
-                if ($slot === null) {
-                    if ($cacheOnRead) {
-                        $this->fetchLater($disk, $path, $sizeBytes, $mime);
-                    }
-
-                    throw new StorageUnavailable('remote_busy', $disk, 'El archivo está en el NAS y en este momento está atendiendo otras descargas. Se mostrará en unos segundos.');
-                }
-
-                app()->terminating(fn () => $gate->release($slot));
-            }
-
             $filesystem = Storage::disk($disk);
 
             if (! $filesystem->exists($path)) {
@@ -359,8 +341,11 @@ class LocalMedia
      */
     public function remoteReadable(string $disk): bool
     {
+        // Viewing and downloading are never held back by the NAS being slow
+        // or by the background copies: only a share that is not mounted or
+        // failed its last probes in a row is not touched.
         return (bool) config('attachments.storage.local_first.remote_reads', true)
-            && $this->mounts->remoteAllowed($disk);
+            && ! in_array($this->mounts->state($disk), ['unmounted', 'disconnected'], true);
     }
 
     /**

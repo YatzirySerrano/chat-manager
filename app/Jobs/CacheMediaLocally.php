@@ -29,7 +29,7 @@ class CacheMediaLocally implements ShouldBeUnique, ShouldQueue
 
     public int $maxExceptions = 1;
 
-    public int $timeout = 300;
+    public int $timeout = 900;
 
     public int $uniqueFor = 900;
 

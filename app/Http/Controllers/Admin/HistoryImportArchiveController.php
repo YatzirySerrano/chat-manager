@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Concerns\ServesStoredAttachments;
 use App\Enums\AttachmentStatus;
+use App\Enums\Permission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\HistoryImportArchiveRequest;
 use App\Models\Connection;
@@ -54,6 +55,8 @@ class HistoryImportArchiveController extends Controller
 
         return Inertia::render('admin/history/Index', [
             'filters' => (object) $request->filters(),
+            // «Eliminar todo el historial de Whaticket» (Superadministrador).
+            'canPurge' => $viewer->holdsPermission(Permission::PurgeConversations),
             'conversations' => fn (): array => $this->page($archive, $request->filters(), $viewer),
             'options' => fn (): array => [
                 ...array_intersect_key(HistoryImportController::options(), array_flip(['departments', 'tags'])),

@@ -271,6 +271,8 @@ class ConversationController extends Controller
                 'channels' => $this->channelOptions($connections()),
             ],
             'canSeeClosed' => fn (): bool => $this->access->readsClosedConversations($actor),
+            // «Vaciar conversaciones cerradas definitivamente» (Superadministrador).
+            'canPurgeConversations' => fn (): bool => $actor->holdsPermission(Permission::PurgeConversations),
             'tags' => fn (): array => $actor->holdsPermission(Permission::ViewTags) || $actor->holdsPermission(Permission::AssignTags)
                 ? $tagCatalog()
                 : [],

@@ -118,6 +118,8 @@ const props = defineProps<{
     canSeeUnrouted: boolean;
     canSeeClosed: boolean;
     canExport: boolean;
+    /** Superadministrador: puede vaciar (borrar para siempre) las cerradas. */
+    canPurgeConversations?: boolean;
     viewer: InboxViewer;
     composer: ComposerSettings;
     selectedId: number | null;
@@ -854,6 +856,7 @@ function onAliasSaved(): void {
                 :can-see-unrouted="canSeeUnrouted"
                 :can-see-closed="canSeeClosed"
                 :can-export="canExport"
+                :can-purge-conversations="canPurgeConversations ?? false"
                 :viewer="viewer"
                 :selected-id="selectedId"
                 :loading="loadingList || loadingMore"

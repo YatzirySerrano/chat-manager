@@ -6,10 +6,12 @@ import {
     MailWarning,
     MessageCircleReply,
     MessageSquarePlus,
+    Trash2,
 } from '@lucide/vue';
 import { useDebounceFn, useMediaQuery, watchDebounced } from '@vueuse/core';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import AcceptBlockNotice from '@/components/conversations/AcceptBlockNotice.vue';
+import BulkPurgeDialog from '@/components/conversations/BulkPurgeDialog.vue';
 import InboxFilterPanel from '@/components/conversations/InboxFilterPanel.vue';
 import InboxFilterSurface from '@/components/conversations/InboxFilterSurface.vue';
 import {
@@ -115,6 +117,8 @@ const props = withDefaults(
         /** The viewer may see closed conversations (history permission). */
         canSeeClosed: boolean;
         canExport: boolean;
+        /** Superadministrador: may vaciar (borrar para siempre) las cerradas. */
+        canPurgeConversations?: boolean;
         viewer: InboxViewer;
         selectedId: number | null;
         loading: boolean;
@@ -130,6 +134,7 @@ const props = withDefaults(
         categories: () => [],
         awaitingCount: 0,
         loadingMore: false,
+        canPurgeConversations: false,
     },
 );
 
@@ -1050,6 +1055,9 @@ const scopeButton =
 const { can } = usePermissions();
 const canStartChat = computed(() => can('conversations.reply'));
 const startChatOpen = ref(false);
+
+/** «Vaciar cerradas definitivamente» (Superadministrador, solo en «Cerradas»). */
+const purgeClosedOpen = ref(false);
 </script>
 
 <template>
@@ -1243,6 +1251,17 @@ const startChatOpen = ref(false);
                                 />
                             </template>
                             <button
+                                v-if="closedActive && canPurgeConversations"
+                                type="button"
+                                class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-destructive outline-none hover:bg-destructive-soft hover:text-destructive-soft-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
+                                title="Borra para siempre todas las conversaciones cerradas"
+                                data-inbox-purge-closed
+                                @click="purgeClosedOpen = true"
+                            >
+                                <Trash2 class="size-3.5" aria-hidden="true" />
+                                Vaciar cerradas definitivamente
+                            </button>
+                            <button
                                 v-if="hasFilters && appliedChips.length === 0"
                                 type="button"
                                 class="inline-flex h-7 shrink-0 items-center rounded-md px-1.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
@@ -1427,5 +1446,18 @@ const startChatOpen = ref(false);
             :available="tags"
         />
         <StartChatDialog v-if="canStartChat" v-model:open="startChatOpen" />
+        <BulkPurgeDialog
+            v-if="canPurgeConversations"
+            v-model:open="purgeClosedOpen"
+            title="Vaciar conversaciones cerradas"
+            description="Esto borra PARA SIEMPRE todas las conversaciones cerradas (mensajes, archivos, notas e historial). No se puede deshacer. Los contactos se conservan."
+            :erased="[
+                'Todas las conversaciones cerradas, con sus mensajes y archivos',
+                'Las notas internas y el historial de asignaciones y tiempos de atención',
+            ]"
+            :kept="['Los contactos y sus datos']"
+            scope="closed"
+            confirm-label="Vaciar cerradas"
+        />
     </section>
 </template>

@@ -5,6 +5,7 @@ import {
     ChevronRight,
     History,
     MessagesSquare,
+    Trash2,
     Upload,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
@@ -13,6 +14,7 @@ import StatusPill from '@/components/admin/StatusPill.vue';
 import TableSkeleton from '@/components/admin/TableSkeleton.vue';
 import '@/components/admin/admin.css';
 import ActiveFilters from '@/components/filters/ActiveFilters.vue';
+import BulkPurgeDialog from '@/components/conversations/BulkPurgeDialog.vue';
 import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
 import FilterSearch from '@/components/filters/FilterSearch.vue';
 import FilterTabs from '@/components/filters/FilterTabs.vue';
@@ -60,9 +62,14 @@ const props = defineProps<{
     filters: ArchiveFilters;
     conversations?: ArchivedConversationPage;
     options?: ArchiveOptions;
+    /** Superadministrador: puede borrar para siempre todo el historial de Whaticket. */
+    canPurge?: boolean;
 }>();
 
 const { can } = usePermissions();
+
+/** «Eliminar todo el historial de Whaticket definitivamente». */
+const purgeOpen = ref(false);
 
 const ALL = '__all';
 
@@ -297,8 +304,20 @@ watch(
             title="Historial de Whaticket"
             description="Conversaciones traídas de Whaticket. Solo se consultan: no se puede responder, reabrir ni cambiar nada."
         >
-            <template v-if="can('history-import.view')" #actions>
-                <Button variant="outline" as-child>
+            <template
+                v-if="can('history-import.view') || canPurge"
+                #actions
+            >
+                <Button
+                    v-if="canPurge"
+                    variant="destructive"
+                    data-history-purge
+                    @click="purgeOpen = true"
+                >
+                    <Trash2 />
+                    Eliminar todo el historial definitivamente
+                </Button>
+                <Button v-if="can('history-import.view')" variant="outline" as-child>
                     <Link :href="importIndex()">
                         <Upload />
                         Importar de Whaticket
@@ -595,5 +614,19 @@ watch(
                 </Button>
             </nav>
         </SurfaceCard>
+
+        <BulkPurgeDialog
+            v-if="canPurge"
+            v-model:open="purgeOpen"
+            title="Eliminar todo el historial de Whaticket"
+            description="Esto borra PARA SIEMPRE todo el historial importado de Whaticket: todas las conversaciones importadas y archivadas, sus mensajes y los lotes de importación. No se puede deshacer."
+            :erased="[
+                'Todas las conversaciones importadas y archivadas de Whaticket',
+                'Sus mensajes y archivos adjuntos',
+                'Los lotes de importación y su información de avance',
+            ]"
+            scope="whaticket"
+            confirm-label="Eliminar todo el historial"
+        />
     </div>
 </template>

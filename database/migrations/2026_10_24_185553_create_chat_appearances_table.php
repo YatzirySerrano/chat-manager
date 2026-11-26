@@ -25,9 +25,17 @@ return new class extends Migration
             // column (error 1215); a VIRTUAL one is allowed and indexable.
             // MariaDB (production) keeps it STORED.
             $key = $table->unsignedBigInteger('conversation_key');
-            Schema::getConnection()->getDriverName() === 'mysql'
-                ? $key->virtualAs('IFNULL(`conversation_id`, 0)')
-                : $key->storedAs('IFNULL(`conversation_id`, 0)');
+            // The Laravel driver name ("mariadb") can't be trusted: WAMP ships the
+            // `mariadb` connection but may run a real MySQL server, which refuses
+            // CASCADE on the base column of a STORED generated column (error 1215)
+            // while allowing it on a VIRTUAL one. Detect the real product instead.
+            $serverVersion = (string) Schema::getConnection()
+                ->getPdo()
+                ->getAttribute(\PDO::ATTR_SERVER_VERSION);
+            $isMariaDb = str_contains(strtolower($serverVersion), 'mariadb');
+            $isMariaDb
+                ? $key->storedAs('IFNULL(`conversation_id`, 0)')
+                : $key->virtualAs('IFNULL(`conversation_id`, 0)');
             $table->string('preset', 40)->nullable();
             $table->json('colors')->nullable();
             $table->timestamps();

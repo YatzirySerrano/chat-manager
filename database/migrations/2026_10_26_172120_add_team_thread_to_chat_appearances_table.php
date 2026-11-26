@@ -33,9 +33,9 @@ return new class extends Migration
             // VIRTUAL on MySQL (CASCADE on a STORED column's base is refused),
             // STORED on MariaDB as in production.
             $key = $table->unsignedBigInteger('team_thread_key')->after('conversation_key');
-            Schema::getConnection()->getDriverName() === 'mysql'
-                ? $key->virtualAs('IFNULL(`team_thread_id`, 0)')
-                : $key->storedAs('IFNULL(`team_thread_id`, 0)');
+            $this->isMariaDb()
+                ? $key->storedAs('IFNULL(`team_thread_id`, 0)')
+                : $key->virtualAs('IFNULL(`team_thread_id`, 0)');
             $table->unique(['user_id', 'conversation_key', 'team_thread_key'], 'chat_appearances_user_chat_unique');
         });
 
@@ -76,6 +76,21 @@ return new class extends Migration
 
     private function checksTargets(): bool
     {
-        return Schema::getConnection()->getDriverName() === 'mariadb';
+        return $this->isMariaDb();
+    }
+
+    /**
+     * Whether the connected server is really MariaDB. The Laravel driver name
+     * ("mariadb") is unreliable under WAMP, which can run a MySQL server behind
+     * the `mariadb` connection; MySQL refuses CASCADE on a STORED generated
+     * column's base and CHECK constraints on foreign-key columns.
+     */
+    private function isMariaDb(): bool
+    {
+        $serverVersion = (string) Schema::getConnection()
+            ->getPdo()
+            ->getAttribute(\PDO::ATTR_SERVER_VERSION);
+
+        return str_contains(strtolower($serverVersion), 'mariadb');
     }
 };

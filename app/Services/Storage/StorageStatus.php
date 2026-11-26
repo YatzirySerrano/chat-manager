@@ -71,8 +71,15 @@ class StorageStatus
 
         $warnings = [];
 
-        if ($problem === null && $localFirst !== null && $localFirst['nas']['problem'] !== null) {
+        // Only a NAS that is really down (not mounted, or several probes failed
+        // in a row) is "sin conexión"; a slow or intermittent one is said so.
+        $nasDown = $localFirst !== null && in_array($localFirst['nas']['state'], ['disconnected', 'unmounted'], true);
+        $nasShaky = $localFirst !== null && ! $nasDown && in_array($localFirst['nas']['state'], ['intermittent', 'recovering'], true);
+
+        if ($problem === null && $nasDown) {
             $warnings[] = 'Operación disponible. Los archivos se están guardando temporalmente en el servidor y se sincronizarán automáticamente cuando el almacenamiento remoto esté disponible.';
+        } elseif ($problem === null && $nasShaky) {
+            $warnings[] = 'Operación disponible. El Synology está respondiendo lento o a ratos; los archivos se guardan en el servidor y se copian cuando responde.';
         }
 
         if ($problem === null) {
@@ -101,9 +108,11 @@ class StorageStatus
 
         return [
             'state' => $state,
-            'headline' => $localFirst !== null && $problem === null && $localFirst['nas']['problem'] !== null
-                ? 'Operación disponible · Synology sin conexión'
-                : $this->headline($state, $kind),
+            'headline' => match (true) {
+                $problem === null && $nasDown => 'Operación disponible · Synology sin conexión',
+                $problem === null && $nasShaky => 'Operación disponible · Synology intermitente',
+                default => $this->headline($state, $kind),
+            },
             'message' => match (true) {
                 $problem !== null => ucfirst(MediaDisk::explain($problem)).'.',
                 $warnings !== [] => implode(' ', $warnings),

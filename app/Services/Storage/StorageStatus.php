@@ -5,8 +5,10 @@ namespace App\Services\Storage;
 use App\Enums\AttachmentStatus;
 use App\Exceptions\StorageUnavailable;
 use App\Models\MessageAttachment;
+use App\Models\Storage\MediaReplica;
 use App\Models\TeamChat\TeamAttachment;
 use App\Services\PlatformSettings;
+use App\Support\Queues;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Carbon;
@@ -59,13 +61,19 @@ class StorageStatus
         $check = $this->lastCheck($disk, $kind, $problem);
         $usage = $this->usage();
         $activity = $this->activity($disk);
+        // Local first: the NAS only gates the copies, never the operation.
+        $localFirst = $kind === 'nas' && app(LocalMedia::class)->enabledFor($disk) ? $this->localFirst($disk) : null;
 
         // A file that arrived after the last probe proves the storage answered then.
         $staleAfter = $kind === 'nas' ? $this->mounts->ttlSeconds() * 2 : self::PROBE_SECONDS * 3;
         $age = $check['checked_at'] !== null ? max(0, now()->getTimestamp() - $check['checked_at']) : null;
-        $problem ??= $check['problem'];
+        $problem ??= $localFirst === null ? $check['problem'] : null;
 
         $warnings = [];
+
+        if ($problem === null && $localFirst !== null && $localFirst['nas']['problem'] !== null) {
+            $warnings[] = 'Operación disponible. Los archivos se están guardando temporalmente en el servidor y se sincronizarán automáticamente cuando el almacenamiento remoto esté disponible.';
+        }
 
         if ($problem === null) {
             if (in_array($usage['level'], ['warning', 'exceeded'], true)) {
@@ -93,10 +101,13 @@ class StorageStatus
 
         return [
             'state' => $state,
-            'headline' => $this->headline($state, $kind),
+            'headline' => $localFirst !== null && $problem === null && $localFirst['nas']['problem'] !== null
+                ? 'Operación disponible · Synology sin conexión'
+                : $this->headline($state, $kind),
             'message' => match (true) {
                 $problem !== null => ucfirst(MediaDisk::explain($problem)).'.',
                 $warnings !== [] => implode(' ', $warnings),
+                $localFirst !== null => 'Los archivos se guardan primero en el servidor y se copian al Synology poco a poco, verificados por tamaño y huella.',
                 default => $this->healthyMessage($kind),
             },
             'problem' => $problem,
@@ -113,6 +124,7 @@ class StorageStatus
             'checks' => $this->checks($kind, $problem, $check['checked_at'] !== null),
             'usage' => [...$usage, 'warning_percent' => $this->media->warningPercent()],
             'activity' => $activity,
+            'local_first' => $localFirst,
             'now' => now()->toIso8601String(),
         ];
     }
@@ -135,6 +147,113 @@ class StorageStatus
         }
 
         $this->cache->forget(self::ACTIVITY_KEY.$disk);
+    }
+
+    /**
+     * Local first figures: this server's disk, what waits for the NAS, the
+     * NAS state and its recent incidents. Aggregates on indexed columns only.
+     *
+     * @return array<string, mixed>
+     */
+    private function localFirst(string $disk): array
+    {
+        $local = app(LocalMedia::class);
+        $root = $local->root();
+        $total = @disk_total_space($root);
+        $free = @disk_free_space($root);
+        $last = $this->mounts->lastCheck($disk);
+        $state = $this->mounts->state($disk);
+
+        $byState = MediaReplica::query()->where('disk', $disk)
+            ->selectRaw('state, local_present, COUNT(*) as files, COALESCE(SUM(size_bytes), 0) as bytes, MIN(created_at) as oldest')
+            ->groupBy('state', 'local_present')->get();
+        $sum = fn (string $state, ?bool $present = null, string $column = 'files'): int => (int) $byState
+            ->filter(fn (MediaReplica $row): bool => $row->state === $state && ($present === null || (bool) $row->local_present === $present))
+            ->sum(fn (MediaReplica $row): int => (int) $row->getAttribute($column));
+        $oldest = $byState->where('state', MediaReplica::PENDING)->min(fn (MediaReplica $row): ?string => $row->getAttribute('oldest'));
+
+        $hour = MediaReplica::query()->where('disk', $disk)->where('synced_at', '>=', now()->subHour())
+            ->selectRaw('COUNT(*) as files, COALESCE(SUM(size_bytes), 0) as bytes, COALESCE(SUM(sync_ms), 0) as ms')->first();
+        $hourMs = (int) ($hour?->getAttribute('ms') ?? 0);
+
+        $timestamp = function (string $key): ?string {
+            try {
+                $value = $this->cache->get($key);
+            } catch (Throwable) {
+                return null;
+            }
+
+            return is_int($value) ? Carbon::createFromTimestamp($value)->toIso8601String() : null;
+        };
+
+        $queued = function (string $queue): ?int {
+            try {
+                return config('queue.default') === 'database'
+                    ? DB::table((string) config('queue.connections.database.table', 'jobs'))->where('queue', Queues::name($queue))->count()
+                    : null;
+            } catch (Throwable) {
+                return null;
+            }
+        };
+
+        $attachments = MessageAttachment::query()
+            ->whereIn('status', [AttachmentStatus::Pending, AttachmentStatus::Unavailable])
+            ->where('created_at', '>=', now()->subDays(7))
+            ->selectRaw('status, error_code, COUNT(*) as total')
+            ->groupBy('status', 'error_code')->get();
+        $count = fn (AttachmentStatus $status, ?array $codes = null, bool $not = false): int => (int) $attachments
+            ->filter(fn (MessageAttachment $row): bool => $row->status === $status
+                && ($codes === null || (in_array($row->error_code, $codes, true) xor $not)))
+            ->sum(fn (MessageAttachment $row): int => (int) $row->getAttribute('total'));
+
+        return [
+            'server' => [
+                'total_bytes' => $total === false ? null : (int) $total,
+                'free_bytes' => $free === false ? null : (int) $free,
+                'reserved_bytes' => $local->minFreeBytes(),
+                'pending_max_bytes' => (int) config('attachments.storage.local_first.pending_max_bytes'),
+                'cache_max_bytes' => (int) config('attachments.storage.local_first.cache_max_bytes'),
+                'retention_days' => (int) config('attachments.storage.local_first.retention_days'),
+                'last_write_at' => $timestamp('storage:local-media:last-write'),
+            ],
+            'nas' => [
+                'state' => $state,
+                'problem' => $last['problem'] ?? 'health_unknown',
+                'explanation' => $last === null ? MediaDisk::explain('health_unknown') : ($last['problem'] === null ? null : MediaDisk::explain($last['problem'])),
+                'latency_ms' => $last['latency_ms'] ?? null,
+                'checked_at' => $last === null ? null : Carbon::createFromTimestamp($last['checked_at'])->toIso8601String(),
+                'paused_seconds' => app(RemoteCircuit::class)->openFor($disk),
+            ],
+            'sync' => [
+                'pending_files' => $sum(MediaReplica::PENDING),
+                'pending_bytes' => $sum(MediaReplica::PENDING, null, 'bytes'),
+                'oldest_pending_at' => $oldest === null ? null : Carbon::parse($oldest)->toIso8601String(),
+                'synced_files' => $sum(MediaReplica::SYNCED),
+                'cached_files' => $sum(MediaReplica::SYNCED, true),
+                'cached_bytes' => $sum(MediaReplica::SYNCED, true, 'bytes'),
+                'conflict_files' => $sum(MediaReplica::CONFLICT),
+                'synced_last_hour' => (int) ($hour?->getAttribute('files') ?? 0),
+                'bytes_per_second' => $hourMs > 0 ? (int) round(((int) $hour->getAttribute('bytes')) * 1000 / $hourMs) : null,
+                'last_sync_at' => $timestamp('storage:local-media:last-sync'),
+                'queued_sync' => $queued(Queues::MEDIA_SYNC),
+                'queued_fetch' => $queued(Queues::MEDIA_FETCH),
+            ],
+            'downloads' => [
+                'pending' => $count(AttachmentStatus::Pending),
+                'waiting_storage' => $count(AttachmentStatus::Pending, [StorageUnavailable::CODE]),
+                'unavailable_storage' => $count(AttachmentStatus::Unavailable, [StorageUnavailable::CODE]),
+                'unavailable_other' => $count(AttachmentStatus::Unavailable, [StorageUnavailable::CODE], true),
+            ],
+            'incidents' => DB::table('media_health_events')->where('disk', $disk)->orderByDesc('id')->limit(12)
+                ->get(['state', 'previous_state', 'problem', 'latency_ms', 'created_at'])
+                ->map(fn (object $event): array => [
+                    'state' => (string) $event->state,
+                    'previous_state' => $event->previous_state === null ? null : (string) $event->previous_state,
+                    'problem' => $event->problem === null ? null : MediaDisk::explain((string) $event->problem),
+                    'latency_ms' => $event->latency_ms === null ? null : (int) $event->latency_ms,
+                    'at' => Carbon::parse((string) $event->created_at)->toIso8601String(),
+                ])->all(),
+        ];
     }
 
     private function kind(string $disk): string

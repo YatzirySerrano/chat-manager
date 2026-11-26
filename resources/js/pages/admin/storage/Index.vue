@@ -10,7 +10,9 @@ import {
     FileVideo,
     FolderInput,
     HardDrive,
+    History,
     RefreshCw,
+    Server,
     Save,
     Sticker,
     Weight,
@@ -28,7 +30,7 @@ import StorageActivityBars from '@/components/storage/StorageActivityBars.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
 import { NumberTicker } from '@/components/ui/number-ticker';
-import { formatFileSize } from '@/lib/format';
+import { formatFileSize, formatRelative } from '@/lib/format';
 import { index, probe, status as statusRoute } from '@/routes/admin/storage';
 import type {
     StorageCheck,
@@ -52,6 +54,37 @@ const POLL_SECONDS = 10;
 const LIVE_SECONDS = POLL_SECONDS * 2.6;
 
 const current = ref<StorageStatus>(props.status);
+
+/* Local first: this server keeps the files, the NAS receives copies. */
+const localFirst = computed(() => current.value.local_first);
+const NAS_STATES: Record<string, { label: string; tone: string }> = {
+    operational: { label: 'Operativo', tone: 'text-success' },
+    degraded: { label: 'Degradado (lento)', tone: 'text-warning' },
+    intermittent: { label: 'Intermitente', tone: 'text-warning' },
+    disconnected: { label: 'Desconectado', tone: 'text-destructive' },
+    unmounted: { label: 'Desmontado', tone: 'text-destructive' },
+    recovering: { label: 'Recuperándose', tone: 'text-warning' },
+    unknown: { label: 'Sin comprobar', tone: 'text-muted-foreground' },
+};
+const nasState = computed(
+    () =>
+        NAS_STATES[localFirst.value?.nas.state ?? 'unknown'] ??
+        NAS_STATES.unknown,
+);
+
+function stateLabel(state: string | null): string {
+    return state === null ? '—' : (NAS_STATES[state]?.label ?? state);
+}
+
+function bytes(value: number | null | undefined): string {
+    return value === null || value === undefined
+        ? '—'
+        : formatFileSize(value) || '0 KB';
+}
+
+function when(iso: string | null): string {
+    return iso === null ? 'Nunca' : formatRelative(iso);
+}
 const receivedAt = ref(Date.now());
 const clock = ref(Date.now());
 const beat = ref(0);
@@ -495,6 +528,200 @@ const pollCopy = computed(() => {
                 </p>
             </div>
         </SurfaceCard>
+
+        <!-- Local first: the operation never depends on the NAS. -->
+        <template v-if="localFirst">
+            <div class="auto-grid reveal-stagger [--col-min:14rem]">
+                <StatCard
+                    label="Mensajería"
+                    value="Disponible"
+                    :icon="CircleCheck"
+                    :hint="
+                        localFirst.nas.problem === null
+                            ? 'Los archivos se guardan en el servidor y se copian al Synology.'
+                            : 'Los archivos se guardan en el servidor y se copiarán al Synology cuando responda.'
+                    "
+                />
+                <StatCard
+                    label="Synology"
+                    :value="nasState.label"
+                    :icon="HardDrive"
+                    :hint="
+                        localFirst.nas.explanation ??
+                        (localFirst.nas.latency_ms !== null
+                            ? `Última prueba en ${localFirst.nas.latency_ms} ms, ${when(localFirst.nas.checked_at)}`
+                            : 'Sin comprobaciones recientes')
+                    "
+                />
+                <StatCard
+                    label="Esperando copia al NAS"
+                    :value="localFirst.sync.pending_files"
+                    :icon="RefreshCw"
+                    :hint="`${bytes(localFirst.sync.pending_bytes)} · el más antiguo ${when(localFirst.sync.oldest_pending_at)}`"
+                />
+                <StatCard
+                    label="Disco del servidor"
+                    :value="bytes(localFirst.server.free_bytes)"
+                    :icon="Server"
+                    :hint="`Libres de ${bytes(localFirst.server.total_bytes)}; reserva mínima ${bytes(localFirst.server.reserved_bytes)}`"
+                />
+            </div>
+
+            <div class="grid gap-(--section-gap) xl:grid-cols-3">
+                <SurfaceCard
+                    class="xl:col-span-2"
+                    title="Sincronización con el Synology"
+                    description="Cada archivo nuevo se guarda primero en el servidor y se copia después al NAS, poco a poco y verificado."
+                    body-class="grid gap-x-6 gap-y-3 px-5 py-4 text-sm sm:grid-cols-2"
+                >
+                    <p>
+                        <span class="text-muted-foreground"
+                            >Estado del NAS:</span
+                        >
+                        <span class="font-medium" :class="nasState.tone">
+                            {{ nasState.label }}</span
+                        >
+                        <span
+                            v-if="localFirst.nas.paused_seconds"
+                            class="text-muted-foreground"
+                        >
+                            · copias en pausa
+                            {{ localFirst.nas.paused_seconds }} s</span
+                        >
+                    </p>
+                    <p>
+                        <span class="text-muted-foreground"
+                            >Copiados y verificados:</span
+                        >
+                        <span class="font-medium tabular-nums">
+                            {{ localFirst.sync.synced_files }}</span
+                        >
+                        <span class="text-muted-foreground">
+                            ({{ localFirst.sync.synced_last_hour }} en la última
+                            hora)</span
+                        >
+                    </p>
+                    <p>
+                        <span class="text-muted-foreground"
+                            >Velocidad de copia:</span
+                        >
+                        <span class="font-medium tabular-nums">
+                            {{
+                                localFirst.sync.bytes_per_second === null
+                                    ? '—'
+                                    : `${bytes(localFirst.sync.bytes_per_second)}/s`
+                            }}</span
+                        >
+                    </p>
+                    <p>
+                        <span class="text-muted-foreground"
+                            >Última copia al NAS:</span
+                        >
+                        <span class="font-medium">
+                            {{ when(localFirst.sync.last_sync_at) }}</span
+                        >
+                    </p>
+                    <p>
+                        <span class="text-muted-foreground"
+                            >Último archivo guardado en el servidor:</span
+                        >
+                        <span class="font-medium">
+                            {{ when(localFirst.server.last_write_at) }}</span
+                        >
+                    </p>
+                    <p>
+                        <span class="text-muted-foreground">Caché local:</span>
+                        <span class="font-medium tabular-nums">
+                            {{ localFirst.sync.cached_files }} archivos ·
+                            {{ bytes(localFirst.sync.cached_bytes) }}</span
+                        >
+                        <span class="text-muted-foreground">
+                            de {{ bytes(localFirst.server.cache_max_bytes) }},
+                            {{ localFirst.server.retention_days }} días</span
+                        >
+                    </p>
+                    <p>
+                        <span class="text-muted-foreground">En cola:</span>
+                        <span class="font-medium tabular-nums">
+                            {{ localFirst.sync.queued_sync ?? '—' }} copias ·
+                            {{ localFirst.sync.queued_fetch ?? '—' }}
+                            recuperaciones</span
+                        >
+                    </p>
+                    <p v-if="localFirst.sync.conflict_files > 0">
+                        <span class="text-muted-foreground"
+                            >Requieren revisión:</span
+                        >
+                        <span class="font-medium text-warning tabular-nums">
+                            {{ localFirst.sync.conflict_files }}</span
+                        >
+                        <span class="text-muted-foreground">
+                            (se conservan en el servidor; ver
+                            <code class="font-mono text-xs"
+                                >php artisan media:sync --status</code
+                            >)</span
+                        >
+                    </p>
+                    <p>
+                        <span class="text-muted-foreground"
+                            >Descargas de WhatsApp pendientes:</span
+                        >
+                        <span class="font-medium tabular-nums">
+                            {{ localFirst.downloads.pending }}</span
+                        >
+                    </p>
+                    <p>
+                        <span class="text-muted-foreground"
+                            >No disponibles (7 días):</span
+                        >
+                        <span class="font-medium tabular-nums">
+                            {{ localFirst.downloads.unavailable_storage }}
+                            recuperables ·
+                            {{ localFirst.downloads.unavailable_other }}
+                            otros motivos</span
+                        >
+                    </p>
+                </SurfaceCard>
+
+                <SurfaceCard
+                    title="Historial del Synology"
+                    description="Cambios de estado detectados por la comprobación de cada minuto."
+                    body-class="px-5 py-4"
+                >
+                    <ul
+                        v-if="localFirst.incidents.length > 0"
+                        class="flex flex-col gap-2 text-sm"
+                    >
+                        <li
+                            v-for="incident in localFirst.incidents"
+                            :key="incident.at + incident.state"
+                            class="flex items-start gap-2"
+                        >
+                            <History
+                                class="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                                aria-hidden="true"
+                            />
+                            <span class="min-w-0">
+                                <span class="font-medium">{{
+                                    stateLabel(incident.state)
+                                }}</span>
+                                <span class="text-muted-foreground">
+                                    · {{ when(incident.at) }}</span
+                                >
+                                <span
+                                    v-if="incident.problem"
+                                    class="block text-xs text-pretty text-muted-foreground"
+                                    >{{ incident.problem }}</span
+                                >
+                            </span>
+                        </li>
+                    </ul>
+                    <p v-else class="text-sm text-muted-foreground">
+                        Sin cambios de estado registrados.
+                    </p>
+                </SurfaceCard>
+            </div>
+        </template>
 
         <div class="auto-grid reveal-stagger [--col-min:14rem]">
             <StatCard

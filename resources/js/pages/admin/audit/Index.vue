@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
-import { ChevronRight, ScrollText } from '@lucide/vue';
+import { ChevronRight, ScrollText, Trash2 } from '@lucide/vue';
 import { computed, reactive, ref } from 'vue';
 import AuditDetailSheet from '@/components/admin/AuditDetailSheet.vue';
+import AuditPurgeDialog from '@/components/admin/AuditPurgeDialog.vue';
 import AuditRestrictedBadge from '@/components/admin/AuditRestrictedBadge.vue';
 import '@/components/admin/admin.css';
 import DataPagination from '@/components/DataPagination.vue';
@@ -13,6 +14,7 @@ import ListAvatar from '@/components/filters/ListAvatar.vue';
 import type { ActiveFilterPill } from '@/components/filters/types';
 import PageHeader from '@/components/PageHeader.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
+import { Button } from '@/components/ui/button';
 import { DateRangePicker, formatDate } from '@/components/ui/date-picker';
 import {
     Select,
@@ -48,6 +50,7 @@ const props = defineProps<{
     logs: Paginated<AuditLogEntry>;
     filters: AuditFilters;
     canExport?: boolean;
+    canPurge: boolean;
     actions: { value: string; label: string }[];
     actors: { id: number; name: string }[];
     scope: 'all' | 'own';
@@ -183,6 +186,8 @@ function isSystem(entry: AuditLogEntry): boolean {
 const selectedEntry = ref<AuditLogEntry | null>(null);
 const detailOpen = ref(false);
 
+const purgeOpen = ref(false);
+
 function openDetail(entry: AuditLogEntry): void {
     selectedEntry.value = entry;
     detailOpen.value = true;
@@ -202,10 +207,19 @@ function openDetail(entry: AuditLogEntry): void {
                     : 'Registro inalterable de las acciones administrativas. No incluye contraseñas ni secretos.'
             "
         >
-            <template v-if="canExport" #actions>
-                <span class="inline-flex" data-tour="audit.export">
+            <template v-if="canExport || canPurge" #actions>
+                <span v-if="canExport" class="inline-flex" data-tour="audit.export">
                     <ExportMenu report="audit" :filters="filters" />
                 </span>
+                <Button
+                    v-if="canPurge"
+                    variant="outline"
+                    class="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20"
+                    @click="purgeOpen = true"
+                >
+                    <Trash2 />
+                    Eliminar registros
+                </Button>
             </template>
         </PageHeader>
 
@@ -433,5 +447,6 @@ function openDetail(entry: AuditLogEntry): void {
         </SurfaceCard>
 
         <AuditDetailSheet v-model:open="detailOpen" :entry="selectedEntry" />
+        <AuditPurgeDialog v-if="canPurge" v-model:open="purgeOpen" />
     </div>
 </template>

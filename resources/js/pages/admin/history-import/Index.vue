@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import {
     ArrowRight,
     FileArchive,
@@ -7,8 +7,10 @@ import {
     ListChecks,
     Plus,
     ShieldCheck,
+    Trash2,
     Upload,
 } from '@lucide/vue';
+import { computed, ref } from 'vue';
 import StatusPill from '@/components/admin/StatusPill.vue';
 import '@/components/admin/admin.css';
 import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
@@ -19,6 +21,7 @@ import {
     formatNumber,
 } from '@/components/history-import/labels';
 import PageHeader from '@/components/PageHeader.vue';
+import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
@@ -47,7 +50,7 @@ defineOptions({
 
 const props = defineProps<{
     batches: HistoryBatchListItem[];
-    can: { create: boolean; archive: boolean };
+    can: { create: boolean; archive: boolean; purge: boolean };
     defaults: { timezone: string; source_instance: string };
     formatNote: string;
 }>();
@@ -84,6 +87,31 @@ const form = useForm({
 function create(): void {
     form.post(importStore.url(), { preserveScroll: true });
 }
+
+/* «Eliminar lote definitivamente»: borra para siempre un lote ya importado
+ * (distinto de «Descartar lote», que solo cancela un borrador en Show.vue). */
+const purgeTarget = ref<HistoryBatchListItem | null>(null);
+const purgeOpen = ref(false);
+
+function openPurge(batch: HistoryBatchListItem): void {
+    purgeTarget.value = batch;
+    purgeOpen.value = true;
+}
+
+function onPurged(): void {
+    router.reload();
+}
+
+const purgeUrl = computed(() =>
+    purgeTarget.value
+        ? `/admin/history-import/${purgeTarget.value.id}/purge`
+        : '',
+);
+
+const purgeLabel = computed(
+    () =>
+        purgeTarget.value?.label ?? `Lote ${purgeTarget.value?.id ?? ''}`,
+);
 
 const steps = [
     {
@@ -270,10 +298,11 @@ const steps = [
                     class="grid reveal-stagger gap-0.5 p-1.5"
                     aria-label="Lotes de importación"
                 >
-                    <li v-for="batch in batches" :key="batch.id">
+                    <li v-for="batch in batches" :key="batch.id" class="relative">
                         <Link
                             :href="importShow(batch.id)"
                             class="list-row group/row flex flex-col gap-2 px-3 py-3 outline-none sm:flex-row sm:items-center sm:gap-4 sm:px-4"
+                            :class="can.purge && 'sm:pr-14'"
                             :data-batch="batch.id"
                         >
                             <span
@@ -343,9 +372,39 @@ const steps = [
                                 />
                             </span>
                         </Link>
+                        <Button
+                            v-if="can.purge"
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            class="absolute top-2 right-2 z-10 text-muted-foreground hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20 sm:top-1/2 sm:right-3 sm:-translate-y-1/2"
+                            :aria-label="
+                                'Eliminar lote definitivamente: ' +
+                                (batch.label ?? `Lote ${batch.id}`)
+                            "
+                            @click.stop.prevent="openPurge(batch)"
+                        >
+                            <Trash2 class="size-4" aria-hidden="true" />
+                        </Button>
                     </li>
                 </ul>
             </SurfaceCard>
         </div>
+
+        <PermanentDeleteDialog
+            v-if="can.purge"
+            v-model:open="purgeOpen"
+            title="Eliminar lote definitivamente"
+            :description="`Esto borra para siempre el lote «${purgeLabel}»: todas sus conversaciones, mensajes y el lote mismo. No se puede deshacer.`"
+            :erased="[
+                'Todas las conversaciones importadas de este lote',
+                'Todos los mensajes de esas conversaciones',
+                'El lote y sus archivos de importación',
+            ]"
+            :kept="['Los contactos']"
+            :url="purgeUrl"
+            confirm-label="Eliminar lote definitivamente"
+            @deleted="onPurged"
+        />
     </div>
 </template>

@@ -3,6 +3,7 @@ import { Download, Eye, Maximize2, Play } from '@lucide/vue';
 import { useIntersectionObserver } from '@vueuse/core';
 import { computed, nextTick, reactive, ref } from 'vue';
 import TeamAudioPlayer from '@/components/team-chat/TeamAudioPlayer.vue';
+import { useMediaRetry } from '@/composables/useMediaRetry';
 import SaveFileButton from '@/components/video-exports/SaveFileButton.vue';
 import {
     fileLook,
@@ -43,6 +44,20 @@ const hiddenImages = computed(() =>
 );
 
 const brokenImages = reactive(new Set<number>());
+/* A file still on its way from the NAS can fail once: asked again, spaced out. */
+const media = useMediaRetry();
+
+function imageFailed(id: number): void {
+    if (!media.retry(`image-${id}`)) {
+        brokenImages.add(id);
+    }
+}
+
+function videoFailed(id: number): void {
+    if (!media.retry(`video-${id}`)) {
+        brokenVideos.add(id);
+    }
+}
 /* A tile pulses softly until its picture has arrived. */
 const loadedImages = reactive(new Set<number>());
 
@@ -149,7 +164,12 @@ const cardSurface = computed(() =>
                 </span>
                 <img
                     v-else
-                    :src="tiles[0].thumb_url ?? tiles[0].preview_url ?? ''"
+                    :src="
+                        media.src(
+                            `image-${tiles[0].id}`,
+                            tiles[0].thumb_url ?? tiles[0].preview_url,
+                        )
+                    "
                     :alt="tiles[0].name"
                     loading="lazy"
                     decoding="async"
@@ -163,7 +183,7 @@ const cardSurface = computed(() =>
                         )
                     "
                     @load="loadedImages.add(tiles[0].id)"
-                    @error="brokenImages.add(tiles[0].id)"
+                    @error="imageFailed(tiles[0].id)"
                 />
             </a>
         </div>
@@ -196,13 +216,18 @@ const cardSurface = computed(() =>
                 >
                     <img
                         v-if="!brokenImages.has(image.id)"
-                        :src="image.thumb_url ?? image.preview_url ?? ''"
+                        :src="
+                            media.src(
+                                `image-${image.id}`,
+                                image.thumb_url ?? image.preview_url,
+                            )
+                        "
                         :alt="image.name"
                         loading="lazy"
                         decoding="async"
                         class="size-full object-cover transition-[filter,scale] duration-(--duration-base) ease-(--ease-out-quint) group-hover/image:scale-[1.03] group-hover/image:brightness-95"
                         @load="loadedImages.add(image.id)"
-                        @error="brokenImages.add(image.id)"
+                        @error="imageFailed(image.id)"
                     />
                     <span
                         v-if="hiddenImages > 0 && index === tiles.length - 1"
@@ -244,14 +269,19 @@ const cardSurface = computed(() =>
                 <video
                     v-else-if="near || started.has(video.id)"
                     :ref="(element) => setPlayer(video.id, element)"
-                    :src="`${video.stream_url}#t=0.1`"
+                    :src="
+                        media.src(
+                            `video-${video.id}`,
+                            `${video.stream_url}#t=0.1`,
+                        )
+                    "
                     :controls="started.has(video.id)"
                     playsinline
                     preload="metadata"
                     class="size-full object-contain"
                     :aria-label="`Video ${video.name}`"
                     @loadedmetadata="onVideoMetadata(video, $event)"
-                    @error="brokenVideos.add(video.id)"
+                    @error="videoFailed(video.id)"
                 />
                 <template
                     v-if="!started.has(video.id) && !brokenVideos.has(video.id)"

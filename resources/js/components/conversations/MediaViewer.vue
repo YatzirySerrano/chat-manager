@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaRetry } from '@/composables/useMediaRetry';
 import {
     ChevronLeft,
     ChevronRight,
@@ -42,6 +43,14 @@ const ZOOM_STEPS = [1, 1.5, 2.5, 4] as const;
 
 const zoom = ref(0);
 const failed = ref(false);
+/* Asked again a few times, spaced out, before showing it as broken. */
+const media = useMediaRetry();
+
+function mediaFailed(): void {
+    if (!current.value || !media.retry(current.value.id)) {
+        failed.value = true;
+    }
+}
 const loading = ref(true);
 const stage = ref<HTMLElement | null>(null);
 
@@ -361,7 +370,7 @@ const barButton =
                         <img
                             v-else-if="current.kind === 'image'"
                             :key="current.id"
-                            :src="current.src"
+                            :src="media.src(current.id, current.src)"
                             :alt="current.name"
                             decoding="async"
                             draggable="false"
@@ -377,20 +386,20 @@ const barButton =
                                     : undefined
                             "
                             @load="loading = false"
-                            @error="failed = true"
+                            @error="mediaFailed"
                             @dblclick="onDoubleClick"
                         />
                         <video
                             v-else-if="current.kind === 'video'"
                             :key="`video-${current.id}`"
-                            :src="current.src"
+                            :src="media.src(current.id, current.src)"
                             controls
                             autoplay
                             playsinline
                             class="max-h-full max-w-full bg-black outline-none"
                             :aria-label="`Video ${current.name}`"
                             @loadeddata="loading = false"
-                            @error="failed = true"
+                            @error="mediaFailed"
                         />
                         <iframe
                             v-else

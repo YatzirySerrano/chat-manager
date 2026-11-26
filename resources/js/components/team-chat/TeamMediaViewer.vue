@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaRetry } from '@/composables/useMediaRetry';
 import {
     ChevronLeft,
     ChevronRight,
@@ -54,6 +55,14 @@ const zoom = ref(1);
 const fitWidth = ref(0);
 const failed = ref(false);
 const loaded = ref(false);
+/* Asked again a few times, spaced out, before showing it as broken. */
+const media = useMediaRetry();
+
+function mediaFailed(): void {
+    if (!item.value || !media.retry(item.value.id)) {
+        failed.value = true;
+    }
+}
 
 const item = computed<ViewerItem | null>(
     () => props.items[index.value] ?? null,
@@ -352,7 +361,7 @@ const control =
                             <img
                                 ref="image"
                                 :key="item.id"
-                                :src="item.src"
+                                :src="media.src(item.id, item.src)"
                                 :alt="item.name"
                                 decoding="async"
                                 draggable="false"
@@ -372,19 +381,19 @@ const control =
                                 @pointermove="onPointerMove"
                                 @click="onImageClick"
                                 @load="loaded = true"
-                                @error="failed = true"
+                                @error="mediaFailed"
                             />
                         </template>
                         <video
                             v-else-if="item.kind === 'video'"
                             :key="item.id"
-                            :src="item.src"
+                            :src="media.src(item.id, item.src)"
                             controls
                             autoplay
                             playsinline
                             class="m-auto max-h-full max-w-full rounded-lg bg-black"
                             :aria-label="`Video ${item.name}`"
-                            @error="failed = true"
+                            @error="mediaFailed"
                         />
                         <iframe
                             v-else

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaRetry } from '@/composables/useMediaRetry';
 import { Download, Mic, Pause, Play, TriangleAlert } from '@lucide/vue';
 import { useIntersectionObserver } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref } from 'vue';
@@ -45,6 +46,14 @@ const near = ref(false);
 const playing = ref(false);
 const waiting = ref(false);
 const failed = ref(false);
+/* Asked again a few times, spaced out, before showing it as broken. */
+const media = useMediaRetry();
+
+function audioFailed(): void {
+    if (!media.retry('audio')) {
+        failed.value = true;
+    }
+}
 const position = ref(0);
 const measured = ref<number | null>(null);
 const speed = ref<(typeof SPEEDS)[number]>(1);
@@ -205,7 +214,7 @@ const mutedText = computed(() =>
         <audio
             v-if="near"
             ref="audio"
-            :src="src"
+            :src="media.src('audio', src)"
             preload="metadata"
             class="hidden"
             @loadedmetadata="onMetadata"
@@ -216,7 +225,7 @@ const mutedText = computed(() =>
             @waiting="waiting = true"
             @playing="waiting = false"
             @ended="onEnded"
-            @error="failed = true"
+            @error="audioFailed"
         />
 
         <button

@@ -4,6 +4,7 @@ let playingNow: HTMLAudioElement | null = null;
 </script>
 
 <script setup lang="ts">
+import { useMediaRetry } from '@/composables/useMediaRetry';
 import { Download, Pause, Play } from '@lucide/vue';
 import { useIntersectionObserver } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref } from 'vue';
@@ -47,6 +48,14 @@ const { stop: stopWatchingNear } = useIntersectionObserver(
 const track = ref<HTMLElement | null>(null);
 const playing = ref(false);
 const failed = ref(false);
+/* Asked again a few times, spaced out, before showing it as broken. */
+const media = useMediaRetry();
+
+function audioFailed(): void {
+    if (!media.retry('audio')) {
+        failed.value = true;
+    }
+}
 const current = ref(0);
 const duration = ref(0);
 const speed = ref<(typeof SPEEDS)[number]>(1);
@@ -183,7 +192,7 @@ onBeforeUnmount(() => {
         <audio
             v-if="near"
             ref="audio"
-            :src="src"
+            :src="media.src('audio', src)"
             preload="metadata"
             class="hidden"
             @loadedmetadata="duration = audio?.duration ?? 0"
@@ -192,7 +201,7 @@ onBeforeUnmount(() => {
             @play="playing = true"
             @pause="playing = false"
             @ended="onEnded"
-            @error="failed = true"
+            @error="audioFailed"
         />
         <button
             type="button"

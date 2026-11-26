@@ -63,7 +63,14 @@ final class MediaResponse
 
         $filesystem = $file['filesystem'];
         $path = $file['path'];
-        $size ??= (int) $filesystem->size($path);
+
+        try {
+            $size ??= (int) $filesystem->size($path);
+        } catch (Throwable $exception) {
+            Log::warning('Media storage unavailable while serving a file.', ['exception' => $exception::class]);
+
+            self::unavailable(self::GENERIC);
+        }
 
         return RangedStream::response($request, fn () => $filesystem->readStream($path), $size, $headers);
     }

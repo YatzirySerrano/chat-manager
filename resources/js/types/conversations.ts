@@ -1,27 +1,27 @@
-import type { FileSaveOptions, VideoSaveOptions } from '@/lib/videoExports';
-import type { AppColor } from './admin';
-import type { ConnectionChannel } from './connections';
+import type { FileSaveOptions, VideoSaveOptions } from "@/lib/videoExports";
+import type { AppColor } from "./admin";
+import type { ConnectionChannel } from "./connections";
 import type {
     ContactAttribution,
     ConversationOriginInfo,
     WhatsAppProfile,
-} from './contacts';
-import type { ViewerChatAppearance } from './personalization';
-import type { ConversationReadinessValue } from './service-rules';
-import type { TagOption } from './tags';
+} from "./contacts";
+import type { ViewerChatAppearance } from "./personalization";
+import type { ConversationReadinessValue } from "./service-rules";
+import type { TagOption } from "./tags";
 
 /**
  * `on_hold` is a retired state: it only arrives for old conversations not
  * migrated yet (conversations:retire-on-hold); nothing offers it.
  */
-export type ConversationStatusValue = 'pending' | 'open' | 'on_hold' | 'closed';
+export type ConversationStatusValue = "pending" | "open" | "on_hold" | "closed";
 
 export type ConversationStatusFilter =
     | ConversationStatusValue
-    | 'active'
-    | 'all'
+    | "active"
+    | "all"
     /** Closed as «Solicitud completada» (completed_at set). */
-    | 'completed';
+    | "completed";
 
 /** Operations the viewer may perform, resolved by the server's policy. */
 export type ConversationAbilities = {
@@ -66,12 +66,12 @@ export type ConversationCategoryRef = {
  *   `not_permitted` (the viewer may not accept from that queue).
  */
 export type AcceptanceCode =
-    | 'needs_info'
-    | 'min_wait'
-    | 'queue_order'
-    | 'capacity'
-    | 'pending_attention'
-    | 'not_permitted';
+    | "needs_info"
+    | "min_wait"
+    | "queue_order"
+    | "capacity"
+    | "pending_attention"
+    | "not_permitted";
 
 /**
  * Whether the viewer can take a pending request right now (pending,
@@ -166,7 +166,7 @@ export type ConversationConnection = {
     /** How the connection is operated (`meta_cloud_api`, `whatsapp_web`…), when the server sends it. */
     provider?: string;
     /** Paused (inactive) and deleted connections are told apart. */
-    state: 'active' | 'inactive' | 'deleted';
+    state: "active" | "inactive" | "deleted";
     /** Whether a reply can be sent now; the server checks it again. */
     can_send: boolean;
     /** Why nothing can be sent through the connection, if so. */
@@ -191,7 +191,7 @@ export type ConversationMessagePreview = {
     updated_at?: string | null;
 };
 
-export type ConversationSort = 'priority' | 'recent' | 'oldest';
+export type ConversationSort = "priority" | "recent" | "oldest";
 
 /**
  * A page of the inbox list. `next_cursor` points after its last row; the
@@ -206,7 +206,7 @@ export type ConversationList = {
 };
 
 /** Where the inbox search looks: the contact, or the messages' content. */
-export type ConversationSearchScope = 'contact' | 'messages';
+export type ConversationSearchScope = "contact" | "messages";
 
 /**
  * Views of the inbox: the general inbox of whoever attends conversations
@@ -215,7 +215,7 @@ export type ConversationSearchScope = 'contact' | 'messages';
  * supervisors) and 'queue', kept as an alias of general with
  * status=pending.
  */
-export type InboxView = 'general' | 'mine' | 'queue' | 'all';
+export type InboxView = "general" | "mine" | "queue" | "all";
 
 /** @deprecated Use InboxView ('general' is the default view of whoever attends conversations). */
 export type ConversationInboxView = InboxView;
@@ -229,7 +229,7 @@ export type InboxCounts = {
 };
 
 /** How several tags of the filter combine: any of them (OR) or all (AND). */
-export type InboxTagMatch = 'any' | 'all';
+export type InboxTagMatch = "any" | "all";
 
 /** What the inbox list shows the viewer. */
 export type InboxViewer = {
@@ -246,7 +246,7 @@ export type ConversationInbox = {
     /** Views the viewer may open; the first one is the default. */
     views: InboxView[];
     /** Data scope of the viewer's role, null without an active role. */
-    scope: 'global' | 'departments' | 'assigned' | null;
+    scope: "global" | "departments" | "assigned" | null;
     /**
      * Supervises a team reach: the inbox opens on every conversation of it
      * ('all'), whoever attends it.
@@ -263,7 +263,7 @@ export type ConversationFilters = {
     /** ConnectionChannel value, or null for every channel. */
     channel: ConnectionChannel | null;
     /** «web»: the «Mensajes web» inbox (web chat only); «main»: every other channel. */
-    space: 'web' | 'main';
+    space: "web" | "main";
     search: string;
     search_in: ConversationSearchScope;
     /** The message search has no word it can look for (short words, stopwords). */
@@ -282,37 +282,37 @@ export type ConversationFilters = {
     readiness: ConversationReadinessValue | null;
 };
 
-export type MessageDirection = 'inbound' | 'outbound';
+export type MessageDirection = "inbound" | "outbound";
 
 export type MessageTypeValue =
-    | 'text'
-    | 'image'
-    | 'audio'
-    | 'video'
-    | 'document'
-    | 'sticker'
-    | 'location'
-    | 'contacts'
-    | 'template'
-    | 'interactive'
-    | 'reaction'
-    | 'unsupported'
-    | 'button'
-    | 'poll';
+    | "text"
+    | "image"
+    | "audio"
+    | "video"
+    | "document"
+    | "sticker"
+    | "location"
+    | "contacts"
+    | "template"
+    | "interactive"
+    | "reaction"
+    | "unsupported"
+    | "button"
+    | "poll";
 
 /**
  * Delivery states: received (inbound), queued, sending, accepted (by the
  * provider), sent, delivered, read (only from Meta evidence) and failed.
  */
 export type MessageStatusValue =
-    | 'received'
-    | 'queued'
-    | 'sending'
-    | 'accepted'
-    | 'sent'
-    | 'delivered'
-    | 'read'
-    | 'failed';
+    | "received"
+    | "queued"
+    | "sending"
+    | "accepted"
+    | "sent"
+    | "delivered"
+    | "read"
+    | "failed";
 
 export type MessageAttachment = {
     id: number;
@@ -332,7 +332,7 @@ export type MessageAttachment = {
     width?: number | null;
     height?: number | null;
     /** 'link': the customer received a secure download link instead of the file. */
-    delivery_method?: 'native' | 'link';
+    delivery_method?: "native" | "link";
     /** Until when the customer's download link works (link delivery only). */
     link_expires_at?: string | null;
     /** When the download link was revoked (it no longer works). */
@@ -368,8 +368,7 @@ export type MessageContent =
           question?: string | null;
           name?: string | null;
           options?: (
-              | string
-              | { name?: string | null; votes?: number | null }
+              string | { name?: string | null; votes?: number | null }
           )[];
       }
     /* A type this version does not draw: a readable hint of what it was. */
@@ -435,7 +434,7 @@ export type ConversationMessage = {
               direction: MessageDirection;
               type: MessageTypeValue;
               body: string | null;
-              origin: 'conversation' | 'previous_conversation';
+              origin: "conversation" | "previous_conversation";
               conversation_id: number | null;
               url: string | null;
           }
@@ -444,7 +443,7 @@ export type ConversationMessage = {
               direction: null;
               type: null;
               body: null;
-              origin: 'restricted';
+              origin: "restricted";
               conversation_id: null;
               url: null;
           }
@@ -454,7 +453,7 @@ export type ConversationMessage = {
               direction: MessageDirection | null;
               type: null;
               body: string;
-              origin: 'external';
+              origin: "external";
               conversation_id: null;
               url: null;
               preview?: string;
@@ -550,6 +549,8 @@ export type ConversationDetails = {
         is_saved: boolean;
         /** The viewer may save this provisional contact into the directory. */
         can_save: boolean;
+        /** Edit the official name (seen by everybody) from the panel. */
+        can_rename: boolean;
         /** WhatsApp profile picture (private copy, WhatsApp Web only); null shows the initials. */
         avatar_url?: string | null;
     };
@@ -584,8 +585,8 @@ export type ConversationDetails = {
 
 /** One kind of file a channel accepts from the composer (ChannelAttachmentPolicy). */
 export type AttachmentKindRule = {
-    key: 'image' | 'document' | 'audio' | 'video' | 'archive';
-    type: 'image' | 'document' | 'audio' | 'video';
+    key: "image" | "document" | "audio" | "video" | "archive";
+    type: "image" | "document" | "audio" | "video";
     label: string;
     mimes: string[];
     extensions: string[];
@@ -593,9 +594,9 @@ export type AttachmentKindRule = {
     /** Whether text may travel with the file. */
     caption: boolean;
     /** 'link': sent as a secure expiring download link. */
-    delivery: 'native' | 'link';
+    delivery: "native" | "link";
     /** Entry of the composer's attachment menu; defaults to `type`. */
-    category?: 'image' | 'video' | 'document' | 'audio';
+    category?: "image" | "video" | "document" | "audio";
 };
 
 export type ChannelAttachmentRules = {
@@ -607,14 +608,14 @@ export type ChannelAttachmentRules = {
     kinds: AttachmentKindRule[];
     /** The attachment menu entries, in order, with the chooser's `accept` hint. */
     categories?: {
-        key: 'image' | 'video' | 'document' | 'audio';
+        key: "image" | "video" | "document" | "audio";
         kinds: string[];
         mimes: string[];
         extensions: string[];
         accept: string;
         max_bytes: number;
         /** 'mixed': part of the category travels as a download link (ZIP among documents). */
-        delivery: 'native' | 'link' | 'mixed';
+        delivery: "native" | "link" | "mixed";
         /** This server's upload limit is lower than the category's. */
         server_limited?: boolean;
     }[];
@@ -641,11 +642,7 @@ export type ComposerSettings = {
 
 /** State of the customer service window; 'not_applicable' for channels without one (web chat). */
 export type CustomerWindowStatus =
-    | 'none'
-    | 'open'
-    | 'expiring'
-    | 'expired'
-    | 'not_applicable';
+    "none" | "open" | "expiring" | "expired" | "not_applicable";
 
 /**
  * Catalog of «Marcar que necesita información» (Configuración ›
@@ -717,7 +714,7 @@ export type AcceptBlock = {
  * `warn_at` / `due_at` against the shared server clock (useServerNow).
  */
 export type ConversationSla = {
-    kind: 'first_response' | 'response';
+    kind: "first_response" | "response";
     kind_label: string;
     started_at: string;
     warn_at: string | null;

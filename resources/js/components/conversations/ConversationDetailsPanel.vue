@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link, router } from '@inertiajs/vue3';
+import { Link, router } from "@inertiajs/vue3";
 import {
     CircleHelp,
     Copy,
@@ -13,43 +13,47 @@ import {
     UserPlus,
     UserRound,
     X,
-} from '@lucide/vue';
-import { computed, defineAsyncComponent, ref, watch } from 'vue';
-import { toast } from 'vue-sonner';
-import ChannelIcon from '@/components/connections/ChannelIcon.vue';
-import SaveContactDialog from '@/components/contacts/SaveContactDialog.vue';
-import UnsavedContactBadge from '@/components/contacts/UnsavedContactBadge.vue';
-import WhatsAppProfileCard from '@/components/contacts/WhatsAppProfileCard.vue';
-import CompletedBadge from '@/components/conversations/CompletedBadge.vue';
-import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
-import SlaBadge from '@/components/sla/SlaBadge.vue';
-import CustomerWindowIndicator from '@/components/conversations/CustomerWindowIndicator.vue';
-import CategoryBadge from '@/components/categories/CategoryBadge.vue';
-import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
-import DepartmentTag from '@/components/DepartmentTag.vue';
-import ExportMenu from '@/components/ExportMenu.vue';
-import AliasDialog from '@/components/personalization/AliasDialog.vue';
-import TagPicker from '@/components/tags/TagPicker.vue';
-import { AppSelect } from '@/components/ui/app-select';
-import { Button } from '@/components/ui/button';
-import { useInitials } from '@/composables/useInitials';
-import type { ViewerItem } from '@/lib/conversations/media';
-import { formatDate, formatDateTime } from '@/lib/format';
-import '@/components/chat/chat.css';
-import { formatPhone } from '@/lib/phone';
-import { save as saveContact } from '@/routes/conversations/contact';
-import { update as updateCategory } from '@/routes/conversations/category';
-import { update as updateTags } from '@/routes/conversations/tags';
+} from "@lucide/vue";
+import { computed, defineAsyncComponent, ref, watch } from "vue";
+import { toast } from "vue-sonner";
+import ChannelIcon from "@/components/connections/ChannelIcon.vue";
+import RenameContactDialog from "@/components/contacts/RenameContactDialog.vue";
+import SaveContactDialog from "@/components/contacts/SaveContactDialog.vue";
+import UnsavedContactBadge from "@/components/contacts/UnsavedContactBadge.vue";
+import WhatsAppProfileCard from "@/components/contacts/WhatsAppProfileCard.vue";
+import CompletedBadge from "@/components/conversations/CompletedBadge.vue";
+import ConversationStatusBadge from "@/components/conversations/ConversationStatusBadge.vue";
+import SlaBadge from "@/components/sla/SlaBadge.vue";
+import CustomerWindowIndicator from "@/components/conversations/CustomerWindowIndicator.vue";
+import CategoryBadge from "@/components/categories/CategoryBadge.vue";
+import ReadinessBadge from "@/components/conversations/ReadinessBadge.vue";
+import DepartmentTag from "@/components/DepartmentTag.vue";
+import ExportMenu from "@/components/ExportMenu.vue";
+import AliasDialog from "@/components/personalization/AliasDialog.vue";
+import TagPicker from "@/components/tags/TagPicker.vue";
+import { AppSelect } from "@/components/ui/app-select";
+import { Button } from "@/components/ui/button";
+import { useInitials } from "@/composables/useInitials";
+import type { ViewerItem } from "@/lib/conversations/media";
+import { formatDate, formatDateTime } from "@/lib/format";
+import "@/components/chat/chat.css";
+import { formatPhone } from "@/lib/phone";
+import {
+    rename as renameContact,
+    save as saveContact,
+} from "@/routes/conversations/contact";
+import { update as updateCategory } from "@/routes/conversations/category";
+import { update as updateTags } from "@/routes/conversations/tags";
 import type {
     ConversationCategoryRef,
     ConversationDetails,
     ConversationSummary,
     CustomerWindow,
-} from '@/types';
+} from "@/types";
 
 // Loaded the first time it is shown: it is not needed to paint the page.
 const MediaViewer = defineAsyncComponent(
-    () => import('@/components/conversations/MediaViewer.vue'),
+    () => import("@/components/conversations/MediaViewer.vue"),
 );
 
 /**
@@ -84,10 +88,10 @@ const categoryOptions = computed(() => {
 const savingCategory = ref(false);
 
 const categorySelectOptions = computed(() => [
-    { value: null, label: 'Sin categoría' },
+    { value: null, label: "Sin categoría" },
     ...categoryOptions.value.map((category) => ({
         value: category.id,
-        label: `${category.name}${category.is_active === false ? ' (eliminada)' : ''}`,
+        label: `${category.name}${category.is_active === false ? " (eliminada)" : ""}`,
         disabled: category.is_active === false,
     })),
 ]);
@@ -110,7 +114,7 @@ function changeCategory(selected: number | null | undefined): void {
                 toast.error(
                     errors.category_id ??
                         errors.conversation ??
-                        'No se pudo cambiar la categoría. Inténtalo de nuevo.',
+                        "No se pudo cambiar la categoría. Inténtalo de nuevo.",
                 ),
             onFinish: () => (savingCategory.value = false),
         },
@@ -118,13 +122,13 @@ function changeCategory(selected: number | null | undefined): void {
 }
 
 const isWebChat = computed(
-    () => props.conversation.connection.channel === 'web_chat',
+    () => props.conversation.connection.channel === "web_chat",
 );
-const windowApplies = computed(() => props.window.status !== 'not_applicable');
+const windowApplies = computed(() => props.window.status !== "not_applicable");
 const differentProfileName = computed(
     () =>
         props.details.contact.profile_name !== null &&
-        props.details.contact.profile_name !== '' &&
+        props.details.contact.profile_name !== "" &&
         props.details.contact.profile_name !== props.details.contact.name,
 );
 
@@ -135,6 +139,8 @@ const emit = defineEmits<{
 
 /* "Guardar contacto": a provisional customer enters the directory. */
 const saveContactOpen = ref(false);
+/* "Editar nombre": the official name, for the whole team. */
+const renameContactOpen = ref(false);
 const panel = ref<HTMLElement | null>(null);
 
 /**
@@ -148,7 +154,7 @@ function contactLinkElement(): HTMLElement | null {
     }
 
     return (
-        panel.value?.querySelector<HTMLElement>('[data-contact-link]') ??
+        panel.value?.querySelector<HTMLElement>("[data-contact-link]") ??
         panel.value
     );
 }
@@ -160,7 +166,7 @@ function contactLinkElement(): HTMLElement | null {
 const aliasOpen = ref(false);
 
 function onAliasSaved(): void {
-    router.reload({ only: ['conversation', 'details', 'conversations'] });
+    router.reload({ only: ["conversation", "details", "conversations"] });
 }
 
 /**
@@ -186,7 +192,7 @@ const photoItems = computed<ViewerItem[]>(() =>
         ? [
               {
                   id: props.details.contact.id,
-                  kind: 'image',
+                  kind: "image",
                   src: photo.value,
                   downloadUrl: null,
                   name: `Foto de perfil de ${props.details.contact.display_name}`,
@@ -219,7 +225,7 @@ async function copy(
         toast.success(done);
     } catch {
         toast.error(
-            'No se pudo copiar. Selecciona el texto y cópialo con Ctrl+C.',
+            "No se pudo copiar. Selecciona el texto y cópialo con Ctrl+C.",
         );
     }
 }
@@ -296,9 +302,9 @@ function safeUrl(url: string | null): string | null {
                     <div class="min-w-0 pt-1">
                         <p
                             class="truncate text-lg leading-snug font-semibold"
-                            :title="details.contact.display_name"
+                            :title="details.contact.name"
                         >
-                            {{ details.contact.display_name }}
+                            {{ details.contact.name }}
                         </p>
                         <p
                             v-if="details.contact.alias"
@@ -310,9 +316,10 @@ function safeUrl(url: string | null): string | null {
                                 title="Solo tú ves este alias"
                                 >Alias personal</span
                             >
-                            <span class="truncate" :title="details.contact.name"
-                                >Nombre oficial:
-                                {{ details.contact.name }}</span
+                            <span
+                                class="truncate"
+                                :title="details.contact.alias"
+                                >Tu alias: {{ details.contact.alias }}</span
                             >
                         </p>
                         <UnsavedContactBadge
@@ -441,9 +448,20 @@ function safeUrl(url: string | null): string | null {
                         <PenLine aria-hidden="true" />
                         {{
                             details.contact.alias
-                                ? 'Editar alias'
-                                : 'Poner alias'
+                                ? "Editar mi alias"
+                                : "Alias solo para mí"
                         }}
+                    </Button>
+                    <Button
+                        v-if="details.contact.can_rename"
+                        variant="outline"
+                        size="sm"
+                        class="rounded-full pointer-coarse:h-10"
+                        title="Cambiar el nombre que ve todo el equipo"
+                        @click="renameContactOpen = true"
+                    >
+                        <PenLine aria-hidden="true" />
+                        Editar nombre
                     </Button>
                     <Button
                         v-if="details.contact.can_save"
@@ -465,8 +483,8 @@ function safeUrl(url: string | null): string | null {
                             <ExternalLink aria-hidden="true" />
                             {{
                                 details.contact.is_saved
-                                    ? 'Ver en Contactos'
-                                    : 'Ver ficha del contacto'
+                                    ? "Ver en Contactos"
+                                    : "Ver ficha del contacto"
                             }}
                         </Link>
                     </Button>
@@ -544,7 +562,7 @@ function safeUrl(url: string | null): string | null {
                     </dd>
                     <dt class="text-xs text-muted-foreground">Responsable</dt>
                     <dd class="truncate">
-                        {{ conversation.assignee?.name ?? 'Sin agente' }}
+                        {{ conversation.assignee?.name ?? "Sin agente" }}
                     </dd>
                     <dt class="text-xs text-muted-foreground">Conexión</dt>
                     <dd class="truncate" :title="conversation.connection.name">
@@ -566,7 +584,7 @@ function safeUrl(url: string | null): string | null {
                             Ventana de atención
                         </dt>
                         <dd class="text-muted-foreground">
-                            {{ window.label || 'No aplica' }}
+                            {{ window.label || "No aplica" }}
                         </dd>
                     </template>
                     <dt class="text-xs text-muted-foreground">Inicio</dt>
@@ -715,7 +733,7 @@ function safeUrl(url: string | null): string | null {
                                 <span
                                     class="block truncate text-xs text-muted-foreground"
                                 >
-                                    {{ previous.assignee ?? 'Sin agente' }}
+                                    {{ previous.assignee ?? "Sin agente" }}
                                     <template v-if="previous.origin !== 'live'">
                                         · {{ previous.origin_label }}</template
                                     >
@@ -755,7 +773,7 @@ function safeUrl(url: string | null): string | null {
                             {{ note.body }}
                         </p>
                         <p class="mt-1 text-xs text-muted-foreground">
-                            {{ note.author ?? 'Usuario eliminado' }} ·
+                            {{ note.author ?? "Usuario eliminado" }} ·
                             {{ formatDate(note.created_at) }}
                         </p>
                     </li>
@@ -777,6 +795,12 @@ function safeUrl(url: string | null): string | null {
             :contact-name="details.contact.name"
             :alias="details.contact.alias"
             @saved="onAliasSaved"
+        />
+        <RenameContactDialog
+            v-model:open="renameContactOpen"
+            :name="details.contact.name"
+            :profile-name="details.contact.profile_name"
+            :action="renameContact(conversation.id)"
         />
         <!-- Kept mounted after saving (the trigger disappears): the dialog
              animates out and focus moves to the contact's link. -->

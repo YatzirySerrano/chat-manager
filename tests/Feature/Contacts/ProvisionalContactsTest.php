@@ -300,3 +300,40 @@ test('tagging a provisional contact from its page saves it into the directory', 
 
     expect($conversation->contact->refresh()->isSaved())->toBeTrue();
 });
+
+test('the official name can be edited from the conversation for everybody', function () {
+    $conversation = provisionalConversation($this->connection, $this->department);
+    $conversation->contact->forceFill(['saved_at' => now()])->save();
+    $editor = conversationUser(
+        [Permission::ViewConversations, Permission::ViewContacts, Permission::UpdateContacts],
+        DataScope::Departments,
+        [$this->department],
+    );
+
+    $this->actingAs($editor)
+        ->put(route('conversations.contact.rename', $conversation), ['name' => '  Josmar  García '])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $contact = $conversation->contact->refresh();
+    expect($contact->name)->toBe('Josmar García')
+        ->and($contact->phone_e164)->toBe('+5215511112222')
+        ->and(AuditLog::query()->where('action', AuditAction::ContactUpdated)->exists())->toBeTrue();
+});
+
+test('a contact reached through WhatsApp can be edited without phone or email', function () {
+    $conversation = provisionalConversation($this->connection, $this->department);
+    $contact = $conversation->contact;
+    $contact->forceFill(['saved_at' => now(), 'phone_e164' => null, 'email' => null])->save();
+    $editor = conversationUser(
+        [Permission::ViewConversations, Permission::ViewContacts, Permission::UpdateContacts],
+        DataScope::Departments,
+        [$this->department],
+    );
+
+    $this->actingAs($editor)
+        ->put(route('contacts.update', $contact), ['name' => 'Josmar Mauricio', 'phone' => '', 'email' => ''])
+        ->assertSessionHasNoErrors();
+
+    expect($contact->refresh()->name)->toBe('Josmar Mauricio');
+});

@@ -38,4 +38,5 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('throttle:10,1')
         ->name('conversations.contact.whatsapp-profile.refresh');
     Route::post('conversations/{conversation}/contact/save', [ConversationContactController::class, 'store'])->name('conversations.contact.save');
+    Route::put('conversations/{conversation}/contact/name', [ConversationContactController::class, 'rename'])->name('conversations.contact.rename');
 });

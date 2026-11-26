@@ -42,20 +42,25 @@ class ContactRequest extends FormRequest
      */
     public function rules(): array
     {
+        // A contact that writes through a channel (WhatsApp, web chat…) is
+        // already reachable: it needs no phone or email typed by hand, and
+        // WhatsApp may hide the number of some people.
+        $requireContactData = ! $this->hasChannelIdentity();
+
         return [
             'name' => ['required', 'string', 'max:160'],
             'phone' => [
                 'nullable',
                 'string',
                 'max:32',
-                'required_without:email',
+                ...($requireContactData ? ['required_without:email'] : []),
                 function (string $attribute, mixed $value, Closure $fail): void {
                     if (is_string($value) && trim($value) !== '' && ! PhoneNumber::isValid($value)) {
                         $fail('El teléfono no es válido. Escribe 10 dígitos para México o el número completo con lada internacional (por ejemplo +1 415 555 2671).');
                     }
                 },
             ],
-            'email' => ['nullable', 'string', 'email', 'max:255', 'required_without:phone'],
+            'email' => ['nullable', 'string', 'email', 'max:255', ...($requireContactData ? ['required_without:phone'] : [])],
             'department_id' => [
                 'nullable',
                 'integer',
@@ -182,6 +187,16 @@ class ContactRequest extends FormRequest
         $contact = $this->route('contact');
 
         return $contact instanceof Contact && $contact->department_id === $departmentId;
+    }
+
+    /**
+     * Whether the contact being edited is reached through a channel identity.
+     */
+    private function hasChannelIdentity(): bool
+    {
+        $contact = $this->route('contact');
+
+        return $contact instanceof Contact && $contact->identities()->exists();
     }
 
     public function confirmsDuplicate(): bool

@@ -606,6 +606,8 @@ class ConversationController extends Controller
                 // Provisional contacts can be saved into the directory from the panel.
                 'is_saved' => $contact->isSaved(),
                 'can_save' => ! $contact->isSaved() && $actor->can('saveToDirectory', $contact),
+                // The official name (for everybody) can be fixed from the panel.
+                'can_rename' => $contact->isSaved() && $actor->can('update', $contact),
                 'avatar_url' => $avatarUrl = WhatsAppWebContactProfiles::conversationAvatarUrl($conversation),
             ],
             // «Perfil de WhatsApp»: picture, info and business profile (WhatsApp Web only; null without a WhatsApp identity).

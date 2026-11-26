@@ -123,9 +123,10 @@ class PurgeConversationsInBulk
 
     /**
      * Drops Whaticket import batches and their staging: every history import
-     * batch, or a single one ($batchId). `import_source_keys` must go first
-     * (its foreign key to `data_transfers` is restrictOnDelete); the rest of
-     * the staging (`history_import_*`) cascades with the batch.
+     * batch, or a single one ($batchId). The two children with a
+     * restrictOnDelete foreign key to `data_transfers` (`import_source_keys`
+     * and `import_batch_records`) must go first; the rest of the staging
+     * (`history_import_*`) cascades with the batch.
      *
      * @return int Batches dropped.
      */
@@ -142,7 +143,10 @@ class PurgeConversationsInBulk
                 return 0;
             }
 
+            // Both have a restrictOnDelete FK to data_transfers, so they block
+            // the batch delete unless they go first.
             DB::table('import_source_keys')->whereIn('data_transfer_id', $batchIds)->delete();
+            DB::table('import_batch_records')->whereIn('data_transfer_id', $batchIds)->delete();
 
             // history_import_files/conversations/messages/rules cascade with the batch.
             return DB::table('data_transfers')->whereIn('id', $batchIds)->delete();

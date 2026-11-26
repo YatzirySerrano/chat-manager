@@ -4,6 +4,7 @@ import {
     AtSign,
     Bell,
     Bot,
+    CircleCheck,
     FileDown,
     FileUp,
     Headset,
@@ -75,6 +76,12 @@ const KINDS: Record<NotificationKindValue, KindMeta> = {
         label: 'Tiempo de atención',
         tone: 'danger',
         unit: ['aviso', 'avisos'],
+    },
+    'conversation.completed': {
+        icon: CircleCheck,
+        label: 'Solicitud completada',
+        tone: 'success',
+        unit: ['solicitud', 'solicitudes'],
     },
     'team-chat.mention': {
         icon: AtSign,

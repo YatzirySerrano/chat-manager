@@ -17,6 +17,7 @@ import {
 import { computed, ref, watch } from 'vue';
 import AttentionAlertCard from '@/components/attention/AttentionAlertCard.vue';
 import AttentionAlertComposer from '@/components/attention/AttentionAlertComposer.vue';
+import AttentionAutomationPanel from '@/components/attention/AttentionAutomationPanel.vue';
 import { ALERT_SURFACE, PRIORITY_LOOK } from '@/components/attention/priority';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import ActiveFilters from '@/components/filters/ActiveFilters.vue';
@@ -63,6 +64,8 @@ import type {
     AttentionAlertRecipient,
     AttentionAlertSound,
     AttentionAlertSummary,
+    AttentionAutomationLevel,
+    AttentionAutomationSettings,
     AttentionOption,
     AttentionWaitingConversation,
     ColorSwatch,
@@ -88,7 +91,7 @@ const props = defineProps<{
     generatedAt: string;
     departments: { id: number; name: string }[];
     control: { enabled: boolean; tolerance_minutes: number };
-    can: { send: boolean; settings: boolean };
+    can: { send: boolean; settings: boolean; automation: boolean };
     /** Section shown: the attention tracking or the SLA monitor (`?tab=sla`). */
     tab: 'attention' | 'sla';
     /** Deferred: open response cycles of the viewer's reach. */
@@ -101,12 +104,17 @@ const props = defineProps<{
     /** Server clock when the data was built (anchor of the countdowns). */
     serverTime: string;
     settingsUrl: string | null;
+    /** «Alertas automáticas»: current escalation steps and completed broadcast, only sent to can.automation. */
+    automation: AttentionAutomationSettings | null;
     options: {
         priorities: AttentionOption<AttentionAlertPriority>[];
         sounds: AttentionOption<AttentionAlertSound>[];
         colors: AttentionOption<ColorSwatch>[];
         title_max: number;
         body_max: number;
+        alert_levels: AttentionOption<AttentionAutomationLevel>[];
+        message_max: number;
+        max_steps: number;
     };
 }>();
 
@@ -1305,6 +1313,12 @@ function recipientState(recipient: AttentionAlertRecipient): string {
             :sender-name="senderName"
             :options="options"
             @sent="onSent"
+        />
+
+        <AttentionAutomationPanel
+            v-if="can.automation && automation"
+            :automation="automation"
+            :options="options"
         />
 
         <Dialog v-model:open="detailOpen">

@@ -7,6 +7,7 @@ export type NotificationKindValue =
     | 'conversation.message'
     | 'conversation.queue-overdue'
     | 'conversation.attention-overdue'
+    | 'conversation.completed'
     | 'team-chat.mention'
     | 'team-chat.message'
     | 'team-chat.desk-request'

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Attention\AttentionAlertController;
+use App\Http\Controllers\Attention\AttentionAutomationController;
 use App\Http\Controllers\Attention\AttentionController;
 use App\Http\Controllers\Attention\MyAttentionAlertController;
 use Illuminate\Support\Facades\Route;
@@ -20,6 +21,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->whereNumber('alert')
         ->middleware('throttle:60,1')
         ->name('attention.alerts.show');
+    // «Alertas automáticas»: escalation steps and the completed broadcast (update-settings).
+    Route::put('attention/automation', [AttentionAutomationController::class, 'update'])
+        ->middleware('throttle:20,1')
+        ->name('attention.automation.update');
 
     Route::get('my-alerts', [MyAttentionAlertController::class, 'index'])
         ->middleware('throttle:120,1')

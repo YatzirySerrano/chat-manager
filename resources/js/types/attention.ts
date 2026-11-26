@@ -94,3 +94,27 @@ export type AttentionOption<T extends string = string> = {
     label: string;
     description?: string;
 };
+
+/** Urgency of an automatic alert (distinct from AttentionAlertPriority, used by the manual composer). */
+export type AttentionAutomationLevel = 'urgent' | 'informative';
+
+/** One escalation step of «Alertas automáticas»: fires once at `minutes`. */
+export type AttentionEscalationStep = {
+    minutes: number;
+    priority: AttentionAutomationLevel;
+    message: string | null;
+};
+
+/**
+ * «Alertas automáticas» of Seguimiento de atención (AttentionController::index),
+ * only sent to whoever holds update-settings. Null while they don't.
+ */
+export type AttentionAutomationSettings = {
+    queue_enabled: boolean;
+    queue_steps: AttentionEscalationStep[];
+    attention_enabled: boolean;
+    attention_steps: AttentionEscalationStep[];
+    completed_enabled: boolean;
+    completed_priority: AttentionAutomationLevel;
+    completed_message: string | null;
+};

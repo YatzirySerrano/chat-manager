@@ -25,12 +25,12 @@ class NasGate
     private const PREFIX = 'storage:nas-gate:';
 
     /**
-     * A free slot of the given pool ("worker" or "http"), or null when all
+     * A free slot of the given pool ("sync", "fetch" or "http"), or null when all
      * of them are in use.
      */
     public function acquire(string $disk, string $pool, int $seconds): ?Lock
     {
-        $slots = max(1, (int) config("attachments.storage.local_first.nas_slots.{$pool}", $pool === 'http' ? 4 : 2));
+        $slots = max(1, (int) config("attachments.storage.local_first.nas_slots.{$pool}", $pool === 'http' ? 3 : 1));
 
         try {
             $store = Cache::getStore();

@@ -104,7 +104,10 @@ return [
             // most, for the workers (copies and fetches) and for web requests
             // streaming a file only on the NAS; and their maximum speed.
             'nas_slots' => [
-                'worker' => (int) env('MEDIA_NAS_WORKER_SLOTS', 1),
+                // Copies of new files (media-sync) and fetches of old ones
+                // (media-fetch) have separate turns: fetches never starve sync.
+                'sync' => (int) env('MEDIA_NAS_SYNC_SLOTS', 1),
+                'fetch' => (int) env('MEDIA_NAS_FETCH_SLOTS', 1),
                 'http' => (int) env('MEDIA_NAS_HTTP_SLOTS', 3),
             ],
             'nas_max_bytes_per_second' => (int) env('MEDIA_NAS_MAX_BYTES_PER_SECOND', 4 * 1024 ** 2),

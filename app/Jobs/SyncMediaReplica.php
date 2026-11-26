@@ -70,7 +70,7 @@ class SyncMediaReplica implements ShouldBeUnique, ShouldQueue
         }
 
         // Its turn on the NAS (NasGate): only a few transfers at once.
-        $slot = $gate->acquire($replica->disk, 'worker', $this->timeout + 60);
+        $slot = $gate->acquire($replica->disk, 'sync', $this->timeout + 60);
 
         if ($slot === null) {
             MediaReplica::query()->whereKey($replica->id)->where('state', MediaReplica::PENDING)

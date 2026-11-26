@@ -116,6 +116,16 @@ class SyncLocalMedia extends Command
             (string) $row->getAttribute('oldest'),
         ])->all());
 
+        $reasons = MediaReplica::query()->where('state', '!=', MediaReplica::SYNCED)
+            ->selectRaw("state, COALESCE(last_error, 'sin error') as reason, COUNT(*) as files, MAX(attempts) as attempts, MIN(next_attempt_at) as next_at")
+            ->groupBy('state', 'last_error')->get();
+
+        if ($reasons->isNotEmpty()) {
+            $this->table(['Estado', 'Último motivo', 'Archivos', 'Intentos máx.', 'Próximo intento'], $reasons->map(fn (MediaReplica $row): array => [
+                $row->state, $row->getAttribute('reason'), $row->getAttribute('files'), $row->getAttribute('attempts'), (string) $row->getAttribute('next_at'),
+            ])->all());
+        }
+
         foreach ($rows->pluck('disk')->unique() as $disk) {
             $last = $mounts->lastCheck((string) $disk);
             $open = $circuit->openFor((string) $disk);

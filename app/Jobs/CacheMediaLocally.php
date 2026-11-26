@@ -53,7 +53,7 @@ class CacheMediaLocally implements ShouldBeUnique, ShouldQueue
 
         if (! $local->hasLocal($this->disk, $this->path)) {
             // Its turn on the NAS: otherwise back to the queue for a while.
-            $slot = $gate->acquire($this->disk, 'worker', $this->timeout + 60);
+            $slot = $gate->acquire($this->disk, 'fetch', $this->timeout + 60);
 
             if ($slot === null) {
                 $this->release(15 + mt_rand(0, 30));

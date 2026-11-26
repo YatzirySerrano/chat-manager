@@ -62,7 +62,7 @@ class DeleteConversationPermanently
      *
      * @throws ModelNotFoundException When the conversation no longer exists.
      */
-    public function handle(Conversation $conversation, User $actor): array
+    public function handle(Conversation $conversation, User $actor, bool $audit = true): array
     {
         // Audience of the signal, read before the rows that define it go.
         $inboxChannels = $this->signals->inboxChannels($conversation, 'deleted', null);
@@ -73,8 +73,8 @@ class DeleteConversationPermanently
 
         $conversationId = $conversation->id;
 
-        /** @var array{summary: array{messages: int, attachments: int}, files: list<array{disk: string, path: string}>, audit: int} $result */
-        $result = DB::transaction(function () use ($conversationId, $actor): array {
+        /** @var array{summary: array{messages: int, attachments: int}, files: list<array{disk: string, path: string}>, audit: int|null} $result */
+        $result = DB::transaction(function () use ($conversationId, $actor, $audit): array {
             /** @var Conversation $locked */
             $locked = Conversation::query()->lockForUpdate()->findOrFail($conversationId);
 
@@ -123,7 +123,9 @@ class DeleteConversationPermanently
             // the staging row of the history importer).
             DB::table('conversations')->where('id', $locked->id)->delete();
 
-            $entry = $this->audit->record(AuditAction::ConversationPermanentlyDeleted, $contact, [
+            // A bulk purge writes one summary entry for the whole run instead
+            // of one per conversation, so the audit log is not flooded.
+            $entry = $audit ? $this->audit->record(AuditAction::ConversationPermanentlyDeleted, $contact, [
                 'conversation_id' => $locked->id,
                 'contact' => $contact?->name,
                 'connection' => $connectionName,
@@ -133,12 +135,12 @@ class DeleteConversationPermanently
                 'attachments' => $attachments,
                 'notes' => $notes,
                 'files' => count($files),
-            ], $actor);
+            ], $actor) : null;
 
             return [
                 'summary' => ['messages' => $messages, 'attachments' => $attachments],
                 'files' => $files,
-                'audit' => (int) $entry->getKey(),
+                'audit' => $entry === null ? null : (int) $entry->getKey(),
             ];
         });
 

@@ -39,11 +39,12 @@ class PurgeConversationsBulk implements ShouldBeUniqueUntilProcessing, ShouldQue
         public string $scope,
         public int $actorId,
         public array $erased = ['conversations' => 0, 'messages' => 0, 'attachments' => 0, 'files_pending' => 0],
+        public ?int $batchId = null,
     ) {}
 
     public function uniqueId(): string
     {
-        return 'purge-conversations-'.$this->scope;
+        return 'purge-conversations-'.$this->scope.($this->batchId !== null ? '-'.$this->batchId : '');
     }
 
     public function handle(PurgeConversationsInBulk $purge): void
@@ -60,7 +61,7 @@ class PurgeConversationsBulk implements ShouldBeUniqueUntilProcessing, ShouldQue
             return;
         }
 
-        $step = $purge->erase($this->scope, $actor, self::SECONDS);
+        $step = $purge->erase($this->scope, $actor, self::SECONDS, $this->batchId);
 
         $erased = [
             'conversations' => $this->erased['conversations'] + $step['conversations'],
@@ -70,11 +71,11 @@ class PurgeConversationsBulk implements ShouldBeUniqueUntilProcessing, ShouldQue
         ];
 
         if ($step['done']) {
-            $purge->finish($this->scope, $actor, $erased);
+            $purge->finish($this->scope, $actor, $erased, $this->batchId);
 
             return;
         }
 
-        self::dispatch($this->scope, $this->actorId, $erased)->onQueue($this->queue);
+        self::dispatch($this->scope, $this->actorId, $erased, $this->batchId)->onQueue($this->queue);
     }
 }

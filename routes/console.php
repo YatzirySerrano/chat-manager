@@ -29,6 +29,10 @@ Schedule::command('analytics:rebuild --days=2')->dailyAt('03:30')->withoutOverla
 // Old read notifications and expired deduplication receipts (automation module).
 Schedule::command('notifications:prune')->dailyAt('04:10')->withoutOverlapping();
 
+// Audit log retention (audit.retention_days): keeps the append-only audit_logs
+// table from growing without bound.
+Schedule::command('audit:prune')->dailyAt('04:15')->withoutOverlapping();
+
 // WhatsApp Cloud API (meta module): stuck deliveries, raw webhook log retention, template synchronization.
 Schedule::command('whatsapp:maintenance reconcile-deliveries')->everyFiveMinutes()->withoutOverlapping(15);
 Schedule::command('whatsapp:maintenance recover-webhooks')->everyTenMinutes()->withoutOverlapping(20);

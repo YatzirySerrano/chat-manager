@@ -472,7 +472,7 @@ function countdown(seconds: number): string {
 
                     <dl
                         v-if="stage === 'connected' && state"
-                        class="grid grid-cols-2 gap-4 border-t pt-4 text-sm"
+                        class="grid grid-cols-1 gap-4 border-t pt-4 text-sm min-[22rem]:grid-cols-2"
                     >
                         <div class="min-w-0">
                             <dt class="text-xs text-muted-foreground">

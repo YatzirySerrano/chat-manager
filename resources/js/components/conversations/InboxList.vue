@@ -1253,13 +1253,21 @@ const purgeClosedOpen = ref(false);
                             <button
                                 v-if="closedActive && canPurgeConversations"
                                 type="button"
-                                class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-destructive outline-none hover:bg-destructive-soft hover:text-destructive-soft-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
+                                class="inline-flex h-7 min-w-0 shrink items-center gap-1 rounded-md px-1.5 text-xs font-medium text-destructive outline-none hover:bg-destructive-soft hover:text-destructive-soft-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
                                 title="Borra para siempre todas las conversaciones cerradas"
                                 data-inbox-purge-closed
                                 @click="purgeClosedOpen = true"
                             >
-                                <Trash2 class="size-3.5" aria-hidden="true" />
-                                Vaciar cerradas definitivamente
+                                <Trash2
+                                    class="size-3.5 shrink-0"
+                                    aria-hidden="true"
+                                />
+                                <span class="truncate">
+                                    <span class="sm:hidden">Vaciar</span>
+                                    <span class="hidden sm:inline"
+                                        >Vaciar cerradas definitivamente</span
+                                    >
+                                </span>
                             </button>
                             <button
                                 v-if="hasFilters && appliedChips.length === 0"
@@ -1450,7 +1458,7 @@ const purgeClosedOpen = ref(false);
             v-if="canPurgeConversations"
             v-model:open="purgeClosedOpen"
             title="Vaciar conversaciones cerradas"
-            description="Esto borra PARA SIEMPRE todas las conversaciones cerradas (mensajes, archivos, notas e historial). No se puede deshacer. Los contactos se conservan."
+            description="Esto borra PARA SIEMPRE todas las conversaciones cerradas (mensajes, archivos, notas e historial). No se puede deshacer. Los contactos se conservan. El borrado se hace en segundo plano: las conversaciones se irán quitando de la lista en unos momentos."
             :erased="[
                 'Todas las conversaciones cerradas, con sus mensajes y archivos',
                 'Las notas internas y el historial de asignaciones y tiempos de atención',

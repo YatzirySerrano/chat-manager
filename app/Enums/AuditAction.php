@@ -135,6 +135,7 @@ enum AuditAction: string
     case ConversationCategoryChanged = 'conversation.category_changed';
     case ConversationPermanentlyDeleted = 'conversation.permanently_deleted';
     case ConversationsBulkPurged = 'conversation.bulk_purged';
+    case AuditLogPurged = 'audit.purged';
     case RecordPermanentlyDeleted = 'record.permanently_deleted';
     case ConnectionPermanentlyDeleted = 'connection.permanently_deleted';
     case ConnectionConversationsMoved = 'connection.conversations_moved';
@@ -276,6 +277,7 @@ enum AuditAction: string
             self::ConversationCategoryChanged => 'Categoría de la solicitud cambiada',
             self::ConversationPermanentlyDeleted => 'Chat eliminado definitivamente',
             self::ConversationsBulkPurged => 'Conversaciones eliminadas en bloque',
+            self::AuditLogPurged => 'Registros de auditoría eliminados',
             self::RecordPermanentlyDeleted => 'Registro eliminado definitivamente',
             self::ConnectionPermanentlyDeleted => 'Conexión eliminada definitivamente',
             self::ConnectionConversationsMoved => 'Conversaciones movidas a otra conexión',
@@ -303,7 +305,7 @@ enum AuditAction: string
             self::SupervisionPersonalItemDeleted, self::ConnectionMetaDisconnected, self::AttachmentLinkRevoked,
             self::ConnectionWebLoggedOut, self::ConnectionWebSessionLost,
             self::HistoryImportFailed, self::ConversationCategoryDeleted, self::ConversationSlaBreached,
-            self::ConversationPermanentlyDeleted, self::ConversationsBulkPurged, self::RecordPermanentlyDeleted, self::ConnectionPermanentlyDeleted,
+            self::ConversationPermanentlyDeleted, self::ConversationsBulkPurged, self::AuditLogPurged, self::RecordPermanentlyDeleted, self::ConnectionPermanentlyDeleted,
             self::ChatbotRuleDeleted => 'danger',
             self::UserRoleChanged, self::UserPasswordReset, self::SettingsUpdated, self::RolePermissionsChanged,
             self::AppearanceUpdated, self::ConnectionCredentialsUpdated,
@@ -347,7 +349,7 @@ enum AuditAction: string
             self::HistoryImportCreated, self::HistoryImportFileAdded, self::HistoryImportClassified,
             self::HistoryImportRuleApplied, self::HistoryImportRequested, self::HistoryImportCompleted,
             self::HistoryImportFailed, self::HistoryImportDiscarded,
-            self::ConversationPermanentlyDeleted, self::ConversationsBulkPurged, self::RecordPermanentlyDeleted, self::ConnectionPermanentlyDeleted,
+            self::ConversationPermanentlyDeleted, self::ConversationsBulkPurged, self::AuditLogPurged, self::RecordPermanentlyDeleted, self::ConnectionPermanentlyDeleted,
         ], true);
     }
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Enums\DataTransferType;
 use App\Enums\HistoryImportDecision;
 use App\Enums\HistoryImportFileKind;
+use App\Enums\Permission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\HistoryImportBatchRequest;
 use App\Http\Requests\Admin\HistoryImportExecuteRequest;
@@ -62,6 +63,8 @@ class HistoryImportController extends Controller
             'can' => [
                 'create' => $this->policy->create($actor)->allowed(),
                 'archive' => $this->policy->viewArchive($actor)->allowed(),
+                // «Eliminar lote importado definitivamente» (Superadministrador).
+                'purge' => $actor->holdsPermission(Permission::PurgeConversations),
             ],
             'defaults' => [
                 'timezone' => (string) app(PlatformSettings::class)->get('general.timezone', 'America/Mexico_City'),
@@ -98,6 +101,8 @@ class HistoryImportController extends Controller
                 'classify' => $this->policy->classify($actor, $transfer)->allowed(),
                 'execute' => $this->policy->execute($actor, $transfer)->allowed(),
                 'archive' => $this->policy->viewArchive($actor)->allowed(),
+                // «Eliminar lote importado definitivamente» (Superadministrador).
+                'purge' => $actor->holdsPermission(Permission::PurgeConversations),
             ],
             'limits' => [
                 'max_kilobytes' => HistoryImportFileRequest::maxKilobytes(),

@@ -115,6 +115,7 @@ enum Permission: string
     case PurgeCategories = 'permanent-deletion.categories';
     case PurgeQuickReplies = 'permanent-deletion.quick-replies';
     case PurgeConnections = 'permanent-deletion.connections';
+    case PurgeAuditLog = 'permanent-deletion.audit';
 
     public function group(): PermissionGroup
     {
@@ -206,6 +207,7 @@ enum Permission: string
             self::PurgeCategories => 'Eliminar definitivamente categorías ya eliminadas',
             self::PurgeQuickReplies => 'Eliminar definitivamente respuestas rápidas ya eliminadas',
             self::PurgeConnections => 'Eliminar conexiones definitivamente',
+            self::PurgeAuditLog => 'Eliminar registros de auditoría definitivamente',
         };
     }
 
@@ -299,6 +301,7 @@ enum Permission: string
             self::PurgeCategories => 'Borrar para siempre una categoría ya eliminada. Sus conversaciones quedan sin categoría. No se puede deshacer.',
             self::PurgeQuickReplies => 'Borrar para siempre una respuesta rápida ya eliminada, compartida o personal. No se puede deshacer.',
             self::PurgeConnections => 'Borrar para siempre una conexión con todas sus conversaciones, mensajes, archivos, plantillas y registros. No se puede deshacer; los contactos se conservan.',
+            self::PurgeAuditLog => 'Borrar para siempre registros del historial de auditoría. No se puede deshacer. El sistema también depura solo los registros más antiguos.',
         };
     }
 
@@ -459,6 +462,7 @@ enum Permission: string
             self::PurgeCategories,
             self::PurgeQuickReplies,
             self::PurgeConnections,
+            self::PurgeAuditLog,
         ];
     }
 

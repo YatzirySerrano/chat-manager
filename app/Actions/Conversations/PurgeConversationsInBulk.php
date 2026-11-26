@@ -44,20 +44,26 @@ class PurgeConversationsInBulk
     ) {}
 
     /**
-     * How many conversations the scope holds right now.
+     * How many conversations the scope holds right now. A batch id narrows the
+     * whaticket scope to a single import lote.
      */
-    public function count(string $scope): int
+    public function count(string $scope, ?int $batchId = null): int
     {
-        return $this->query($scope)->count();
+        return $this->query($scope, $batchId)->count();
     }
 
     /**
-     * The conversations a scope targets.
+     * The conversations a scope targets. With a batch id, only the imported
+     * conversations of that import lote.
      *
      * @return Builder<Conversation>
      */
-    public function query(string $scope): Builder
+    public function query(string $scope, ?int $batchId = null): Builder
     {
+        if ($batchId !== null) {
+            return Conversation::query()->imported()->where('imported_by_transfer_id', $batchId);
+        }
+
         return $scope === self::SCOPE_WHATICKET
             ? Conversation::query()->imported()
             : Conversation::query()->live()->where('status', ConversationStatus::Closed);
@@ -69,13 +75,13 @@ class PurgeConversationsInBulk
      *
      * @return array{conversations: int, messages: int, attachments: int, files_pending: int, done: bool}
      */
-    public function erase(string $scope, User $actor, float $seconds): array
+    public function erase(string $scope, User $actor, float $seconds, ?int $batchId = null): array
     {
         $until = microtime(true) + $seconds;
         $totals = ['conversations' => 0, 'messages' => 0, 'attachments' => 0, 'files_pending' => 0, 'done' => false];
 
         do {
-            $batch = $this->query($scope)->orderBy('id')->limit(50)->get();
+            $batch = $this->query($scope, $batchId)->orderBy('id')->limit(50)->get();
 
             if ($batch->isEmpty()) {
                 $totals['done'] = true;
@@ -84,7 +90,9 @@ class PurgeConversationsInBulk
             }
 
             foreach ($batch as $conversation) {
-                $summary = $this->deleteConversation->handle($conversation, $actor);
+                // Skip the per-conversation audit entry: the run writes a single
+                // summary entry (finish()), so the audit log is not flooded.
+                $summary = $this->deleteConversation->handle($conversation, $actor, false);
                 $totals['conversations']++;
                 $totals['messages'] += $summary['messages'];
                 $totals['attachments'] += $summary['attachments'];
@@ -106,33 +114,38 @@ class PurgeConversationsInBulk
      *
      * @param  array{conversations: int, messages: int, attachments: int, files_pending: int}  $erased
      */
-    public function finish(string $scope, User $actor, array $erased): void
+    public function finish(string $scope, User $actor, array $erased, ?int $batchId = null): void
     {
         $batches = 0;
 
-        if ($scope === self::SCOPE_WHATICKET) {
+        if ($batchId !== null) {
+            $batches = $this->dropImportStaging($batchId);
+        } elseif ($scope === self::SCOPE_WHATICKET) {
             $batches = $this->dropImportStaging();
         }
 
         $this->audit->record(AuditAction::ConversationsBulkPurged, null, [
-            'scope' => $scope,
+            'scope' => $batchId !== null ? 'whaticket_batch' : $scope,
+            'batch_id' => $batchId,
             'import_batches' => $batches,
             ...$erased,
         ], $actor);
     }
 
     /**
-     * Drops every Whaticket import batch and its staging. `import_source_keys`
-     * must go first (its foreign key to `data_transfers` is restrictOnDelete);
-     * the rest of the staging (`history_import_*`) cascades with the batch.
+     * Drops Whaticket import batches and their staging: every history import
+     * batch, or a single one ($batchId). `import_source_keys` must go first
+     * (its foreign key to `data_transfers` is restrictOnDelete); the rest of
+     * the staging (`history_import_*`) cascades with the batch.
      *
      * @return int Batches dropped.
      */
-    private function dropImportStaging(): int
+    private function dropImportStaging(?int $batchId = null): int
     {
-        return DB::transaction(function (): int {
+        return DB::transaction(function () use ($batchId): int {
             $batchIds = DB::table('data_transfers')
                 ->where('type', DataTransferType::HistoryImport->value)
+                ->when($batchId !== null, fn ($query) => $query->where('id', $batchId))
                 ->pluck('id')
                 ->all();
 

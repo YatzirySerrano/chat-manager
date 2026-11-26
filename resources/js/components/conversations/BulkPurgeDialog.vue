@@ -83,6 +83,11 @@ function confirm(): void {
             onSuccess: () => {
                 open.value = false;
                 emit('purged');
+                // The erase runs in the background a slice at a time: refresh
+                // now and shortly after so the conversations visibly start
+                // disappearing from the list without a manual reload.
+                router.reload();
+                window.setTimeout(() => router.reload(), 3500);
             },
             onError: (errors) => {
                 error.value =
@@ -173,7 +178,7 @@ function confirm(): void {
                     data-bulk-purge="confirm"
                     @click="confirm"
                 >
-                    {{ confirmLabel }}
+                    {{ processing ? 'Vaciando…' : confirmLabel }}
                 </Button>
             </DialogFooter>
         </DialogContent>

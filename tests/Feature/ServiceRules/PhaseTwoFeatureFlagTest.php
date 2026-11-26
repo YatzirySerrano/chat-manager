@@ -187,7 +187,7 @@ test('a customer message keeps opening a cycle while the flag is off, without ob
         ->and(DB::table('notifications')->where('kind', 'like', 'sla.%')->count())->toBe(0);
 });
 
-test('the SLA evaluator and the waiting queues are inert while the flag is off, also when run by hand', function () {
+test('the SLA evaluator is inert while the flag is off, also when run by hand; the queue offer always runs', function () {
     $conversation = Conversation::factory()->inDepartment($this->department)->assignedTo($this->admin)->create(['connection_id' => $this->connection->id]);
     $cycle = ResponseCycle::factory()->withTarget(600)->create(['conversation_id' => $conversation->id]);
     $this->travel(1)->hours();
@@ -196,10 +196,10 @@ test('the SLA evaluator and the waiting queues are inert while the flag is off, 
         ->and($cycle->refresh()->breached_at)->toBeNull()
         ->and($cycle->warned_at)->toBeNull()
         ->and(phaseTwoScheduled('sla:evaluate')->filtersPass(app()))->toBeFalse()
-        ->and(phaseTwoScheduled('conversations:offer-waiting-queues')->filtersPass(app()))->toBeFalse();
+        ->and(phaseTwoScheduled('conversations:offer-waiting-queues')->filtersPass(app()))->toBeTrue();
 
     $this->artisan('sla:evaluate')->expectsOutputToContain('0 vencidas')->assertSuccessful();
-    $this->artisan('conversations:offer-waiting-queues')->expectsOutputToContain('desactivadas')->assertSuccessful();
+    $this->artisan('conversations:offer-waiting-queues')->expectsOutputToContain('Conversaciones asignadas')->assertSuccessful();
 
     phaseTwoEnable(true);
 

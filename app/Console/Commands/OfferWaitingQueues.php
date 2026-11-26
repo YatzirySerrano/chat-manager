@@ -6,7 +6,6 @@ use App\Actions\Conversations\AssignAutomatically;
 use App\Enums\DistributionMode;
 use App\Models\Department;
 use App\Services\Conversations\QueueRules;
-use App\Support\Features;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -14,7 +13,11 @@ use Throwable;
  * Offers the queue of an automatic department again when it holds a request
  * that can be taken and nothing else happened that would have offered it
  * (nobody accepted, closed or released anything meanwhile): the minimum
- * wait of a request ended, or the rules that were holding it changed.
+ * wait of a request ended, the rules that were holding it changed, or an
+ * agent got room in a way no event announces (they answered the customers
+ * that were waiting too long, their limit was raised, they joined the
+ * department). Runs always, not only in phase two: an agent below their
+ * limit (e.g. 3 in attention) gets the next request within a minute.
  * Scheduled every minute.
  *
  * It does not depend on when the request became eligible, so nothing is
@@ -36,14 +39,6 @@ class OfferWaitingQueues extends Command
 
     public function handle(QueueRules $queueRules, AssignAutomatically $assignAutomatically): int
     {
-        // Phase two only: without minimum wait nor chronological order
-        // (FEATURE_PHASE_TWO off) nothing is ever held back to offer again.
-        if (! Features::phaseTwo()) {
-            $this->info('Reglas de la cola de la fase dos desactivadas: no hay colas que ofrecer.');
-
-            return self::SUCCESS;
-        }
-
         $assigned = 0;
 
         foreach (Department::query()->active()->where('distribution_mode', DistributionMode::Automatic)->orderBy('id')->get() as $department) {

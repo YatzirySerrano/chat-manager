@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Services\Storage\LocalMedia;
 use App\Services\Storage\MediaThumbnails;
 use App\Services\Storage\MountHealth;
+use App\Services\Storage\NasGate;
 use App\Support\Queues;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -23,7 +24,10 @@ class CacheMediaLocally implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
-    public int $tries = 1;
+    /** Released back to the queue while the NAS slots are busy. */
+    public int $tries = 30;
+
+    public int $maxExceptions = 1;
 
     public int $timeout = 300;
 
@@ -39,7 +43,7 @@ class CacheMediaLocally implements ShouldBeUnique, ShouldQueue
         return sha1($this->disk.'|'.$this->path);
     }
 
-    public function handle(LocalMedia $local, MountHealth $mounts, MediaThumbnails $thumbnails): void
+    public function handle(LocalMedia $local, MountHealth $mounts, MediaThumbnails $thumbnails, NasGate $gate): void
     {
         $settings = MountHealth::settings($this->disk);
 
@@ -48,7 +52,20 @@ class CacheMediaLocally implements ShouldBeUnique, ShouldQueue
         }
 
         if (! $local->hasLocal($this->disk, $this->path)) {
-            $this->copy($local, $settings['root'].'/'.ltrim($this->path, '/'));
+            // Its turn on the NAS: otherwise back to the queue for a while.
+            $slot = $gate->acquire($this->disk, 'worker', $this->timeout + 60);
+
+            if ($slot === null) {
+                $this->release(15 + mt_rand(0, 30));
+
+                return;
+            }
+
+            try {
+                $this->copy($local, $gate, $settings['root'].'/'.ltrim($this->path, '/'));
+            } finally {
+                $gate->release($slot);
+            }
         }
 
         if ($this->mime !== null && $local->hasLocal($this->disk, $this->path)) {
@@ -56,7 +73,7 @@ class CacheMediaLocally implements ShouldBeUnique, ShouldQueue
         }
     }
 
-    private function copy(LocalMedia $local, string $source): void
+    private function copy(LocalMedia $local, NasGate $gate, string $source): void
     {
         $limit = max(1, (int) config('attachments.storage.local_first.cache_on_read_max_bytes', 64 * 1024 ** 2));
         $temporary = tempnam(sys_get_temp_dir(), 'media-cache-');
@@ -80,7 +97,22 @@ class CacheMediaLocally implements ShouldBeUnique, ShouldQueue
                 return;
             }
 
-            $copied = stream_copy_to_stream($input, $output, $limit + 1);
+            $copied = 0;
+            $started = microtime(true);
+
+            while (! feof($input) && $copied <= $limit) {
+                $chunk = fread($input, 512 * 1024);
+
+                if ($chunk === false || ($chunk !== '' && fwrite($output, $chunk) !== strlen($chunk))) {
+                    $copied = false;
+
+                    break;
+                }
+
+                $copied += strlen($chunk);
+                $gate->throttle($copied, $started);
+            }
+
             fclose($input);
             fclose($output);
 

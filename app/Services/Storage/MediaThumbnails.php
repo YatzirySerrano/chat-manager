@@ -91,10 +91,9 @@ class MediaThumbnails
      *
      * Previews of a mounted disk (the NAS) are made and kept on this server
      * (LocalMedia, "{disk}/Miniaturas del sistema/..."), from the local copy
-     * of the original. A web request never reads the NAS to make one: with
-     * only a NAS copy it serves the NAS's own earlier preview, if any, and
-     * the file is brought here in the background (CacheMediaLocally), which
-     * makes the preview. "No preview needed" is remembered, so a small photo
+     * of the original. The NAS is never asked for one: with only a NAS copy
+     * the original is served and brought here in the background
+     * (CacheMediaLocally), which makes the preview. "No preview needed" is remembered, so a small photo
      * is not opened again on every view.
      *
      * @return array{disk: string, path: string, mime: string, width: int|null, height: int|null}|null
@@ -166,17 +165,10 @@ class MediaThumbnails
             return ['disk' => $local->diskName(), 'path' => $local->localPath($disk, $thumbnail), 'mime' => 'image/jpeg', 'width' => null, 'height' => null];
         }
 
+        // Only on the NAS: no preview is made or looked up there (the
+        // original is served through the NAS slots and brought here in the
+        // background, where its preview is made).
         if (! $local->hasLocal($disk, $path)) {
-            // Only on the NAS: its earlier preview (made there by an older
-            // version) while it answers, never the original read here.
-            try {
-                if ($local->remoteReadable($disk) && Storage::disk($disk)->exists($thumbnail)) {
-                    return ['disk' => $disk, 'path' => $thumbnail, 'mime' => 'image/jpeg', 'width' => null, 'height' => null];
-                }
-            } catch (Throwable) {
-                // The original is served instead.
-            }
-
             return null;
         }
 

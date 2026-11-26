@@ -92,14 +92,22 @@ return [
             'cache_max_bytes' => (int) env('MEDIA_LOCAL_CACHE_MAX_BYTES', 20 * 1024 ** 3),
             'retention_days' => (int) env('MEDIA_LOCAL_RETENTION_DAYS', 7),
             'min_free_bytes' => (int) env('MEDIA_LOCAL_MIN_FREE_BYTES', 40 * 1024 ** 3),
-            'sync_batch' => (int) env('MEDIA_SYNC_BATCH', 60),
+            'sync_batch' => (int) env('MEDIA_SYNC_BATCH', 20),
             'sync_lease_seconds' => (int) env('MEDIA_SYNC_LEASE_SECONDS', 900),
             'sync_backoff_base' => (int) env('MEDIA_SYNC_BACKOFF_BASE', 30),
             'sync_backoff_max' => (int) env('MEDIA_SYNC_BACKOFF_MAX', 3600),
             'breaker_failures' => (int) env('MEDIA_SYNC_BREAKER_FAILURES', 5),
             'breaker_seconds' => (int) env('MEDIA_SYNC_BREAKER_SECONDS', 300),
             'remote_reads' => (bool) env('MEDIA_REMOTE_READS', true),
-            'cache_on_read_max_bytes' => (int) env('MEDIA_CACHE_ON_READ_MAX_BYTES', 64 * 1024 ** 2),
+            'cache_on_read_max_bytes' => (int) env('MEDIA_CACHE_ON_READ_MAX_BYTES', 16 * 1024 ** 2),
+            // Admission control of the NAS (NasGate): concurrent transfers at
+            // most, for the workers (copies and fetches) and for web requests
+            // streaming a file only on the NAS; and their maximum speed.
+            'nas_slots' => [
+                'worker' => (int) env('MEDIA_NAS_WORKER_SLOTS', 1),
+                'http' => (int) env('MEDIA_NAS_HTTP_SLOTS', 3),
+            ],
+            'nas_max_bytes_per_second' => (int) env('MEDIA_NAS_MAX_BYTES_PER_SECOND', 4 * 1024 ** 2),
             'sync_timeout_seconds' => (int) env('MEDIA_SYNC_TIMEOUT', 600),
             // nginx "internal" location aliased to MEDIA_LOCAL_ROOT (e.g. /_media-local/); empty = PHP sends the file.
             'x_accel_prefix' => env('MEDIA_X_ACCEL_PREFIX', ''),

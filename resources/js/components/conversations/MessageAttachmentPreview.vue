@@ -9,7 +9,7 @@ import {
     Play,
 } from '@lucide/vue';
 import { useIntersectionObserver } from '@vueuse/core';
-import { computed, defineAsyncComponent, inject, ref } from 'vue';
+import { computed, defineAsyncComponent, inject, onBeforeUnmount, ref } from 'vue';
 import AudioPlayer from '@/components/conversations/AudioPlayer.vue';
 import { CUSTOM_CHAT_COLORS } from '@/lib/chatAppearance';
 import {
@@ -92,14 +92,40 @@ const broken = ref(false);
  */
 const previewFailed = ref(false);
 const loaded = ref(false);
-const imageSource = computed(() =>
+const baseSource = computed(() =>
     props.sticker || previewFailed.value || !props.attachment.thumb_url
         ? props.attachment.url
         : props.attachment.thumb_url,
 );
 
+/**
+ * A file that is only on the NAS while it is busy or down answers 503 for a
+ * moment (the server never waits for it) and is brought to the server in the
+ * background: the image asks again a few times, spaced out, before giving up.
+ */
+const RETRY_DELAYS_MS = [4000, 10000, 20000, 40000];
+const attempt = ref(0);
+let retryTimer: number | undefined;
+const imageSource = computed(() =>
+    attempt.value === 0
+        ? baseSource.value
+        : `${baseSource.value}${baseSource.value.includes('?') ? '&' : '?'}r=${attempt.value}`,
+);
+
+onBeforeUnmount(() => window.clearTimeout(retryTimer));
+
 function onImageError(): void {
-    if (imageSource.value !== props.attachment.url) {
+    if (attempt.value < RETRY_DELAYS_MS.length) {
+        const delay = RETRY_DELAYS_MS[attempt.value];
+        window.clearTimeout(retryTimer);
+        retryTimer = window.setTimeout(() => attempt.value++, delay);
+
+        return;
+    }
+
+    attempt.value = 0;
+
+    if (baseSource.value !== props.attachment.url) {
         previewFailed.value = true;
 
         return;
@@ -400,7 +426,7 @@ function pauseVideo(): void {
                             : '',
                     ]"
                     :data-preview="
-                        imageSource === attachment.url ? 'original' : 'thumb'
+                        baseSource === attachment.url ? 'original' : 'thumb'
                     "
                     :data-sticker="
                         sticker

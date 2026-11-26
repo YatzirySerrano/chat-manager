@@ -61,7 +61,9 @@ final class MediaResponse
         try {
             return app(LocalMedia::class)->open($disk, $path, true, $sizeBytes, $mime);
         } catch (StorageUnavailable $exception) {
-            abort(503, $exception->reason === 'remote_unavailable' ? $exception->getMessage() : 'El almacenamiento de archivos no responde en este momento. Inténtalo de nuevo en unos minutos.', ['Retry-After' => '30']);
+            $busy = $exception->reason === 'remote_busy';
+
+            abort(503, in_array($exception->reason, ['remote_unavailable', 'remote_busy'], true) ? $exception->getMessage() : 'El almacenamiento de archivos no responde en este momento. Inténtalo de nuevo en unos minutos.', ['Retry-After' => $busy ? '5' : '30', 'Cache-Control' => 'no-store']);
         } catch (Throwable $exception) {
             Log::warning('Media storage unavailable while serving a file.', [...$context, 'disk' => $disk, 'exception' => $exception::class]);
 

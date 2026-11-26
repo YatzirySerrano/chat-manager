@@ -7,6 +7,7 @@ use App\Models\Storage\MediaReplica;
 use App\Services\Storage\LocalMedia;
 use App\Services\Storage\MediaDisk;
 use App\Services\Storage\MountHealth;
+use App\Services\Storage\NasGate;
 use App\Services\Storage\RemoteCircuit;
 use App\Support\Queues;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -51,7 +52,7 @@ class SyncMediaReplica implements ShouldBeUnique, ShouldQueue
         return (string) $this->replicaId;
     }
 
-    public function handle(MediaDisk $media, LocalMedia $local, MountHealth $mounts, RemoteCircuit $circuit): void
+    public function handle(MediaDisk $media, LocalMedia $local, MountHealth $mounts, RemoteCircuit $circuit, NasGate $gate): void
     {
         $replica = MediaReplica::query()->find($this->replicaId);
 
@@ -68,6 +69,25 @@ class SyncMediaReplica implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        // Its turn on the NAS (NasGate): only a few transfers at once.
+        $slot = $gate->acquire($replica->disk, 'worker', $this->timeout + 60);
+
+        if ($slot === null) {
+            MediaReplica::query()->whereKey($replica->id)->where('state', MediaReplica::PENDING)
+                ->update(['next_attempt_at' => now()->addSeconds(20 + mt_rand(0, 20)), 'updated_at' => now()]);
+
+            return;
+        }
+
+        try {
+            $this->copy($replica, $media, $local, $circuit);
+        } finally {
+            $gate->release($slot);
+        }
+    }
+
+    private function copy(MediaReplica $replica, MediaDisk $media, LocalMedia $local, RemoteCircuit $circuit): void
+    {
         $lease = max(120, (int) config('attachments.storage.local_first.sync_lease_seconds', 900));
         $claimed = MediaReplica::query()
             ->whereKey($replica->id)

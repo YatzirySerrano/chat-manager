@@ -366,7 +366,7 @@ class MediaDisk
         }
 
         try {
-            $hash = $this->putOnMount($disk, $stream, ltrim($path, '/'), $size, true);
+            $hash = $this->putOnMount($disk, $stream, ltrim($path, '/'), $size, true, throttled: true);
         } finally {
             if (is_resource($stream)) {
                 fclose($stream);
@@ -526,8 +526,11 @@ class MediaDisk
      *
      * @throws StorageUnavailable
      */
-    private function putOnMount(string $disk, $stream, string $path, int $size, bool $alwaysVerifyHash = false): string
+    private function putOnMount(string $disk, $stream, string $path, int $size, bool $alwaysVerifyHash = false, bool $throttled = false): string
     {
+        $gate = $throttled ? app(NasGate::class) : null;
+        $started = microtime(true);
+
         $root = (string) MountHealth::settings($disk)['root'];
         $final = $root.'/'.$path;
         $directory = dirname($final);
@@ -568,6 +571,8 @@ class MediaDisk
                     }
 
                     $written += strlen($chunk);
+                    // Paced: the NAS keeps bandwidth for everything else.
+                    $gate?->throttle($written, $started);
                 }
 
                 if (! @fflush($output)) {

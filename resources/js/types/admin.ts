@@ -311,6 +311,12 @@ export type DepartmentMember = {
     is_active: boolean;
     is_deleted: boolean;
     last_login_at: string | null;
+    /** Latest request of an open session (null when unknown or logged out). */
+    last_activity_at?: string | null;
+    /** In session right now (the automatic distribution only reaches them). */
+    online?: boolean;
+    /** Last message sent to a customer (last 30 days). */
+    last_reply_at?: string | null;
 };
 
 export type MemberCandidate = {

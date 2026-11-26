@@ -9,6 +9,7 @@ use App\Enums\Permission;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\User;
+use App\Services\Conversations\AgentPresence;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\PendingAttention;
@@ -51,6 +52,7 @@ class AssignAutomatically
         private ConversationLifecycle $lifecycle,
         private PendingAttention $pendingAttention,
         private QueueRules $queueRules,
+        private AgentPresence $presence,
     ) {}
 
     /**
@@ -126,7 +128,16 @@ class AssignAutomatically
             ->when($this->pendingAttention->isEnabled(), fn ($query) => $query->withCount([
                 'assignedConversations as overdue_load' => fn ($conversations) => $this->pendingAttention->overdue($conversations),
             ]))
-            ->get()
+            ->get();
+
+        // Only who is working now (in session): an account that never logs in
+        // or someone who left receives nothing, without leaving the department.
+        if ($this->presence->filtersDistribution()) {
+            $online = $this->presence->online(array_values(array_map('intval', $candidates->modelKeys())));
+            $candidates = $candidates->filter(fn (User $user): bool => in_array((int) $user->id, $online, true));
+        }
+
+        $candidates = $candidates
             ->reject(fn (User $user): bool => (int) $user->getAttribute('overdue_load') > 0 && $this->pendingAttention->appliesTo($user))
             ->filter(fn (User $user): bool => $this->access->canAttend($user, $department))
             ->filter(function (User $user) use ($department): bool {

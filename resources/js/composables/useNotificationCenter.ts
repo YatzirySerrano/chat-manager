@@ -1,4 +1,5 @@
 import { router, useHttp, usePage } from '@inertiajs/vue3';
+import { ping as presencePing } from '@/routes/presence';
 import {
     computed,
     defineComponent,
@@ -47,6 +48,9 @@ import type {
 
 /** Refresh period while real-time signals are not available. */
 const FALLBACK_INTERVAL_MS = 60_000;
+
+/** «En sesión» heartbeat (presence.online_minutes is 15 by default). */
+const PRESENCE_HEARTBEAT_MS = 4 * 60_000;
 
 /**
  * A notification whose latest occurrence is older than this when it is
@@ -220,9 +224,7 @@ export function useNotificationCenter() {
 
         const props = page.props as Record<string, unknown>;
         const conversation = props.conversation as
-            | { id?: number }
-            | null
-            | undefined;
+            { id?: number } | null | undefined;
 
         if (typeof conversation?.id === 'number') {
             return conversation.id;
@@ -238,9 +240,7 @@ export function useNotificationCenter() {
         }
 
         const thread = (page.props as Record<string, unknown>).activeThread as
-            | { id?: number }
-            | null
-            | undefined;
+            { id?: number } | null | undefined;
 
         return typeof thread?.id === 'number' ? thread.id : null;
     });
@@ -680,6 +680,26 @@ export function useNotificationCenter() {
     watch(viewedThreadId, announceThread);
 
     let viewedHeartbeat: ReturnType<typeof setInterval> | null = null;
+    let presenceHeartbeat: ReturnType<typeof setInterval> | null = null;
+
+    /*
+     * «En sesión»: while the app is open, a tiny request every few minutes
+     * keeps the session's last activity fresh, so the automatic distribution
+     * keeps counting this person as working (AgentPresence).
+     */
+    const pingPresence = (): void => {
+        const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
+
+        void fetch(presencePing.url(), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-XSRF-TOKEN': match ? decodeURIComponent(match[1]) : '',
+            },
+        }).catch(() => undefined);
+    };
     const forgetThread = (): void => announceViewedThread(null);
 
     onMounted(() => {
@@ -705,10 +725,17 @@ export function useNotificationCenter() {
             }
         }, VIEWED_THREAD_HEARTBEAT_MS);
         void load();
+        pingPresence();
+        presenceHeartbeat = setInterval(pingPresence, PRESENCE_HEARTBEAT_MS);
     });
 
     onBeforeUnmount(() => {
         stopFallback();
+
+        if (presenceHeartbeat !== null) {
+            clearInterval(presenceHeartbeat);
+        }
+
         document.removeEventListener('visibilitychange', onAttentionChange);
         window.removeEventListener('focus', onAttentionChange);
         window.removeEventListener('blur', onAttentionChange);

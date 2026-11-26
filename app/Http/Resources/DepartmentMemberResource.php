@@ -33,6 +33,10 @@ class DepartmentMemberResource extends JsonResource
             'is_active' => $this->is_active,
             'is_deleted' => $this->isDeleted(),
             'last_login_at' => $this->last_login_at?->toIso8601String(),
+            // Set by DepartmentController (AgentPresence): one query for all members.
+            'last_activity_at' => $this->resource->getAttribute('presence_last_activity'),
+            'online' => (bool) $this->resource->getAttribute('presence_online'),
+            'last_reply_at' => $this->resource->getAttribute('presence_last_reply'),
         ];
     }
 }

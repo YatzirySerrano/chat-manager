@@ -25,6 +25,7 @@ use App\Models\QuickReply;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\BusinessHours;
+use App\Services\Conversations\AgentPresence;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Exports\ReportExporter;
 use App\Services\PlatformSettings;
@@ -170,6 +171,16 @@ class DepartmentController extends Controller
             ->get();
 
         $canManageMembers = $actor->can('manageMembers', $department);
+
+        // «En sesión» and the last reply of each member (two grouped queries).
+        $presence = app(AgentPresence::class);
+        $memberIds = array_values(array_map('intval', $members->modelKeys()));
+        $activity = $presence->lastActivity($memberIds);
+        $online = $presence->online($memberIds);
+        $replies = $presence->lastReplies($memberIds);
+        $members->each(fn (User $member) => $member->setAttribute('presence_last_activity', isset($activity[$member->id]) ? $activity[$member->id]->toIso8601String() : null)
+            ->setAttribute('presence_online', in_array((int) $member->id, $online, true))
+            ->setAttribute('presence_last_reply', isset($replies[$member->id]) ? $replies[$member->id]->toIso8601String() : null));
 
         return Inertia::render('departments/Show', [
             'department' => DepartmentResource::make($department->loadCount($this->counts($actor)))->resolve($request),

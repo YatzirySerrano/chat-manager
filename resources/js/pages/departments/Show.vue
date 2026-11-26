@@ -384,16 +384,31 @@ function confirmRemoval(): void {
                             <span
                                 class="mr-1 inline-block size-1.5 rounded-full align-middle"
                                 :class="
-                                    member.last_login_at
+                                    member.online
                                         ? 'bg-success'
                                         : 'bg-muted-foreground/40'
                                 "
                                 aria-hidden="true"
                             />
+                            <span
+                                :class="
+                                    member.online && 'font-medium text-success'
+                                "
+                                >{{
+                                    member.online
+                                        ? 'En sesión'
+                                        : member.last_activity_at
+                                          ? `Sin actividad desde ${formatRelative(member.last_activity_at)}`
+                                          : member.last_login_at
+                                            ? `Fuera de sesión · entró ${formatRelative(member.last_login_at)}`
+                                            : 'Nunca ha entrado'
+                                }}</span
+                            >
+                            ·
                             {{
-                                member.last_login_at
-                                    ? `Entró ${formatRelative(member.last_login_at)}`
-                                    : 'Nunca ha entrado'
+                                member.last_reply_at
+                                    ? `contestó ${formatRelative(member.last_reply_at)}`
+                                    : 'sin respuestas en 30 días'
                             }}
                         </p>
                     </div>

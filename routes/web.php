@@ -9,6 +9,13 @@ Route::get('/', fn () => redirect(auth()->check() ? '/dashboard' : '/login'))->n
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
+
+    // «En sesión»: the open app pings every few minutes, which refreshes the
+    // session's last activity (AgentPresence; the automatic distribution
+    // only hands requests to agents in session).
+    Route::post('presence/ping', fn () => response()->noContent())
+        ->middleware('throttle:30,1')
+        ->name('presence.ping');
 });
 
 require __DIR__.'/admin.php';

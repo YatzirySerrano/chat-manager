@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 import {
     ArrowRight,
     FileArchive,
@@ -21,7 +21,7 @@ import {
     formatNumber,
 } from '@/components/history-import/labels';
 import PageHeader from '@/components/PageHeader.vue';
-import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
+import BulkPurgeDialog from '@/components/conversations/BulkPurgeDialog.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
@@ -97,16 +97,6 @@ function openPurge(batch: HistoryBatchListItem): void {
     purgeTarget.value = batch;
     purgeOpen.value = true;
 }
-
-function onPurged(): void {
-    router.reload();
-}
-
-const purgeUrl = computed(() =>
-    purgeTarget.value
-        ? `/admin/history-import/${purgeTarget.value.id}/purge`
-        : '',
-);
 
 const purgeLabel = computed(
     () =>
@@ -391,7 +381,7 @@ const steps = [
             </SurfaceCard>
         </div>
 
-        <PermanentDeleteDialog
+        <BulkPurgeDialog
             v-if="can.purge"
             v-model:open="purgeOpen"
             title="Eliminar lote definitivamente"
@@ -402,9 +392,9 @@ const steps = [
                 'El lote y sus archivos de importación',
             ]"
             :kept="['Los contactos']"
-            :url="purgeUrl"
+            scope="whaticket"
+            :batch-id="purgeTarget?.id ?? null"
             confirm-label="Eliminar lote definitivamente"
-            @deleted="onPurged"
         />
     </div>
 </template>

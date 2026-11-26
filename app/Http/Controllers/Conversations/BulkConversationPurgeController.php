@@ -3,31 +3,31 @@
 namespace App\Http\Controllers\Conversations;
 
 use App\Actions\Conversations\PurgeConversationsInBulk;
+use App\Enums\DataTransferType;
 use App\Enums\Permission;
 use App\Http\Controllers\Controller;
-use App\Jobs\PurgeConversationsBulk;
+use App\Models\DataTransfer;
 use App\Models\User;
-use App\Support\Queues;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Inertia\Inertia;
 
 /**
- * «Vaciar conversaciones definitivamente»: starts the bulk, permanent erase of
- * a whole scope — every closed conversation, or the whole imported Whaticket
- * history. Reserved to the Superadministrador (permanent-deletion.conversations,
- * reserved to the root authority). The erase runs in the background
- * (PurgeConversationsBulk), a bounded slice at a time.
+ * «Vaciar conversaciones definitivamente» (Superadministrador): erases a whole
+ * scope — every closed conversation, the whole imported Whaticket history, or a
+ * single imported lote — a chunk at a time within the request, so the screen
+ * drives it with a real progress bar and the erase never depends on a queue
+ * worker. Reserved to the root authority (permanent-deletion.conversations) and
+ * confirmed by typing ELIMINAR on every step.
  */
 class BulkConversationPurgeController extends Controller
 {
-    /**
-     * Word the person types to confirm (compared without case or spaces).
-     */
     public const CONFIRMATION = 'ELIMINAR';
 
-    public function __invoke(Request $request, PurgeConversationsInBulk $purge): RedirectResponse
+    /** Conversations erased per request: enough to be quick, few enough to stay well under the timeout. */
+    private const CHUNK = 20;
+
+    public function __invoke(Request $request, PurgeConversationsInBulk $purge): JsonResponse
     {
         /** @var User $actor */
         $actor = $request->user();
@@ -36,25 +36,35 @@ class BulkConversationPurgeController extends Controller
 
         $validated = $request->validate([
             'scope' => ['required', Rule::in(PurgeConversationsInBulk::SCOPES)],
+            'batch_id' => ['nullable', 'integer'],
             'confirmation' => ['required', 'string', fn (string $attribute, mixed $value, callable $fail) => mb_strtoupper(trim((string) $value)) === self::CONFIRMATION
                 ? null
                 : $fail('Escribe '.self::CONFIRMATION.' para confirmar que quieres borrar estas conversaciones para siempre.')],
         ], ['confirmation.required' => 'Escribe '.self::CONFIRMATION.' para confirmar que quieres borrar estas conversaciones para siempre.']);
 
         $scope = (string) $validated['scope'];
-        $count = $purge->count($scope);
+        $batchId = isset($validated['batch_id']) ? (int) $validated['batch_id'] : null;
 
-        PurgeConversationsBulk::dispatch($scope, $actor->id)->onQueue(Queues::name(Queues::EXPORTS));
+        if ($batchId !== null) {
+            abort_unless(
+                DataTransfer::query()->whereKey($batchId)->where('type', DataTransferType::HistoryImport)->exists(),
+                404,
+            );
+        }
 
-        $label = $scope === PurgeConversationsInBulk::SCOPE_WHATICKET ? 'el historial de Whaticket' : 'las conversaciones cerradas';
+        $deleted = $purge->step($scope, $actor, self::CHUNK, $batchId);
+        $remaining = $purge->count($scope, $batchId);
+        $done = $remaining === 0;
 
-        Inertia::flash('toast', [
-            'type' => 'success',
-            'message' => $count > 0
-                ? "Se inició el borrado definitivo de {$count} conversaciones de {$label}. Desaparecerán en unos momentos."
-                : "No hay conversaciones que borrar en {$label}.",
+        // The staging and the summary audit entry are written once, at the end.
+        if ($done) {
+            $purge->finish($scope, $actor, $batchId);
+        }
+
+        return response()->json([
+            'deleted' => $deleted,
+            'remaining' => $remaining,
+            'done' => $done,
         ]);
-
-        return back();
     }
 }

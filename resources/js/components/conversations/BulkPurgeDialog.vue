@@ -3,6 +3,11 @@ import { router } from '@inertiajs/vue3';
 import { TriangleAlert } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
+import {
+    fallbackMessage,
+    historyRequest,
+    HistoryRequestError,
+} from '@/components/history-import/api';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -17,12 +22,11 @@ import { Label } from '@/components/ui/label';
 
 /**
  * Confirmation of «Vaciar conversaciones definitivamente» (Superadministrador):
- * a bulk, irreversible erase of a whole scope (every closed conversation, or
- * the whole imported Whaticket history). Same look and typed-word UX as
- * PermanentDeleteDialog, but the request is a POST to the single purge
- * endpoint with `{ scope, confirmation }` instead of a DELETE to a per-row
- * url, so it is its own small component rather than a prop variant of that
- * one.
+ * a bulk, irreversible erase of a whole scope — every closed conversation, the
+ * whole imported Whaticket history, or a single imported lote. The erase runs a
+ * chunk at a time straight from here (POST /conversations/purge), so it never
+ * depends on a queue worker and the progress bar shows real progress until the
+ * scope is empty.
  */
 const props = withDefaults(
     defineProps<{
@@ -35,12 +39,15 @@ const props = withDefaults(
         kept?: string[];
         /** Scope sent to the purge endpoint. */
         scope: 'closed' | 'whaticket';
+        /** A single imported lote (whaticket), or null for the whole scope. */
+        batchId?: number | null;
         confirmLabel?: string;
         /** Word to type; must match the server (ELIMINAR). */
         word?: string;
     }>(),
     {
         kept: () => [],
+        batchId: null,
         confirmLabel: 'Eliminar definitivamente',
         word: 'ELIMINAR',
     },
@@ -53,53 +60,83 @@ const emit = defineEmits<{
 }>();
 
 const typed = ref('');
-const processing = ref(false);
+const purging = ref(false);
 const error = ref<string | null>(null);
+const total = ref<number | null>(null);
+const deleted = ref(0);
 
 const matches = computed(
     () => typed.value.trim().toUpperCase() === props.word.toUpperCase(),
 );
 
+const percent = computed(() => {
+    if (total.value === null || total.value === 0) {
+        return 0;
+    }
+
+    return Math.min(100, Math.round((deleted.value / total.value) * 100));
+});
+
 watch(open, (isOpen) => {
     if (isOpen) {
         typed.value = '';
         error.value = null;
+        total.value = null;
+        deleted.value = 0;
     }
 });
 
-function confirm(): void {
-    if (!matches.value || processing.value) {
+async function confirm(): Promise<void> {
+    if (!matches.value || purging.value) {
         return;
     }
 
-    processing.value = true;
+    purging.value = true;
     error.value = null;
+    deleted.value = 0;
+    total.value = null;
 
-    router.post(
-        '/conversations/purge',
-        { scope: props.scope, confirmation: typed.value },
-        {
-            preserveScroll: true,
-            onSuccess: () => {
-                open.value = false;
-                emit('purged');
-                // The erase runs in the background a slice at a time: refresh
-                // now and shortly after so the conversations visibly start
-                // disappearing from the list without a manual reload.
-                router.reload();
-                window.setTimeout(() => router.reload(), 3500);
-            },
-            onError: (errors) => {
-                error.value =
-                    Object.values(errors)[0] ??
-                    'No se pudo iniciar el borrado. Inténtalo de nuevo.';
-                toast.error(error.value);
-            },
-            onFinish: () => {
-                processing.value = false;
-            },
-        },
-    );
+    try {
+        // Erase a chunk at a time until the scope is empty, updating progress.
+        for (;;) {
+            const step = await historyRequest<{
+                deleted: number;
+                remaining: number;
+                done: boolean;
+            }>('POST', '/conversations/purge', {
+                scope: props.scope,
+                batch_id: props.batchId ?? null,
+                confirmation: typed.value,
+            });
+
+            if (total.value === null) {
+                total.value = step.deleted + step.remaining;
+            }
+
+            deleted.value += step.deleted;
+
+            if (step.done) {
+                break;
+            }
+        }
+
+        const removed = deleted.value;
+        open.value = false;
+        emit('purged');
+        toast.success(
+            removed === 0
+                ? 'No había conversaciones que borrar.'
+                : `Se borraron ${removed} conversaciones definitivamente.`,
+        );
+        router.reload();
+    } catch (requestError) {
+        error.value =
+            requestError instanceof HistoryRequestError
+                ? requestError.message
+                : fallbackMessage(0);
+    } finally {
+        purging.value = false;
+    }
 }
 </script>
 
@@ -118,7 +155,31 @@ function confirm(): void {
                 <DialogDescription>{{ description }}</DialogDescription>
             </DialogHeader>
 
-            <div class="space-y-4 text-sm">
+            <!-- While erasing: a real progress bar driven by the chunked requests. -->
+            <div v-if="purging" class="space-y-3 py-2 text-sm">
+                <p class="font-medium">Vaciando conversaciones…</p>
+                <div
+                    class="h-2.5 w-full overflow-hidden rounded-full bg-muted"
+                    role="progressbar"
+                    :aria-valuenow="percent"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                >
+                    <div
+                        class="h-full rounded-full bg-destructive transition-[width] duration-300"
+                        :style="{ width: `${total === null ? 8 : percent}%` }"
+                    />
+                </div>
+                <p class="text-muted-foreground">
+                    <template v-if="total !== null">
+                        {{ deleted }} de {{ total }} borradas ({{ percent }}%).
+                        No cierres esta ventana.
+                    </template>
+                    <template v-else> Preparando el borrado… </template>
+                </p>
+            </div>
+
+            <div v-else class="space-y-4 text-sm">
                 <div
                     class="rounded-lg border border-destructive/25 bg-destructive-soft px-3.5 py-3 text-destructive-soft-foreground"
                 >
@@ -166,19 +227,19 @@ function confirm(): void {
             <DialogFooter class="gap-2">
                 <Button
                     variant="outline"
-                    :disabled="processing"
+                    :disabled="purging"
                     @click="open = false"
                 >
                     Cancelar
                 </Button>
                 <Button
                     variant="destructive"
-                    :loading="processing"
-                    :disabled="!matches"
+                    :loading="purging"
+                    :disabled="!matches || purging"
                     data-bulk-purge="confirm"
                     @click="confirm"
                 >
-                    {{ processing ? 'Vaciando…' : confirmLabel }}
+                    {{ purging ? 'Vaciando…' : confirmLabel }}
                 </Button>
             </DialogFooter>
         </DialogContent>

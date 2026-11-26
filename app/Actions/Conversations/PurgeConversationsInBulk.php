@@ -26,9 +26,9 @@ use Illuminate\Support\Facades\DB;
  *   import batches themselves, so «Historial importado» is left empty.
  *
  * Authorization is the caller's job (permanent-deletion.conversations,
- * reserved to the Superadministrador). The work is bounded by time and driven
- * from a queued job (PurgeConversationsBulk), since a scope may hold hundreds
- * of thousands of messages.
+ * reserved to the Superadministrador). The erase is driven a chunk at a time
+ * from the screen (step()), so a scope with hundreds of thousands of messages
+ * never holds one request for long and the progress is shown live.
  */
 class PurgeConversationsInBulk
 {
@@ -64,57 +64,37 @@ class PurgeConversationsInBulk
             return Conversation::query()->imported()->where('imported_by_transfer_id', $batchId);
         }
 
+        // «Cerradas» matches the inbox tab: every closed conversation that is
+        // not archived history (live and imported-operational alike), so what
+        // the user sees in «Cerradas» is exactly what this empties.
         return $scope === self::SCOPE_WHATICKET
             ? Conversation::query()->imported()
-            : Conversation::query()->live()->where('status', ConversationStatus::Closed);
+            : Conversation::query()->where('status', ConversationStatus::Closed)->notHistoryOnly();
     }
 
     /**
-     * Erases conversations of the scope until none is left or the time budget
-     * runs out.
-     *
-     * @return array{conversations: int, messages: int, attachments: int, files_pending: int, done: bool}
+     * Deletes up to $limit conversations of the scope in the current request
+     * (no queue), so the screen can drive the erase a chunk at a time and show
+     * real progress. Returns how many were deleted this step.
      */
-    public function erase(string $scope, User $actor, float $seconds, ?int $batchId = null): array
+    public function step(string $scope, User $actor, int $limit, ?int $batchId = null): int
     {
-        $until = microtime(true) + $seconds;
-        $totals = ['conversations' => 0, 'messages' => 0, 'attachments' => 0, 'files_pending' => 0, 'done' => false];
+        $batch = $this->query($scope, $batchId)->orderBy('id')->limit(max(1, $limit))->get();
 
-        do {
-            $batch = $this->query($scope, $batchId)->orderBy('id')->limit(50)->get();
+        foreach ($batch as $conversation) {
+            // Skip the per-conversation audit entry (finish() writes a summary).
+            $this->deleteConversation->handle($conversation, $actor, false);
+        }
 
-            if ($batch->isEmpty()) {
-                $totals['done'] = true;
-
-                break;
-            }
-
-            foreach ($batch as $conversation) {
-                // Skip the per-conversation audit entry: the run writes a single
-                // summary entry (finish()), so the audit log is not flooded.
-                $summary = $this->deleteConversation->handle($conversation, $actor, false);
-                $totals['conversations']++;
-                $totals['messages'] += $summary['messages'];
-                $totals['attachments'] += $summary['attachments'];
-                $totals['files_pending'] += $summary['files_pending'];
-
-                if (microtime(true) >= $until) {
-                    return $totals;
-                }
-            }
-        } while (true);
-
-        return $totals;
+        return $batch->count();
     }
 
     /**
      * Once every conversation of the scope is gone, drops what is left of the
-     * Whaticket import staging (whaticket scope only) and writes the summary
-     * audit entry. The closed scope has no staging to drop.
-     *
-     * @param  array{conversations: int, messages: int, attachments: int, files_pending: int}  $erased
+     * Whaticket import staging (whaticket scope or a single lote) and writes
+     * the summary audit entry. The closed scope has no staging to drop.
      */
-    public function finish(string $scope, User $actor, array $erased, ?int $batchId = null): void
+    public function finish(string $scope, User $actor, ?int $batchId = null): void
     {
         $batches = 0;
 
@@ -128,7 +108,6 @@ class PurgeConversationsInBulk
             'scope' => $batchId !== null ? 'whaticket_batch' : $scope,
             'batch_id' => $batchId,
             'import_batches' => $batches,
-            ...$erased,
         ], $actor);
     }
 

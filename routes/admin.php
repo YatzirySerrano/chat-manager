@@ -9,7 +9,6 @@ use App\Http\Controllers\Admin\DepartmentMemberController;
 use App\Http\Controllers\Admin\DepartmentOperationsController;
 use App\Http\Controllers\Admin\DepartmentServiceRulesController;
 use App\Http\Controllers\Admin\HistoryImportArchiveController;
-use App\Http\Controllers\Admin\HistoryImportBatchPurgeController;
 use App\Http\Controllers\Admin\HistoryImportController;
 use App\Http\Controllers\Admin\HistoryImportFileController;
 use App\Http\Controllers\Admin\HistoryImportInventoryController;
@@ -79,8 +78,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::whereNumber(['transfer', 'file', 'row', 'rule'])->prefix('{transfer}')->group(function () {
                 Route::get('/', [HistoryImportController::class, 'show'])->name('show');
                 Route::delete('/', [HistoryImportController::class, 'destroy'])->name('destroy');
-                // «Eliminar lote importado definitivamente» (Superadministrador): borra las conversaciones importadas del lote y su staging.
-                Route::delete('purge', HistoryImportBatchPurgeController::class)->middleware('throttle:10,1')->name('purge');
                 Route::get('progress', [HistoryImportController::class, 'progress'])->name('progress');
                 Route::get('summary', [HistoryImportController::class, 'summary'])->name('summary');
                 Route::put('mappings', [HistoryImportController::class, 'mappings'])->name('mappings');

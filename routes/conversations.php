@@ -1,11 +1,11 @@
 <?php
 
+use App\Http\Controllers\Conversations\BulkConversationPurgeController;
 use App\Http\Controllers\Conversations\ConversationAssignmentController;
 use App\Http\Controllers\Conversations\ConversationCategoryController;
 use App\Http\Controllers\Conversations\ConversationController;
 use App\Http\Controllers\Conversations\ConversationMessageController;
 use App\Http\Controllers\Conversations\ConversationNoteController;
-use App\Http\Controllers\Conversations\BulkConversationPurgeController;
 use App\Http\Controllers\Conversations\ConversationPermanentDeletionController;
 use App\Http\Controllers\Conversations\ConversationPreviewController;
 use App\Http\Controllers\Conversations\ConversationReadController;
@@ -72,9 +72,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('conversations/{conversation}/permanent', ConversationPermanentDeletionController::class)
         ->middleware('throttle:20,1')
         ->name('conversations.destroy-permanently');
-    // «Vaciar conversaciones definitivamente» (Superadministrador): all closed, or the whole Whaticket history.
+    // «Vaciar conversaciones definitivamente» (Superadministrador): all closed,
+    // the whole Whaticket history, or one lote. Called in a loop a chunk at a
+    // time, so the throttle is high enough for a large purge to run through.
     Route::post('conversations/purge', BulkConversationPurgeController::class)
-        ->middleware('throttle:5,1')
+        ->middleware('throttle:300,1')
         ->name('conversations.purge');
     Route::get('conversations/{conversation}/messages/{message}/attachments/{attachment}', [MessageAttachmentController::class, 'show'])
         ->name('conversations.messages.attachments.show');

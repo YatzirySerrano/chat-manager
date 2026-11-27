@@ -33,6 +33,10 @@ export type ConversationAbilities = {
     transfer: boolean;
     release: boolean;
     close: boolean;
+    /** «No es solicitud»: close it without sending anything and outside the reports (no need to accept it first). */
+    mark_not_request?: boolean;
+    /** «Deshacer» of «No es solicitud», a few minutes after marking it. */
+    undo_not_request?: boolean;
     reopen: boolean;
     addNote: boolean;
     reply: boolean;
@@ -167,6 +171,8 @@ export type ConversationSummary = {
     closed_at: string | null;
     /** Closed as «Solicitud completada»: a new message enters «Pendientes». */
     completed_at?: string | null;
+    /** Closed as «No es solicitud»: outside the reports; a new message starts a new conversation. */
+    not_request_at?: string | null;
     /** Credit result of the completed request (null without one). */
     outcome?: ConversationOutcome | null;
     reopen_count: number;
@@ -588,6 +594,65 @@ export type ConversationTimelinePage = {
     until?: string | null;
 };
 
+/**
+ * Where a request ended: «No es solicitud», «Crédito aprobado» (with the
+ * authorized amount), «Rechazada», «Completada», «Cerrada» or, still in
+ * attention, its status label (`open`).
+ */
+export type RequestSummaryResult = {
+    value:
+        | 'not_request'
+        | 'approved'
+        | 'rejected'
+        | 'completed'
+        | 'closed'
+        | 'open';
+    label: string;
+    amount: string | null;
+};
+
+/**
+ * One conversation told as the credit request it was (RequestSummary):
+ * whose request it was («Cliente»; the contact is usually the field manager
+ * who sends requests for many clients) and where it ended.
+ */
+export type RequestSummary = {
+    id: number;
+    status: ConversationStatusValue;
+    status_label: string;
+    client: string | null;
+    type: string | null;
+    product: string | null;
+    requested_amount: string | null;
+    result: RequestSummaryResult;
+    department: {
+        id: number;
+        name: string;
+        color: AppColor;
+        is_active: boolean;
+    } | null;
+    assignee: string | null;
+    created_at: string | null;
+    closed_at: string | null;
+    completed_at: string | null;
+};
+
+/** One conversation of «Conversación completa», with its messages of the page. */
+export type FullHistorySegment = {
+    conversation: RequestSummary & { is_current: boolean };
+    messages: ConversationMessage[];
+    /** The page reached the conversation's first message. */
+    starts: boolean;
+};
+
+export type FullHistoryPage = {
+    segments: FullHistorySegment[];
+    /** Where the next older page continues; null at the beginning of the history. */
+    next: { conversation: number; message: number | null } | null;
+    contact: { display_name: string };
+    appearance: Pick<ViewerChatAppearance, 'source' | 'colors'>;
+};
+
 export type ConversationDetails = {
     contact: {
         id: number;
@@ -613,20 +678,10 @@ export type ConversationDetails = {
     /** «Perfil de WhatsApp»; null when the contact has no WhatsApp identity. */
     whatsappProfile?: WhatsAppProfile | null;
     origin: ContactAttribution[];
-    history: ({
-        id: number;
-        status: ConversationStatusValue;
-        status_label: string;
-        department: {
-            id: number;
-            name: string;
-            color: AppColor;
-            is_active: boolean;
-        } | null;
-        assignee: string | null;
-        created_at: string | null;
-        closed_at: string | null;
-    } & ConversationOriginInfo)[];
+    /** «Solicitudes anteriores»: the latest ones the viewer may see. */
+    history: (RequestSummary & ConversationOriginInfo)[];
+    /** How many previous conversations the viewer may see (`history` holds the latest of them). */
+    historyTotal?: number;
     contactNotes:
         | {
               id: number;

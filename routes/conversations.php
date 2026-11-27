@@ -4,8 +4,10 @@ use App\Http\Controllers\Conversations\BulkConversationPurgeController;
 use App\Http\Controllers\Conversations\ConversationAssignmentController;
 use App\Http\Controllers\Conversations\ConversationCategoryController;
 use App\Http\Controllers\Conversations\ConversationController;
+use App\Http\Controllers\Conversations\ConversationFullHistoryController;
 use App\Http\Controllers\Conversations\ConversationMessageController;
 use App\Http\Controllers\Conversations\ConversationNoteController;
+use App\Http\Controllers\Conversations\ConversationNotRequestController;
 use App\Http\Controllers\Conversations\ConversationOutcomeController;
 use App\Http\Controllers\Conversations\ConversationPermanentDeletionController;
 use App\Http\Controllers\Conversations\ConversationPreviewController;
@@ -53,6 +55,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('conversations.destinations');
     Route::post('conversations/{conversation}/close', [ConversationStatusController::class, 'close'])->name('conversations.close');
     Route::post('conversations/{conversation}/reopen', [ConversationStatusController::class, 'reopen'])->name('conversations.reopen');
+    // «No es solicitud»: closed without sending anything and outside the reports; «Deshacer» for a few minutes.
+    Route::post('conversations/{conversation}/not-request', [ConversationNotRequestController::class, 'store'])
+        ->middleware('throttle:60,1')
+        ->name('conversations.not-request.store');
+    Route::delete('conversations/{conversation}/not-request', [ConversationNotRequestController::class, 'destroy'])
+        ->middleware('throttle:60,1')
+        ->name('conversations.not-request.destroy');
     Route::post('conversations/{conversation}/notes', [ConversationNoteController::class, 'store'])->name('conversations.notes.store');
     Route::put('conversations/{conversation}/notes/{note}', [ConversationNoteController::class, 'update'])->name('conversations.notes.update');
     Route::post('conversations/{conversation}/messages', [ConversationMessageController::class, 'store'])
@@ -65,6 +74,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('conversations/{conversation}/preview', [ConversationPreviewController::class, 'show'])
         ->middleware('throttle:120,1')
         ->name('conversations.preview');
+    // «Conversación completa»: the contact's whole visible history, read only, paged backwards.
+    Route::get('conversations/{conversation}/full-history', [ConversationFullHistoryController::class, 'index'])
+        ->middleware('throttle:120,1')
+        ->name('conversations.full-history');
     Route::post('conversations/{conversation}/read', [ConversationReadController::class, 'store'])
         ->middleware('throttle:120,1')
         ->name('conversations.read');

@@ -53,6 +53,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $outcome_at When the result was recorded (date of the result in the reports).
  * @property int|null $outcome_by_user_id Who recorded the result.
  * @property Carbon|null $awaiting_info_at Since when a request returned for missing information waits for the customer, outside «Pendientes» (ResumeAwaitingInformation).
+ * @property Carbon|null $not_request_at Closed as «No es solicitud»: outside every metric; the next message starts a new conversation.
+ * @property int|null $not_request_by_user_id Who marked it as «No es solicitud».
  * @property int|null $open_response_cycle_id The open response cycle; kept and read only by ResponseClock, under the row lock.
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -107,6 +109,7 @@ class Conversation extends Model
             'outcome_amount' => 'decimal:2',
             'outcome_at' => 'datetime',
             'awaiting_info_at' => 'datetime',
+            'not_request_at' => 'datetime',
         ];
     }
 
@@ -117,6 +120,15 @@ class Conversation extends Model
     public function isImported(): bool
     {
         return $this->origin !== ConversationOrigin::Live;
+    }
+
+    /**
+     * Closed as «No es solicitud» (MarkNotRequest): not a request, so outside
+     * every metric and report.
+     */
+    public function isNotRequest(): bool
+    {
+        return $this->not_request_at !== null;
     }
 
     /**

@@ -1,13 +1,27 @@
 <script setup lang="ts">
 import { router, useHttp } from '@inertiajs/vue3';
-import { ArrowLeft, Palette, PanelRight, PanelRightClose } from '@lucide/vue';
+import {
+    ArrowLeft,
+    MessagesSquare,
+    Palette,
+    PanelRight,
+    PanelRightClose,
+} from '@lucide/vue';
 import {
     useDocumentVisibility,
     useElementSize,
     useMediaQuery,
     watchDebounced,
 } from '@vueuse/core';
-import { computed, onScopeDispose, provide, ref, toRef, watch } from 'vue';
+import {
+    computed,
+    defineAsyncComponent,
+    onScopeDispose,
+    provide,
+    ref,
+    toRef,
+    watch,
+} from 'vue';
 import { toast } from 'vue-sonner';
 import { CHAT_HEADER_AVATAR, CHAT_TOPBAR } from '@/components/chat/bubble';
 import ChatDropOverlay from '@/components/chat/ChatDropOverlay.vue';
@@ -355,6 +369,21 @@ const appearance = ref<ViewerChatAppearance | null>(
     props.conversation.appearance ?? null,
 );
 const appearanceOpen = ref(false);
+
+/*
+ * «Conversación completa»: the contact's whole visible history, read only
+ * (ContactFullHistoryDialog), mounted the first time it is opened.
+ */
+const ContactFullHistoryDialog = defineAsyncComponent(
+    () => import('@/components/conversations/ContactFullHistoryDialog.vue'),
+);
+const fullHistoryOpen = ref(false);
+const fullHistoryMounted = ref(false);
+
+function openFullHistory(): void {
+    fullHistoryMounted.value = true;
+    fullHistoryOpen.value = true;
+}
 
 /*
  * Phones: the header keeps the way back, the name (which opens the
@@ -714,8 +743,28 @@ watch(conversationId, () => (dragDepth.value = 0));
                             <Palette aria-hidden="true" />
                             Apariencia del chat
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                            class="pointer-coarse:min-h-11"
+                            data-chat-menu="full-history"
+                            @select="openFullHistory"
+                        >
+                            <MessagesSquare aria-hidden="true" />
+                            Conversación completa
+                        </DropdownMenuItem>
                     </template>
                 </ConversationActions>
+                <Button
+                    v-if="!phoneLayout"
+                    variant="ghost"
+                    size="icon"
+                    class="shrink-0 rounded-full text-muted-foreground pointer-coarse:size-11"
+                    title="Conversación completa: todas las solicitudes del contacto en orden de fecha"
+                    aria-label="Ver la conversación completa del contacto"
+                    data-chat-full-history
+                    @click="openFullHistory"
+                >
+                    <MessagesSquare aria-hidden="true" />
+                </Button>
                 <Button
                     v-if="appearance && !phoneLayout"
                     variant="ghost"
@@ -828,6 +877,12 @@ watch(conversationId, () => (dragDepth.value = 0));
             :target="{ type: 'conversation', id: conversation.id }"
             :appearance="appearance"
             @saved="(value) => (appearance = value)"
+        />
+        <ContactFullHistoryDialog
+            v-if="fullHistoryMounted"
+            v-model:open="fullHistoryOpen"
+            :conversation-id="conversation.id"
+            :contact-name="conversation.contact.display_name"
         />
     </section>
 </template>

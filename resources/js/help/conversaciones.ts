@@ -18,10 +18,10 @@ const help: ModuleHelp = {
     ],
     workflow: [
         'Un cliente escribe: la conversación entra como «Pendiente» en el departamento de la conexión, o se asigna sola si el departamento usa asignación automática.',
-        'Revisa «Pendientes» y pulsa «Aceptar». A partir de ese momento tú eres el responsable y la conversación pasa a «En atención».',
+        'Revisa «Pendientes» y pulsa «Aceptar». A partir de ese momento tú eres el responsable y la conversación pasa a «En atención». Si solo es un «gracias» o un emoji de una solicitud ya atendida, pulsa «No es solicitud»: se cierra sin enviar nada y no cuenta en los reportes.',
         'Responde desde el compositor. Usa «Nota interna» para dejar contexto al equipo sin que el cliente lo vea.',
         'Si otra área debe atenderla, usa «Más acciones» → «Transferir». Se conservan mensajes, notas, etiquetas y procedencia, y no se envía nada al cliente.',
-        'Al terminar, «Solicitud completada» (envía la despedida) o «Completada sin despedida». Antes de completarla eliges el resultado del crédito: «Crédito aprobado» con su «Monto autorizado», «Rechazada» o «Sin resultado»; ya viene sugerido por tu mensaje «Se autoriza…» o «Solicitud rechazada», así que basta con pulsar «Completar» (o Enter). Su historial se conserva en «Cerradas» y, si la persona vuelve a escribir, entra como solicitud nueva a «Pendientes».',
+        'Al terminar, «Solicitud completada» (envía la despedida) o «Completada sin despedida». Al completarla pulsas un solo botón con el resultado del crédito y se completa: «Crédito aprobado · $3,000» (el monto sale de «Resolución»), «Rechazada» o «Sin resultado». El sugerido por tu mensaje «Se autoriza…» o «Solicitud rechazada» viene resaltado, así que basta con Enter. Su historial se conserva en «Cerradas» y, si la persona vuelve a escribir, entra como solicitud nueva a «Pendientes».',
         'Si el cliente vuelve a escribir después del cierre, la conversación regresa a la bandeja para atenderla de nuevo.',
     ],
     fields: [
@@ -61,6 +61,16 @@ const help: ModuleHelp = {
                 '«Solicitud completada» solo dice que se atendió; el resultado dice si el crédito se aprobó (lo único que comisiona, con su monto autorizado) o se rechazó. Es opcional: puedes completar sin resultado y registrarlo después en «Detalles» → «Resultado del crédito» → «Registrar» o «Cambiar». Quien completó la solicitud, o quien la supervisa, puede corregirlo; el cambio queda en el historial de la conversación y en la auditoría. Si la solicitud se reabre, su resultado se borra y se registra de nuevo al completarla.',
         },
         {
+            name: 'Resolución',
+            description:
+                'En «Detalles» → «Datos de la solicitud», «Resolución» tiene «Monto autorizado», «Desembolso» y «Cantidad a pagar»: escríbelos una vez y se guardan al salir del campo o con Enter (Esc deshace). También se toman solos del mensaje de autorización que envías («Se autoriza…» con sus líneas de monto), aunque venga con faltas de ortografía o sin acentos; el último mensaje manda. Las respuestas rápidas completan con ellos sus líneas «Monto autorizado: $», «Desembolso: $» y «Cantidad a pagar: $», y el monto autorizado es el que aparece al completar la solicitud.',
+        },
+        {
+            name: 'No es solicitud',
+            description:
+                'Para cuando, después de una solicitud ya atendida, el cliente solo responde «gracias», un emoji o «ok» y eso entra como conversación nueva a «Pendientes». Pulsa «No es solicitud» (junto a «Aceptar» en la fila, en el encabezado del chat o en el menú de la conversación): no hace falta aceptarla antes y no la frenan el orden de llegada ni el tiempo de espera. Se cierra al instante sin enviar nada al cliente (tampoco la despedida), pasa a «Cerradas» con la marca «No es solicitud» y no cuenta en los reportes ni en el tablero (recibidas, atendidas, resueltas, tiempos ni SLA). Si te equivocaste, pulsa «Deshacer» en el aviso o en el encabezado durante los siguientes 10 minutos: vuelve a donde estaba, con su lugar en la fila. Si el cliente escribe otra vez, entra como conversación nueva a «Pendientes». Queda en el historial de la conversación y en la auditoría.',
+        },
+        {
             name: 'Categoría de la solicitud',
             description:
                 'Tipo de solicitud (por ejemplo «Facturación»). Se muestra en la fila y se elige en «Detalles»; puede cambiarla el responsable de la conversación o quien asigna o confirma solicitudes. Una categoría puede tener sus propias reglas de servicio. Filtra la bandeja por categoría o por preparación desde «Filtros».',
@@ -69,6 +79,16 @@ const help: ModuleHelp = {
             name: 'Vista previa',
             description:
                 'Mantén presionada una fila, haz clic derecho o elige «Vista previa» en su menú: verás el mensaje inicial, los mensajes recientes, cuándo se recibió, su área y categoría, si es nueva, pendiente, en proceso o finalizada, sus archivos y si está disponible para atención. No marca nada como leído ni cambia la conversación.',
+        },
+        {
+            name: 'Solicitudes anteriores',
+            description:
+                'En «Detalles», las conversaciones anteriores del mismo contacto que puedes ver, cada una como la solicitud que fue: «Solicitud de» y el nombre del cliente (el dato «Cliente»; si no se capturó dice «Cliente sin capturar»), la fecha y hora, el tipo, producto y monto solicitado cuando se tomaron, el departamento, quién la atendió y cómo terminó: «Crédito aprobado» con su monto, «Rechazada», «Completada», «Cerrada» o «No es solicitud». Se ven las cinco más recientes; «Ver todas» muestra el resto. Un clic abre esa conversación. Recuerda que el contacto suele ser el gestor, que envía solicitudes de muchos clientes.',
+        },
+        {
+            name: 'Conversación completa',
+            description:
+                'Todos los mensajes del contacto, de todas sus solicitudes que puedes ver, en orden de fecha y sin cortes, como un solo chat. Ábrela con el botón de mensajes del encabezado del chat (en el teléfono, en «Más acciones») o con «Conversación completa» en «Solicitudes anteriores». Cada solicitud empieza con un separador que dice su fecha, el cliente, el resultado y quién la atendió, con «Abrir» para ir a esa conversación. Al subir se cargan los mensajes anteriores. Es solo de lectura: no marca nada como leído y no incluye conversaciones que tu rol no puede ver ni el historial archivado de Whaticket.',
         },
         {
             name: 'Bandeja general',

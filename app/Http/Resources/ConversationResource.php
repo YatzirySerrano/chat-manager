@@ -107,6 +107,8 @@ class ConversationResource extends JsonResource
                 'amount' => $this->outcome_amount,
                 'at' => $this->outcome_at?->toIso8601String(),
             ] : null,
+            // Closed as «No es solicitud» (outside the reports): the «Cerradas» row shows a badge.
+            'not_request_at' => $this->not_request_at?->toIso8601String(),
             'reopen_count' => $this->reopen_count,
             'created_at' => $this->created_at?->toIso8601String(),
             // Request type (kept as history when the category was deleted).
@@ -158,6 +160,9 @@ class ConversationResource extends JsonResource
                 'transfer' => $viewer->can('transfer', $this->resource),
                 'release' => $viewer->can('release', $this->resource),
                 'close' => $viewer->can('close', $this->resource),
+                // «No es solicitud» without accepting it first, and its short «Deshacer».
+                'mark_not_request' => $viewer->can('markNotRequest', $this->resource),
+                'undo_not_request' => $viewer->can('undoNotRequest', $this->resource),
                 // Imported history: «Reabrir» continues in a live conversation.
                 'reopen' => $viewer->can('reopen', $this->resource) || $viewer->can('continueImported', $this->resource),
                 'addNote' => $viewer->can('addNote', $this->resource),

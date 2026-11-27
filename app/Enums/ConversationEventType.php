@@ -31,6 +31,10 @@ enum ConversationEventType: string
     case AiHandoff = 'ai_handoff';
     /** The result of a completed request was recorded or corrected afterwards. */
     case OutcomeRecorded = 'outcome_recorded';
+    /** Closed as «No es solicitud»: nothing sent, outside every metric (MarkNotRequest). */
+    case NotRequest = 'not_request';
+    /** «Deshacer» right after «No es solicitud»: back where it was (UndoNotRequest). */
+    case NotRequestUndone = 'not_request_undone';
 
     public function label(): string
     {
@@ -57,6 +61,8 @@ enum ConversationEventType: string
             self::ChatbotRouted => 'Enviada por el chatbot',
             self::AiHandoff => 'La IA la pasó a un asesor',
             self::OutcomeRecorded => 'Resultado de la solicitud registrado',
+            self::NotRequest => 'No es solicitud',
+            self::NotRequestUndone => 'Se deshizo «No es solicitud»',
         };
     }
 
@@ -84,6 +90,8 @@ enum ConversationEventType: string
             self::ReadinessReverted => 'marcó la solicitud como «Necesita información»',
             self::CategoryChanged => 'cambió la categoría',
             self::OutcomeRecorded => 'registró el resultado de la solicitud',
+            self::NotRequest => 'marcó que no es solicitud',
+            self::NotRequestUndone => 'deshizo «No es solicitud»',
             self::AutoAssigned, self::OutboundBlocked, self::MessageFailed, self::SlaBreached, self::ChatbotRouted, self::AiHandoff => null,
         };
     }

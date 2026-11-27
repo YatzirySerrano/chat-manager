@@ -86,6 +86,28 @@ class ConversationPolicy
     }
 
     /**
+     * «No es solicitud» (a «gracias», an emoji, an «ok» after a finished
+     * request): whoever could accept the conversation from its queue, or
+     * whoever could close it (its responsible agent, or someone who assigns
+     * within their reach). Taking it first is not needed, and the queue
+     * rules (chronological order, «Necesita información», minimum wait)
+     * never block it: it is not a request.
+     */
+    public function markNotRequest(User $actor, Conversation $conversation): bool
+    {
+        return $this->permits($actor, 'markNotRequest', $conversation) && $this->state->allows($actor, 'markNotRequest', $conversation);
+    }
+
+    /**
+     * «Deshacer» right after «No es solicitud» (UndoNotRequest::WINDOW_MINUTES):
+     * who marked it, or someone who assigns within their reach.
+     */
+    public function undoNotRequest(User $actor, Conversation $conversation): bool
+    {
+        return $this->permits($actor, 'undoNotRequest', $conversation) && $this->state->allows($actor, 'undoNotRequest', $conversation);
+    }
+
+    /**
      * Recording or correcting the credit result of a completed request
      * («Crédito aprobado» / «Rechazada»): permitsOutcome() and a request that
      * is still completed (closed as «Solicitud completada»).
@@ -217,6 +239,10 @@ class ConversationPolicy
             'release' => ($actor->holdsPermission(Permission::ReplyConversations) || $actor->holdsPermission(Permission::AssignConversations))
                 && $this->attendsOrOperates($actor, $conversation),
             'close' => $actor->holdsPermission(Permission::CloseConversations) && $this->attendsOrOperates($actor, $conversation),
+            'markNotRequest' => $this->permitsAccept($actor, $conversation) || $this->permits($actor, 'close', $conversation),
+            'undoNotRequest' => $this->permits($actor, 'markNotRequest', $conversation)
+                && (($conversation->not_request_by_user_id !== null && $conversation->not_request_by_user_id === $actor->id)
+                    || $actor->holdsPermission(Permission::AssignConversations)),
             'reopen' => $actor->holdsPermission(Permission::ReopenConversations) && $this->operates($actor, $conversation),
             'addNote' => $actor->holdsPermission(Permission::AddConversationNotes) && $this->operates($actor, $conversation),
             'tag' => $actor->holdsPermission(Permission::AssignTags) && $this->operates($actor, $conversation),

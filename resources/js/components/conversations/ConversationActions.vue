@@ -8,6 +8,7 @@ import {
     CircleHelp,
     EllipsisVertical,
     Hand,
+    MessageCircleOff,
     RotateCcw,
     ShieldAlert,
     Trash2,
@@ -53,6 +54,10 @@ import {
     reopen,
     transfer,
 } from '@/routes/conversations';
+import {
+    destroy as undoNotRequestRoute,
+    store as markNotRequestRoute,
+} from '@/routes/conversations/not-request';
 import type { ConversationSummary, TransferOptions } from '@/types';
 
 // Loaded the first time it is shown: it is not needed to paint the page.
@@ -450,6 +455,37 @@ const offersSilentComplete = computed(
         Boolean(props.conversation.connection.farewell),
 );
 
+/*
+ * «No es solicitud»: a «gracias», an emoji or an «ok» after a finished
+ * request closes without sending anything and outside the reports. On a
+ * request waiting in the queue it is a secondary button beside «Aceptar»
+ * (no need to take it first); while someone attends it, a menu entry. No
+ * confirmation: the toast, and this header while it lasts, offer «Deshacer».
+ */
+const notRequestAsButton = computed(
+    () =>
+        Boolean(can.value.mark_not_request) &&
+        props.conversation.status === 'pending',
+);
+
+function markNotRequest(): void {
+    operate(markNotRequestRoute.url(id.value));
+}
+
+function undoNotRequest(): void {
+    router.delete(undoNotRequestRoute.url(id.value), {
+        data: { version: props.conversation.version },
+        preserveScroll: true,
+        preserveState: true,
+        onStart: () => {
+            processing.value = true;
+            errors.value = {};
+        },
+        onError: showFirstError,
+        onFinish: () => (processing.value = false),
+    });
+}
+
 /** «Eliminar chat definitivamente»: only with the permission, always last. */
 const permanentDeleteOpen = ref(false);
 
@@ -538,6 +574,16 @@ const secondary = computed<Action[]>(() => {
         }
     }
 
+    if (can.value.mark_not_request && !notRequestAsButton.value) {
+        actions.push({
+            key: 'not-request',
+            label: 'No es solicitud',
+            icon: MessageCircleOff,
+            hint: 'Se cierra sin enviar nada al cliente y no cuenta en los reportes',
+            run: markNotRequest,
+        });
+    }
+
     if (can.value.delete_permanently) {
         actions.push({
             key: 'delete-permanently',
@@ -559,6 +605,8 @@ const secondary = computed<Action[]>(() => {
         v-if="
             primary.length + secondary.length > 0 ||
             completeAsButton ||
+            notRequestAsButton ||
+            can.undo_not_request ||
             $slots['menu-extra']
         "
         class="flex shrink-0 items-center gap-1.5"
@@ -586,6 +634,36 @@ const secondary = computed<Action[]>(() => {
             <span class="sm:@max-md/chat-header:sr-only">{{
                 action.label
             }}</span>
+        </Button>
+        <!-- «No es solicitud»: prominent but secondary, beside «Aceptar». -->
+        <Button
+            v-if="notRequestAsButton"
+            variant="outline"
+            size="sm"
+            class="h-9 rounded-full px-3.5 text-muted-foreground hover:text-foreground pointer-coarse:h-11"
+            :disabled="processing"
+            aria-label="No es solicitud"
+            title="No es solicitud: se cierra sin enviar nada al cliente y no cuenta en los reportes"
+            data-conversation-action="not-request"
+            @click="markNotRequest"
+        >
+            <MessageCircleOff aria-hidden="true" />
+            <span class="sm:@max-md/chat-header:sr-only">No es solicitud</span>
+        </Button>
+        <!-- Right after «No es solicitud»: put it back where it was. -->
+        <Button
+            v-if="can.undo_not_request"
+            variant="outline"
+            size="sm"
+            class="h-9 rounded-full px-3.5 pointer-coarse:h-11"
+            :disabled="processing"
+            aria-label="Deshacer «No es solicitud»"
+            title="Vuelve a donde estaba, con su lugar en la fila"
+            data-conversation-action="undo-not-request"
+            @click="undoNotRequest"
+        >
+            <Undo2 aria-hidden="true" />
+            <span class="sm:@max-md/chat-header:sr-only">Deshacer</span>
         </Button>
         <!--
             The end of the request: success tone, the icon springs on hover.
@@ -655,7 +733,11 @@ const secondary = computed<Action[]>(() => {
                         v-if="
                             index > 0 &&
                             (action.key === 'complete' ||
-                                action.key === 'delete-permanently')
+                                action.key === 'delete-permanently' ||
+                                (action.key === 'not-request' &&
+                                    !['complete', 'complete-silent'].includes(
+                                        secondary[index - 1]?.key ?? '',
+                                    )))
                         "
                     />
                     <DropdownMenuItem
@@ -708,6 +790,11 @@ const secondary = computed<Action[]>(() => {
             :conversation-id="conversation.id"
             :farewell="
                 completeFarewell && Boolean(conversation.connection.farewell)
+            "
+            :authorized-amount="
+                conversation.request_fields?.find(
+                    (field) => field.key === 'monto_autorizado',
+                )?.value ?? null
             "
             :processing="processing"
             :error="

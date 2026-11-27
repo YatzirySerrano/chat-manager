@@ -7,6 +7,7 @@ import {
     History,
     Mail,
     Megaphone,
+    MessagesSquare,
     NotebookPen,
     PenLine,
     Phone,
@@ -44,6 +45,12 @@ import {
 } from '@/routes/conversations/contact';
 import { update as updateCategory } from '@/routes/conversations/category';
 import RequestFieldsSection from '@/components/conversations/RequestFieldsSection.vue';
+import {
+    requestFacts,
+    requestTitle,
+    resultClasses,
+    resultLabel,
+} from '@/components/conversations/requestSummary';
 import { update as updateTags } from '@/routes/conversations/tags';
 import type {
     ConversationCategoryRef,
@@ -55,6 +62,9 @@ import type {
 // Loaded the first time it is shown: it is not needed to paint the page.
 const MediaViewer = defineAsyncComponent(
     () => import('@/components/conversations/MediaViewer.vue'),
+);
+const ContactFullHistoryDialog = defineAsyncComponent(
+    () => import('@/components/conversations/ContactFullHistoryDialog.vue'),
 );
 
 /**
@@ -137,6 +147,37 @@ const emit = defineEmits<{
     close: [];
     select: [conversationId: number];
 }>();
+
+/*
+ * «Solicitudes anteriores»: the latest few at a glance, «Ver todas (N)» for
+ * the rest the panel received, and «Conversación completa» for the whole
+ * history read as one chat (mounted the first time it is opened).
+ */
+const PREVIOUS_VISIBLE = 5;
+const showAllPrevious = ref(false);
+const fullHistoryOpen = ref(false);
+const fullHistoryMounted = ref(false);
+const previousTotal = computed(
+    () => props.details.historyTotal ?? props.details.history.length,
+);
+const visiblePrevious = computed(() =>
+    showAllPrevious.value
+        ? props.details.history
+        : props.details.history.slice(0, PREVIOUS_VISIBLE),
+);
+
+function openFullHistory(): void {
+    fullHistoryMounted.value = true;
+    fullHistoryOpen.value = true;
+}
+
+watch(
+    () => props.conversation.id,
+    () => {
+        showAllPrevious.value = false;
+        fullHistoryOpen.value = false;
+    },
+);
 
 /* "Guardar contacto": a provisional customer enters the directory. */
 const saveContactOpen = ref(false);
@@ -660,15 +701,43 @@ function safeUrl(url: string | null): string | null {
                 </p>
             </section>
 
+            <!--
+                «Solicitudes anteriores»: each previous conversation told as
+                the request it was (whose client, where it ended), the latest
+                five first; «Conversación completa» reads them all as one chat.
+            -->
             <section
                 class="grid gap-2.5 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
+                data-previous-requests
             >
-                <h3 class="flex items-center gap-1.5 section-title">
-                    <History class="size-3.5" aria-hidden="true" />
-                    Conversaciones anteriores
-                </h3>
+                <div class="flex items-center justify-between gap-2">
+                    <h3 class="flex items-center gap-1.5 section-title">
+                        <History class="size-3.5" aria-hidden="true" />
+                        Solicitudes anteriores
+                        <span
+                            v-if="previousTotal > 0"
+                            class="font-normal text-muted-foreground tabular-nums"
+                            >({{ previousTotal }})</span
+                        >
+                    </h3>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        class="-mr-2 h-7 shrink-0 rounded-full px-2 text-xs text-primary pointer-coarse:h-10"
+                        title="Ver todos los mensajes del contacto, de todas sus solicitudes, en orden de fecha"
+                        data-open-full-history
+                        @click="openFullHistory"
+                    >
+                        <MessagesSquare aria-hidden="true" />
+                        Conversación completa
+                    </Button>
+                </div>
                 <ul v-if="details.history.length > 0" class="grid gap-1.5">
-                    <li v-for="previous in details.history" :key="previous.id">
+                    <li
+                        v-for="previous in visiblePrevious"
+                        :key="previous.id"
+                        data-previous-request
+                    >
                         <!-- History archived as read-only opens in «Historial de Whaticket». -->
                         <component
                             :is="previous.history_only ? Link : 'button'"
@@ -677,34 +746,63 @@ function safeUrl(url: string | null): string | null {
                                     ? { href: previous.history_url }
                                     : { type: 'button' }
                             "
-                            class="flex w-full items-center justify-between gap-2 rounded-lg border bg-surface-sunken/50 px-2.5 py-2 text-left outline-none hover:border-border-strong hover:bg-card focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
+                            class="grid w-full gap-0.5 rounded-lg border bg-surface-sunken/50 px-2.5 py-2 text-left outline-none hover:border-border-strong hover:bg-card focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
                             @click="
                                 previous.history_only
                                     ? undefined
                                     : emit('select', previous.id)
                             "
                         >
-                            <span class="min-w-0">
-                                <span class="block truncate text-sm">
-                                    {{ formatDate(previous.created_at) }}
-                                    <template v-if="previous.department">
-                                        ·
-                                        {{ previous.department.name }}</template
-                                    >
-                                </span>
+                            <span class="flex min-w-0 items-start gap-2">
                                 <span
-                                    class="block truncate text-xs text-muted-foreground"
+                                    class="min-w-0 flex-1 truncate text-sm font-medium"
+                                    :class="
+                                        !previous.client &&
+                                        'font-normal text-muted-foreground italic'
+                                    "
+                                    :title="requestTitle(previous)"
+                                    >{{ requestTitle(previous) }}</span
                                 >
-                                    {{ previous.assignee ?? 'Sin agente' }}
-                                    <template v-if="previous.origin !== 'live'">
-                                        · {{ previous.origin_label }}</template
-                                    >
-                                </span>
+                                <span
+                                    class="shrink-0 rounded-full border px-1.5 py-px text-[0.6875rem] font-semibold whitespace-nowrap"
+                                    :class="resultClasses(previous.result)"
+                                    :data-result="previous.result.value"
+                                    >{{ resultLabel(previous.result) }}</span
+                                >
                             </span>
-                            <ConversationStatusBadge
-                                :status="previous.status"
-                                :label="previous.status_label"
-                            />
+                            <span
+                                class="block truncate text-xs text-muted-foreground"
+                            >
+                                <time
+                                    :datetime="previous.created_at ?? undefined"
+                                    >{{
+                                        formatDateTime(previous.created_at)
+                                    }}</time
+                                >
+                                <template
+                                    v-for="fact in requestFacts(previous)"
+                                    :key="fact"
+                                >
+                                    · {{ fact }}</template
+                                >
+                            </span>
+                            <span
+                                class="block truncate text-xs text-muted-foreground"
+                            >
+                                {{
+                                    previous.department?.name ??
+                                    'Sin departamento'
+                                }}
+                                ·
+                                {{
+                                    previous.assignee
+                                        ? `Atendió ${previous.assignee}`
+                                        : 'Sin agente'
+                                }}
+                                <template v-if="previous.origin !== 'live'">
+                                    · {{ previous.origin_label }}</template
+                                >
+                            </span>
                         </component>
                     </li>
                 </ul>
@@ -713,7 +811,32 @@ function safeUrl(url: string | null): string | null {
                     class="flex items-center gap-2 text-sm text-muted-foreground"
                 >
                     <History class="size-4 shrink-0" aria-hidden="true" />
-                    Sin conversaciones anteriores
+                    Sin solicitudes anteriores
+                </p>
+                <Button
+                    v-if="details.history.length > PREVIOUS_VISIBLE"
+                    variant="ghost"
+                    size="sm"
+                    class="justify-self-start rounded-full px-2 text-xs pointer-coarse:h-10"
+                    :aria-expanded="showAllPrevious"
+                    data-previous-toggle
+                    @click="showAllPrevious = !showAllPrevious"
+                >
+                    {{
+                        showAllPrevious
+                            ? 'Ver menos'
+                            : `Ver todas (${previousTotal})`
+                    }}
+                </Button>
+                <p
+                    v-if="
+                        showAllPrevious &&
+                        previousTotal > details.history.length
+                    "
+                    class="text-xs text-muted-foreground"
+                >
+                    Se muestran las {{ details.history.length }} más recientes.
+                    Las anteriores están en «Conversación completa».
                 </p>
             </section>
 
@@ -746,6 +869,12 @@ function safeUrl(url: string | null): string | null {
             </section>
         </div>
 
+        <ContactFullHistoryDialog
+            v-if="fullHistoryMounted"
+            v-model:open="fullHistoryOpen"
+            :conversation-id="conversation.id"
+            :contact-name="details.contact.display_name"
+        />
         <MediaViewer
             v-if="photoOpen && photoItems.length > 0"
             v-model:open="photoOpen"

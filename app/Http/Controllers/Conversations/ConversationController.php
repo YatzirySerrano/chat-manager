@@ -28,6 +28,7 @@ use App\Services\Conversations\CustomerServiceWindow;
 use App\Services\Conversations\MissingInformation;
 use App\Services\Conversations\PendingAttention;
 use App\Services\Conversations\QueueRules;
+use App\Services\Conversations\RequestSummary;
 use App\Services\Exports\ReportExporter;
 use App\Services\Personalization\ChatAppearances;
 use App\Services\PlatformSettings;
@@ -76,8 +77,12 @@ class ConversationController extends Controller
      */
     public const LIST_CHUNK_MAX = 500;
 
-    /** Previous conversations of the contact summarized in the panel. */
-    private const CONTACT_HISTORY = 6;
+    /**
+     * Previous conversations of the contact summarized in the panel (it shows
+     * the latest few and «Ver todas» the rest of these; older ones are read
+     * in «Conversación completa»).
+     */
+    private const CONTACT_HISTORY = 25;
 
     public function __construct(private ConversationAccess $access) {}
 
@@ -586,12 +591,15 @@ class ConversationController extends Controller
         $canTag = $actor->can('tag', $conversation);
 
         $contactHistory = app(ContactConversationHistory::class);
-        $history = $contactHistory->query($actor, $contact->id)
-            ->whereKeyNot($conversation->id)
+        $previousQuery = $contactHistory->query($actor, $contact->id)->whereKeyNot($conversation->id);
+        $history = (clone $previousQuery)
             ->with(['department:id,name,color,is_active', 'assignee:id,name'])
             ->latest('id')
             ->limit(self::CONTACT_HISTORY)
             ->get();
+        // «Ver todas (N)»: counted only when the list was cut at its limit.
+        $historyTotal = $history->count() < self::CONTACT_HISTORY ? $history->count() : $previousQuery->count();
+        $requestSummary = app(RequestSummary::class);
 
         return [
             'contact' => [
@@ -616,21 +624,12 @@ class ConversationController extends Controller
             // «Perfil de WhatsApp»: picture, info and business profile (WhatsApp Web only; null without a WhatsApp identity).
             'whatsappProfile' => $this->whatsappProfile($profiles, $conversation, $avatarUrl),
             'origin' => ContactAttributionResource::collection($conversation->attributions()->with('recorder')->orderBy('captured_at')->get())->resolve($request),
+            // «Solicitudes anteriores»: whose request each one was and where it ended (RequestSummary).
             'history' => array_values($history->map(fn (Conversation $previous): array => [
-                'id' => $previous->id,
-                'status' => $previous->status->value,
-                'status_label' => $previous->status->label(),
-                'department' => $previous->department === null ? null : [
-                    'id' => $previous->department->id,
-                    'name' => $previous->department->name,
-                    'color' => $previous->department->color->value,
-                    'is_active' => $previous->department->is_active,
-                ],
-                'assignee' => app(ProtectedAccounts::class)->nameFor($previous->assignee, $actor),
-                'created_at' => $previous->created_at?->toIso8601String(),
-                'closed_at' => $previous->closed_at?->toIso8601String(),
+                ...$requestSummary->of($previous, $actor),
                 ...$contactHistory->describe($previous, $actor),
             ])->all()),
+            'historyTotal' => $historyTotal,
             'contactNotes' => $actor->can('manageNotes', $contact)
                 ? array_values($contact->notes()->with('author:id,name')->latest('id')->limit(3)->get()->map(fn (ContactNote $note): array => [
                     'id' => $note->id,

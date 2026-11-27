@@ -139,6 +139,8 @@ enum AuditAction: string
     case ConversationCategoryChanged = 'conversation.category_changed';
     case ConversationOutcomeRecorded = 'conversation.outcome_recorded';
     case ConversationRequestFieldsChanged = 'conversation.request_fields_changed';
+    case ConversationMarkedNotRequest = 'conversation.marked_not_request';
+    case ConversationNotRequestUndone = 'conversation.not_request_undone';
     case ConversationPermanentlyDeleted = 'conversation.permanently_deleted';
     case ConversationsBulkPurged = 'conversation.bulk_purged';
     case AuditLogPurged = 'audit.purged';
@@ -285,6 +287,8 @@ enum AuditAction: string
             self::ConversationCategoryChanged => 'Categoría de la solicitud cambiada',
             self::ConversationOutcomeRecorded => 'Resultado de la solicitud registrado',
             self::ConversationRequestFieldsChanged => 'Datos de la solicitud actualizados',
+            self::ConversationMarkedNotRequest => 'Conversación marcada como «No es solicitud»',
+            self::ConversationNotRequestUndone => 'Se deshizo «No es solicitud»',
             self::ConversationPermanentlyDeleted => 'Chat eliminado definitivamente',
             self::ConversationsBulkPurged => 'Conversaciones eliminadas en bloque',
             self::AuditLogPurged => 'Registros de auditoría eliminados',

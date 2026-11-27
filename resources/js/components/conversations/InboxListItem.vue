@@ -10,6 +10,7 @@ import {
     Hand,
     Hourglass,
     MailOpen,
+    MessageCircleOff,
     MessageSquareText,
     Tags,
     UserPen,
@@ -23,6 +24,7 @@ import {
 import AcceptanceNotice from '@/components/conversations/AcceptanceNotice.vue';
 import CompletedBadge from '@/components/conversations/CompletedBadge.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
+import { useNotRequest } from '@/components/conversations/useNotRequest';
 import {
     awaitingSince,
     isAwaitingInfo,
@@ -232,6 +234,38 @@ const canConfirm = computed(
     () => awaitingInfo.value && props.conversation.can.confirm_ready,
 );
 const accepting = computed(() => props.acceptingId === props.conversation.id);
+/* Closed as «No es solicitud»: its neutral badge replaces «Cerrada». */
+const notRequest = computed(
+    () =>
+        props.conversation.status === 'closed' &&
+        Boolean(props.conversation.not_request_at),
+);
+/*
+ * «No es solicitud» next to «Aceptar» on a request waiting in the queue
+ * (no need to take it first); for any other row, in the row menu.
+ */
+const { markingId, markNotRequest } = useNotRequest();
+const canMarkNotRequest = computed(() =>
+    Boolean(props.conversation.can.mark_not_request),
+);
+const quickNotRequest = computed(
+    () => canMarkNotRequest.value && pending.value && !awaitingInfo.value,
+);
+/* Room on the right of the row for its bottom actions. */
+const bottomActionsPadding = computed(() => {
+    if ((canAccept.value || canConfirm.value) && quickNotRequest.value) {
+        return 'pr-[8.5rem]';
+    }
+
+    if (canAccept.value || canConfirm.value) {
+        return 'pr-[6.25rem]';
+    }
+
+    return quickNotRequest.value ? 'pr-11' : '';
+});
+const hasBottomActions = computed(
+    () => canAccept.value || canConfirm.value || quickNotRequest.value,
+);
 const connectionPhone = computed(() =>
     props.conversation.connection.phone
         ? formatPhone(props.conversation.connection.phone)
@@ -283,7 +317,9 @@ const label = computed(() => {
                 displayName.value,
                 completed.value
                     ? 'cerrada como solicitud completada'
-                    : props.conversation.status_label,
+                    : notRequest.value
+                      ? 'cerrada como «No es solicitud»'
+                      : props.conversation.status_label,
             ];
 
     if (hasAlias.value && contact.value.name) {
@@ -500,11 +536,7 @@ const label = computed(() => {
                             visibleTags.length > 0
                         "
                         class="mt-1 flex min-w-0 items-center gap-x-2.5 overflow-hidden text-[0.6875rem] leading-4 whitespace-nowrap text-muted-foreground"
-                        :class="
-                            (canAccept || canConfirm) &&
-                            !operationalLine &&
-                            'pr-[6.25rem]'
-                        "
+                        :class="!operationalLine && bottomActionsPadding"
                     >
                         <!-- Response objective (SLA) of the request in course. -->
                         <SlaBadge
@@ -537,6 +569,19 @@ const label = computed(() => {
                                 aria-hidden="true"
                             />
                             {{ conversation.status_label }}
+                        </span>
+                        <!-- «No es solicitud»: neutral, outside the reports. -->
+                        <span
+                            v-else-if="notRequest"
+                            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-px font-medium text-muted-foreground ring-1 ring-border"
+                            title="Cerrada como «No es solicitud»: no cuenta en los reportes"
+                            data-inbox-not-request
+                        >
+                            <MessageCircleOff
+                                class="size-3 shrink-0"
+                                aria-hidden="true"
+                            />
+                            No es solicitud
                         </span>
                         <CompletedBadge
                             v-else-if="completed"
@@ -654,8 +699,8 @@ const label = computed(() => {
                         v-if="operationalLine"
                         class="mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden text-[0.6875rem] leading-4 whitespace-nowrap text-muted-foreground"
                         :class="[
-                            (canAccept || canConfirm) &&
-                                'min-h-7 pr-[6.25rem] pointer-coarse:min-h-10',
+                            hasBottomActions &&
+                                `min-h-7 ${bottomActionsPadding} pointer-coarse:min-h-10`,
                             conversation.connection.state !== 'active' &&
                                 'italic',
                         ]"
@@ -708,7 +753,7 @@ const label = computed(() => {
                         </template>
                     </span>
                     <span
-                        v-else-if="canAccept || canConfirm"
+                        v-else-if="hasBottomActions"
                         class="block min-h-7 pointer-coarse:min-h-10"
                         aria-hidden="true"
                     />
@@ -807,6 +852,17 @@ const label = computed(() => {
                                 Marcar que necesita información
                             </DropdownMenuItem>
                         </template>
+                        <template v-if="canMarkNotRequest">
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                :disabled="markingId !== null"
+                                data-inbox-not-request-menu
+                                @select="markNotRequest(conversation)"
+                            >
+                                <MessageCircleOff aria-hidden="true" />
+                                No es solicitud
+                            </DropdownMenuItem>
+                        </template>
                         <template v-if="conversation.can.tag || canEditAlias">
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -828,8 +884,27 @@ const label = computed(() => {
                 </DropdownMenu>
             </div>
 
-            <span v-if="canAccept" class="absolute right-2.5 bottom-2">
+            <span
+                v-if="canAccept || quickNotRequest"
+                class="absolute right-2.5 bottom-2 flex items-center gap-1"
+            >
+                <!-- «No es solicitud»: a «gracias» or an emoji closes without taking it. -->
                 <Button
+                    v-if="quickNotRequest"
+                    variant="outline"
+                    size="icon-sm"
+                    class="size-7 rounded-md text-muted-foreground hover:text-foreground pointer-coarse:size-10 [&_svg]:size-3.5"
+                    :disabled="markingId !== null || acceptingId !== null"
+                    :loading="markingId === conversation.id"
+                    :aria-label="`No es solicitud: cerrar la conversación de ${displayName} sin enviarle nada`"
+                    title="No es solicitud: se cierra sin enviar nada al cliente y no cuenta en los reportes"
+                    data-inbox-not-request-quick
+                    @click="markNotRequest(conversation)"
+                >
+                    <MessageCircleOff aria-hidden="true" />
+                </Button>
+                <Button
+                    v-if="canAccept"
                     size="sm"
                     class="h-7 gap-1 rounded-md px-2.5 text-xs pointer-coarse:h-10 [&_svg]:size-3.5"
                     :disabled="acceptingId !== null || acceptBlocked"

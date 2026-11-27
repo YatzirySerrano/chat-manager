@@ -7,8 +7,16 @@ export type ResolvedAppearance = 'light' | 'dark';
 export type FlashToast = {
     type: 'success' | 'info' | 'warning' | 'error';
     message: string;
-    /** Optional link shown as the toast action (e.g. "Ver exportaciones"). */
-    action?: { label: string; href: string };
+    /**
+     * Optional link shown as the toast action (e.g. "Ver exportaciones"), or
+     * an operation sent with its method and data (e.g. «Deshacer»).
+     */
+    action?: {
+        label: string;
+        href: string;
+        method?: 'get' | 'post' | 'put' | 'delete';
+        data?: Record<string, string | number | boolean | null>;
+    };
 };
 
 /**

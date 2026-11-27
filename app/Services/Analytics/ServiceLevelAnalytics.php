@@ -47,6 +47,8 @@ use Illuminate\Support\Facades\DB;
  * (`exceeded_business_seconds`, `exceeded_calendar_seconds`) and never
  * together. A cycle whose overrun is unknown (null) is in neither.
  *
+ * Cycles of conversations closed as «No es solicitud» are left out (cycles()).
+ *
  * Cycles only exist since the release that introduced them: history is not
  * reconstructed, so `available_since` tells from when the figures are real.
  *
@@ -218,7 +220,13 @@ class ServiceLevelAnalytics
     {
         $query = DB::table('response_cycles')
             ->where('started_at', '>=', $filters->period->fromUtc())
-            ->where('started_at', '<', $filters->period->toUtc());
+            ->where('started_at', '<', $filters->period->toUtc())
+            // A conversation closed as «No es solicitud» was never a request to answer.
+            ->whereNotExists(fn (Builder $notRequest) => $notRequest
+                ->selectRaw('1')
+                ->from('conversations')
+                ->whereColumn('conversations.id', 'response_cycles.conversation_id')
+                ->whereNotNull('conversations.not_request_at'));
         $owner = DB::raw('('.self::OWNER.')');
 
         if ($ownerFilter) {

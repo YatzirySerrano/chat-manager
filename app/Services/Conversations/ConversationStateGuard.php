@@ -2,6 +2,7 @@
 
 namespace App\Services\Conversations;
 
+use App\Actions\Conversations\UndoNotRequest;
 use App\Enums\ConversationConflict;
 use App\Enums\ConversationStatus;
 use App\Enums\Permission;
@@ -52,6 +53,21 @@ class ConversationStateGuard
                 $this->manages($actor) || $this->isResponsible($actor, $conversation) => null,
                 default => $this->responsibleConflict($actor, $conversation),
             },
+            // «No es solicitud»: straight from the queue (nobody needs to take
+            // it first, whatever the queue rules say), or by whoever could
+            // close it while someone attends it.
+            'markNotRequest' => match (true) {
+                $closed => ConversationConflict::Closed,
+                $conversation->status === ConversationStatus::Pending && $conversation->assigned_user_id === null => null,
+                $this->manages($actor) || $this->isResponsible($actor, $conversation) => null,
+                default => $this->responsibleConflict($actor, $conversation),
+            },
+            // «Deshacer»: only while it is still closed as «No es solicitud»
+            // and within the short window right after marking it.
+            'undoNotRequest' => $closed && $conversation->not_request_at !== null
+                && $conversation->not_request_at->greaterThan(now()->subMinutes(UndoNotRequest::WINDOW_MINUTES))
+                ? null
+                : ConversationConflict::StateChanged,
             'reopen' => $closed ? null : ConversationConflict::StateChanged,
             // Intervening covers free replies only: templates (which Meta may
             // charge) stay with the responsible agent.
@@ -137,7 +153,7 @@ class ConversationStateGuard
         return match ($ability) {
             'reply' => ! $this->intervenes($actor),
             'sendTemplate' => true,
-            'transfer', 'close', 'release', 'tag' => ! $this->manages($actor),
+            'transfer', 'close', 'release', 'tag', 'markNotRequest' => ! $this->manages($actor),
             'categorize' => ! $this->managesRequests($actor),
             default => false,
         };

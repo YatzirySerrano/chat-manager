@@ -45,6 +45,8 @@ class SignalVisitorSessions implements ShouldQueue
         ConversationEventType::ChatbotRouted,
         ConversationEventType::Closed,
         ConversationEventType::Reopened,
+        ConversationEventType::NotRequest,
+        ConversationEventType::NotRequestUndone,
     ];
 
     /** Sessions signalled per change (several tabs and devices). */

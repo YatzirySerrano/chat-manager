@@ -55,7 +55,7 @@ class RealtimeSignals
      *
      * @var list<string>
      */
-    private const LEAVES_QUEUE = ['accepted', 'assigned', 'auto_assigned', 'transferred', 'closed'];
+    private const LEAVES_QUEUE = ['accepted', 'assigned', 'auto_assigned', 'transferred', 'closed', 'not_request'];
 
     /**
      * Changes that only matter inside the conversation (its timeline), not

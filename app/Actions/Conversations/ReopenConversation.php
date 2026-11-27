@@ -73,6 +73,9 @@ class ReopenConversation
                 'outcome_amount' => null,
                 'outcome_at' => null,
                 'outcome_by_user_id' => null,
+                // Reopened by hand, a «No es solicitud» is a request again (back in the metrics).
+                'not_request_at' => null,
+                'not_request_by_user_id' => null,
                 'reopened_at' => now(),
                 'reopen_count' => $conversation->reopen_count + 1,
             ],

@@ -18,7 +18,8 @@ use Illuminate\Support\Facades\DB;
  * conversation, its append-only events and its messages). The row is always
  * rebuilt as a whole, so applying it twice, late or out of order gives the
  * same result: it is idempotent and coherent with the source by
- * construction.
+ * construction. Imported history and conversations closed as «No es
+ * solicitud» have no row at all (nor per-person rows).
  *
  * Definitions (calendar time, in seconds):
  * - first attention: creation → first human attention: an agent accepts it,
@@ -91,8 +92,10 @@ class ConversationMetricsCalculator
     {
         $conversation = Conversation::query()->find($conversationId);
 
-        // Imported history (Whaticket) is outside every metric: any row is removed.
-        if ($conversation === null || $conversation->created_at === null || $conversation->isImported()) {
+        // Imported history (Whaticket) and conversations closed as «No es
+        // solicitud» are outside every metric: any row is removed (an undo
+        // or a manual reopening brings it back on the next recomputation).
+        if ($conversation === null || $conversation->created_at === null || $conversation->isImported() || $conversation->isNotRequest()) {
             ConversationMetric::query()->where('conversation_id', $conversationId)->delete();
             $this->attribution->forget($conversationId);
 

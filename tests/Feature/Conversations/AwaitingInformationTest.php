@@ -307,3 +307,34 @@ test('the backfill stamps the requests a person already returned, and only them'
         ->and($attended->fresh()->awaiting_info_at)->toBeNull()
         ->and(DB::table('conversations')->whereNotNull('awaiting_info_at')->count())->toBe(1);
 });
+
+test('«Pendientes» opens oldest arrival first and pages in that order; the one that came back goes to the bottom', function () {
+    $returned = returnedForInformation($this, '5215500000009');
+    $this->travel(1)->minutes();
+    $older = Conversation::factory()->inDepartment($this->department)->create(['queued_at' => now(), 'last_message_at' => now()->addMinutes(30)]);
+    $this->travel(2)->minutes();
+    $newer = Conversation::factory()->inDepartment($this->department)->create(['queued_at' => now(), 'last_message_at' => now()]);
+    $this->travel(5)->minutes();
+
+    // The customer sends what was missing: it re-enters with the time of that message.
+    awaitingInbound($this->connection, '5215500000009');
+
+    // Default order of «Pendientes» (no sort asked): order of arrival, not latest activity.
+    expect(awaitingListed($this, $this->agent, ['status' => 'pending']))->toBe([$older->id, $newer->id, $returned->id]);
+
+    $ids = [];
+    $after = null;
+
+    do {
+        $page = $this->actingAs($this->agent)
+            ->getJson(route('conversations.page', ['status' => 'pending', 'limit' => 1, ...($after === null ? [] : ['after' => $after])]))
+            ->json();
+        $ids = [...$ids, ...array_column($page['data'], 'id')];
+        $after = $page['next_cursor'];
+    } while ($page['has_more']);
+
+    expect($ids)->toBe([$older->id, $newer->id, $returned->id]);
+
+    // Asked explicitly, the newest arrival can still go on top.
+    expect(awaitingListed($this, $this->agent, ['status' => 'pending', 'sort' => 'recent']))->toBe([$returned->id, $newer->id, $older->id]);
+});

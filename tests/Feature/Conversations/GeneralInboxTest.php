@@ -132,7 +132,7 @@ test('the counters come from a single aggregate query', function () {
     expect($queries)->toHaveCount(1);
 });
 
-test('the general inbox lists the newest requests first by default, and its cursor reaches every row once', function () {
+test('the general inbox lists the newest requests first in «Todas», and its cursor reaches every row once', function () {
     $same = now()->subHour();
     Conversation::factory()->count(3)->inDepartment($this->sales)->assignedTo($this->agent)->create(['last_message_at' => $same]);
     Conversation::factory()->count(2)->inDepartment($this->sales)->create(['last_message_at' => $same]);
@@ -154,7 +154,9 @@ test('the general inbox lists the newest requests first by default, and its curs
 
     expect($expected)->toHaveCount(8)
         ->and($listed)->toBe($expected)
-        ->and($this->actingAs($this->agent)->get(route('conversations.index'))->viewData('page')['props']['filters']['sort'])->toBe('recent')
+        // The inbox opens on «Pendientes», in order of arrival (oldest on top).
+        ->and($this->actingAs($this->agent)->get(route('conversations.index'))->viewData('page')['props']['filters']['sort'])->toBe('oldest')
+        ->and($this->actingAs($this->agent)->get(route('conversations.index', ['status' => 'active']))->viewData('page')['props']['filters']['sort'])->toBe('recent')
         ->and($this->actingAs($this->agent)->get(route('conversations.index', ['view' => 'mine']))->viewData('page')['props']['filters']['sort'])->toBe('oldest');
 });
 

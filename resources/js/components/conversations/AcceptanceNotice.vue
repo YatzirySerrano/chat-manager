@@ -30,6 +30,13 @@ const props = defineProps<{
     conversation: ConversationSummary;
     /** Id of the element, referenced by the button's aria-describedby. */
     id: string;
+    /**
+     * In a list row: the chronological order reads «Espera su turno» (the
+     * list itself is in order of arrival, the one to take is on top), with
+     * the full explanation as its title, instead of repeating the same long
+     * sentence on every row.
+     */
+    compact?: boolean;
 }>();
 
 const actions = inject(QUEUE_ACTIONS, noQueueActions);
@@ -41,6 +48,10 @@ const shown = computed(
         view.value.blocked &&
         view.value.code !== 'pending_attention' &&
         view.value.code !== 'not_permitted',
+);
+
+const compactTurn = computed(
+    () => props.compact === true && view.value.code === 'queue_order',
 );
 
 const icon = computed(
@@ -73,13 +84,22 @@ const icon = computed(
                     view.countdown
                 }}</span>
             </span>
+            <span
+                v-else-if="compactTurn"
+                class="text-foreground"
+                :title="view.text ?? undefined"
+                data-acceptance-compact
+                >Espera su turno: primero van las de arriba</span
+            >
             <span v-else class="text-foreground">{{ view.text }}</span>
         </p>
         <div
             v-if="
-                view.blockingId !== null ||
-                view.overridable ||
-                (view.code === 'needs_info' && conversation.can.confirm_ready)
+                !compactTurn &&
+                (view.blockingId !== null ||
+                    view.overridable ||
+                    (view.code === 'needs_info' &&
+                        conversation.can.confirm_ready))
             "
             class="flex flex-wrap gap-1.5"
         >

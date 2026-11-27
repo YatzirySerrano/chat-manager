@@ -181,6 +181,9 @@ class ConversationInboxQuery
      */
     public const STATUS_AWAITING_INFO = 'awaiting_info';
 
+    /** SQL of the queue clock of a row (QueueRules::CLOCK), the order of «Pendientes». */
+    private const QUEUE_CLOCK = 'COALESCE(conversations.queued_at, conversations.created_at)';
+
     /**
      * A request waiting for the customer's missing information: pending,
      * without agent, «Necesita información» and stamped by the person who
@@ -280,7 +283,7 @@ class ConversationInboxQuery
             'search_in' => ($validated['search_in'] ?? null) === self::SEARCH_MESSAGES ? self::SEARCH_MESSAGES : self::SEARCH_CONTACT,
             'tags' => $this->tagIds($validated),
             'tag_match' => ($validated['tag_match'] ?? null) === self::TAG_MATCH_ALL ? self::TAG_MATCH_ALL : self::TAG_MATCH_ANY,
-            'sort' => in_array($validated['sort'] ?? null, [self::SORT_PRIORITY, self::SORT_RECENT, self::SORT_OLDEST], true) ? (string) $validated['sort'] : self::defaultSort($view),
+            'sort' => in_array($validated['sort'] ?? null, [self::SORT_PRIORITY, self::SORT_RECENT, self::SORT_OLDEST], true) ? (string) $validated['sort'] : self::defaultSort($view, $status),
             'unread' => filter_var($validated['unread'] ?? false, FILTER_VALIDATE_BOOL),
             'awaiting' => filter_var($validated['awaiting'] ?? false, FILTER_VALIDATE_BOOL),
             'channel' => $channel instanceof ConnectionChannel ? $channel->value : (is_string($channel) && ConnectionChannel::tryFrom($channel) !== null ? $channel : null),
@@ -296,11 +299,15 @@ class ConversationInboxQuery
     /**
      * The order a view opens with: the newest request on top, except in
      * "mine", where each agent works their own ones oldest first (the one
-     * waiting the longest is the next to finish).
+     * waiting the longest is the next to finish), and in «Pendientes» and
+     * «Esperando información», where the request that arrived first is on
+     * top and the newer ones go below it (orderColumn()).
      */
-    public static function defaultSort(string $view): string
+    public static function defaultSort(string $view, ?string $status = null): string
     {
-        return $view === self::VIEW_MINE ? self::SORT_OLDEST : self::SORT_RECENT;
+        return $view === self::VIEW_MINE || in_array($status, [ConversationStatus::Pending->value, self::STATUS_AWAITING_INFO], true)
+            ? self::SORT_OLDEST
+            : self::SORT_RECENT;
     }
 
     /**
@@ -487,18 +494,28 @@ class ConversationInboxQuery
             ->when($status === self::STATUS_AWAITING_INFO, fn (Builder $query) => $query->whereRaw(self::AWAITING_INFO_SQL))
             ->when(! in_array($status, ['active', 'all', self::STATUS_COMPLETED, self::STATUS_AWAITING_INFO, ConversationStatus::Pending->value], true), fn (Builder $query) => $query->where('conversations.status', $status))
             ->when($sort === self::SORT_PRIORITY, fn (Builder $query) => $query->orderByRaw(self::PRIORITY_RANK))
-            ->when($sort === self::SORT_OLDEST, fn (Builder $query) => $query->orderBy($column)->orderBy('conversations.id'))
-            ->when($sort !== self::SORT_OLDEST, fn (Builder $query) => $query->orderByDesc($column)->orderByDesc('conversations.id'));
+            ->when($sort === self::SORT_OLDEST, fn (Builder $query) => $query->orderByRaw($column)->orderBy('conversations.id'))
+            ->when($sort !== self::SORT_OLDEST, fn (Builder $query) => $query->orderByRaw($column.' DESC')->orderByDesc('conversations.id'));
     }
 
     /**
-     * The moment the list is ordered (and paged) by: the latest activity, or,
-     * in «Esperando información», since when the request waits for the
-     * customer (never null there).
+     * The moment the list is ordered (and paged) by, as SQL: the latest
+     * activity; in «Esperando información», since when the request waits for
+     * the customer; in «Pendientes», the queue clock (QueueRules::CLOCK: when
+     * the request entered the queue, never null), so the order of the list
+     * is the order of arrival and a request that came back from «Esperando
+     * información» takes its place behind the ones already waiting. The
+     * customer writing again in a waiting request never moves it up.
+     *
+     * @return literal-string
      */
     private static function orderColumn(?string $status): string
     {
-        return $status === self::STATUS_AWAITING_INFO ? 'conversations.awaiting_info_at' : 'conversations.last_message_at';
+        return match ($status) {
+            self::STATUS_AWAITING_INFO => 'conversations.awaiting_info_at',
+            ConversationStatus::Pending->value => self::QUEUE_CLOCK,
+            default => 'conversations.last_message_at',
+        };
     }
 
     /**
@@ -518,18 +535,18 @@ class ConversationInboxQuery
 
         if ($sort === self::SORT_OLDEST) {
             return $query->where(fn (Builder $after) => $at === null
-                ? $after->where(fn (Builder $same) => $same->whereNull($column)->where('conversations.id', '>', $id))
-                    ->orWhereNotNull($column)
-                : $after->where($column, '>', $at)
-                    ->orWhere(fn (Builder $same) => $same->where($column, $at)->where('conversations.id', '>', $id)));
+                ? $after->where(fn (Builder $same) => $same->whereRaw("{$column} IS NULL")->where('conversations.id', '>', $id))
+                    ->orWhereRaw("{$column} IS NOT NULL")
+                : $after->whereRaw("{$column} > ?", [$at])
+                    ->orWhere(fn (Builder $same) => $same->whereRaw("{$column} = ?", [$at])->where('conversations.id', '>', $id)));
         }
 
         $laterInTime = fn (Builder $after) => $at === null
-            ? $after->whereNull($column)->where('conversations.id', '<', $id)
+            ? $after->whereRaw("{$column} IS NULL")->where('conversations.id', '<', $id)
             : $after->where(fn (Builder $older) => $older
-                ->where($column, '<', $at)
-                ->orWhere(fn (Builder $same) => $same->where($column, $at)->where('conversations.id', '<', $id))
-                ->orWhereNull($column));
+                ->whereRaw("{$column} < ?", [$at])
+                ->orWhere(fn (Builder $same) => $same->whereRaw("{$column} = ?", [$at])->where('conversations.id', '<', $id))
+                ->orWhereRaw("{$column} IS NULL"));
 
         if ($sort === self::SORT_RECENT) {
             return $query->where($laterInTime);
@@ -549,7 +566,12 @@ class ConversationInboxQuery
      */
     public function cursorFor(Conversation $row, ?string $status = null): array
     {
-        $at = $row->getRawOriginal($status === self::STATUS_AWAITING_INFO ? 'awaiting_info_at' : 'last_message_at');
+        $at = match ($status) {
+            self::STATUS_AWAITING_INFO => $row->getRawOriginal('awaiting_info_at'),
+            // The queue clock (QUEUE_CLOCK), as stored.
+            ConversationStatus::Pending->value => $row->getRawOriginal('queued_at') ?? $row->getRawOriginal('created_at'),
+            default => $row->getRawOriginal('last_message_at'),
+        };
 
         return [
             'rank' => $row->status === ConversationStatus::OnHold ? 2 : (int) array_search($row->status->value, self::PRIORITY, true) + 1,

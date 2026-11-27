@@ -204,10 +204,16 @@ const isGeneral = computed(() => baseView.value === 'general');
 /*
  * The order each view opens with (ConversationInboxQuery::defaultSort()):
  * the newest request on top, except in «Mías», where each agent works their
- * own ones oldest first.
+ * own ones oldest first, and in «Pendientes» and «Esperando información»,
+ * where the request that arrived first is on top (order of arrival).
  */
-function defaultSort(view: InboxView): ConversationSort {
-    return view === 'mine' ? 'oldest' : 'recent';
+function defaultSort(
+    view: InboxView,
+    status?: InboxFilterState['status'],
+): ConversationSort {
+    return view === 'mine' || status === 'pending' || status === 'awaiting_info'
+        ? 'oldest'
+        : 'recent';
 }
 const hasMine = computed(() => props.inbox.views.includes('mine'));
 const channels = computed(() => props.filterOptions.channels);
@@ -467,13 +473,13 @@ function chooseTab(tab: InboxTab): void {
         pending: {
             view: baseView.value,
             status: 'pending',
-            sort: defaultSort(baseView.value),
+            sort: defaultSort(baseView.value, 'pending'),
         },
         // The one waiting the longest for the customer first.
         awaiting: {
             view: baseView.value,
             status: 'awaiting_info',
-            sort: 'oldest',
+            sort: defaultSort(baseView.value, 'awaiting_info'),
         },
         attending: { view: 'all', status: 'open', sort: defaultSort('all') },
         // Their own requests, the one waiting the longest first.
@@ -658,11 +664,12 @@ function chipsOf(filters: InboxFilterState): ActiveFilterPill[] {
         });
     }
 
-    if (filters.sort !== defaultSort(filters.view)) {
+    if (filters.sort !== defaultSort(filters.view, filters.status)) {
         chips.push({
             key: 'sort',
             label: `Orden: ${sortOptions.find((option) => option.value === filters.sort)?.label ?? filters.sort}`,
-            remove: () => (filters.sort = defaultSort(filters.view)),
+            remove: () =>
+                (filters.sort = defaultSort(filters.view, filters.status)),
         });
     }
 
@@ -751,7 +758,7 @@ function query(): Record<string, string | string[]> {
         }
     }
 
-    if (state.sort !== defaultSort(state.view)) {
+    if (state.sort !== defaultSort(state.view, state.status)) {
         result.sort = state.sort;
     }
 
@@ -878,7 +885,7 @@ function defaults(): InboxFilterState {
         channel: ALL,
         tags: [],
         tagMatch: 'any',
-        sort: defaultSort(defaultView.value),
+        sort: defaultSort(defaultView.value, 'pending'),
         searchIn: 'contact',
         unread: false,
         awaiting: false,

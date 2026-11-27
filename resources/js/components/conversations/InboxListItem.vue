@@ -142,11 +142,20 @@ const awaitingTitle = computed(() =>
         ? `Esperando información del cliente desde ${awaitingSince(props.conversation.awaiting_info_at)}`
         : '',
 );
-/* The row's time: since when it waits for the customer, or its latest activity. */
+/*
+ * The row's time: since when it waits for the customer; for a request
+ * waiting in «Pendientes», when it entered the queue (the order of the
+ * list, the latest arrival at the bottom); otherwise its latest activity.
+ */
+const queuedSince = computed(() =>
+    props.conversation.status === 'pending' && !props.conversation.assignee
+        ? (props.conversation.queued_at ?? null)
+        : null,
+);
 const rowTime = computed(() =>
     awaitingInfo.value
         ? (props.conversation.awaiting_info_at ?? null)
-        : props.conversation.last_message_at,
+        : (queuedSince.value ?? props.conversation.last_message_at),
 );
 /* «Lista» only where the confirmation rule applies; «Necesita información» always. */
 const showReadiness = computed(
@@ -416,7 +425,9 @@ const label = computed(() => {
                             :title="
                                 awaitingInfo
                                     ? awaitingTitle
-                                    : formatDateTime(rowTime)
+                                    : queuedSince
+                                      ? `En «Pendientes» desde ${formatDateTime(queuedSince)}`
+                                      : formatDateTime(rowTime)
                             "
                             :data-inbox-awaiting-time="
                                 awaitingInfo || undefined
@@ -530,7 +541,6 @@ const label = computed(() => {
                         <CompletedBadge
                             v-else-if="completed"
                             :at="conversation.completed_at"
-                            :outcome="conversation.outcome"
                             class="shrink-0"
                         />
                         <span
@@ -866,6 +876,7 @@ const label = computed(() => {
             v-if="pending && !awaitingInfo"
             :id="acceptanceId"
             :conversation="conversation"
+            compact
             class="relative -mt-0.5 pr-3 pb-2.5 pl-[3.5rem]"
         />
     </div>

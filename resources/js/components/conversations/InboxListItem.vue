@@ -541,6 +541,7 @@ const label = computed(() => {
                         <CompletedBadge
                             v-else-if="completed"
                             :at="conversation.completed_at"
+                            :outcome="conversation.outcome"
                             class="shrink-0"
                         />
                         <span

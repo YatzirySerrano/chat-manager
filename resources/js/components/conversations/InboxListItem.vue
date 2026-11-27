@@ -6,6 +6,7 @@ import {
     CircleHelp,
     EllipsisVertical,
     Eye,
+    FileClock,
     Hand,
     Hourglass,
     MailOpen,
@@ -23,6 +24,8 @@ import AcceptanceNotice from '@/components/conversations/AcceptanceNotice.vue';
 import CompletedBadge from '@/components/conversations/CompletedBadge.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
 import {
+    awaitingSince,
+    isAwaitingInfo,
     noQueueActions,
     QUEUE_ACTIONS,
     useAcceptance,
@@ -75,6 +78,12 @@ import type { AppColor, ConversationSummary } from '@/types';
  * take first, what can be done), and that text describes the disabled
  * «Aceptar». The readiness actions live in the row menu for whoever may.
  *
+ * «Esperando información del cliente» (returned for missing information):
+ * the row says so with its own badge and the time since it waits, instead
+ * of «Pendiente», the readiness and the queue-rule notice; it offers no
+ * «Aceptar» (nobody takes it while it waits) and, for whoever may, a
+ * prominent «Completa» that confirms it complete.
+ *
  * Holding the row on a touch screen, right clicking it or «Vista previa» in
  * its menu shows the latest messages without opening it (`preview`): the
  * read state does not change.
@@ -126,11 +135,25 @@ const acceptBlocked = computed(
 );
 const acceptanceId = computed(() => `acceptance-${props.conversation.id}`);
 const readiness = computed(() => props.conversation.readiness ?? null);
+/* Returned for missing information: waits for the customer, outside «Pendientes». */
+const awaitingInfo = computed(() => isAwaitingInfo(props.conversation));
+const awaitingTitle = computed(() =>
+    awaitingInfo.value
+        ? `Esperando información del cliente desde ${awaitingSince(props.conversation.awaiting_info_at)}`
+        : '',
+);
+/* The row's time: since when it waits for the customer, or its latest activity. */
+const rowTime = computed(() =>
+    awaitingInfo.value
+        ? (props.conversation.awaiting_info_at ?? null)
+        : props.conversation.last_message_at,
+);
 /* «Lista» only where the confirmation rule applies; «Necesita información» always. */
 const showReadiness = computed(
     () =>
         readiness.value !== null &&
         props.conversation.status !== 'closed' &&
+        !awaitingInfo.value &&
         (readiness.value.value === 'needs_info' ||
             (readiness.value.tracked &&
                 props.conversation.status === 'pending')),
@@ -191,7 +214,14 @@ const visibleTags = computed(() => (props.conversation.tags ?? []).slice(0, 2));
 const hiddenTags = computed(
     () => (props.conversation.tags?.length ?? 0) - visibleTags.value.length,
 );
-const canAccept = computed(() => props.conversation.can.accept);
+/* Nobody takes a request while it waits for the customer's information. */
+const canAccept = computed(
+    () => props.conversation.can.accept && !awaitingInfo.value,
+);
+/* «Completa»: confirms a waiting request complete, right from the row. */
+const canConfirm = computed(
+    () => awaitingInfo.value && props.conversation.can.confirm_ready,
+);
 const accepting = computed(() => props.acceptingId === props.conversation.id);
 const connectionPhone = computed(() =>
     props.conversation.connection.phone
@@ -236,14 +266,16 @@ const statusDot = computed(
 
 const label = computed(() => {
     // Whoever may accept it hears it first: the status is part of the prefix.
-    const parts = canAccept.value
-        ? [`Pendiente de aceptar: ${displayName.value}`]
-        : [
-              displayName.value,
-              completed.value
-                  ? 'cerrada como solicitud completada'
-                  : props.conversation.status_label,
-          ];
+    const parts = awaitingInfo.value
+        ? [`Esperando información del cliente: ${displayName.value}`]
+        : canAccept.value
+          ? [`Pendiente de aceptar: ${displayName.value}`]
+          : [
+                displayName.value,
+                completed.value
+                    ? 'cerrada como solicitud completada'
+                    : props.conversation.status_label,
+            ];
 
     if (hasAlias.value && contact.value.name) {
         parts.push(`alias personal de ${contact.value.name}`);
@@ -300,7 +332,11 @@ const label = computed(() => {
         );
     }
 
-    if (props.conversation.last_message_at) {
+    if (awaitingInfo.value) {
+        parts.push(
+            `desde ${awaitingSince(props.conversation.awaiting_info_at)}`,
+        );
+    } else if (props.conversation.last_message_at) {
         parts.push(listTime(props.conversation.last_message_at));
     }
 
@@ -367,18 +403,25 @@ const label = computed(() => {
                             </span>
                         </span>
                         <time
-                            v-if="conversation.last_message_at"
+                            v-if="rowTime"
                             class="list-time shrink-0 text-[0.6875rem] tabular-nums"
                             :class="
-                                unread > 0
-                                    ? 'font-semibold text-primary'
-                                    : 'text-muted-foreground'
+                                awaitingInfo
+                                    ? 'font-medium text-warning-soft-foreground'
+                                    : unread > 0
+                                      ? 'font-semibold text-primary'
+                                      : 'text-muted-foreground'
                             "
-                            :datetime="conversation.last_message_at"
+                            :datetime="rowTime"
                             :title="
-                                formatDateTime(conversation.last_message_at)
+                                awaitingInfo
+                                    ? awaitingTitle
+                                    : formatDateTime(rowTime)
                             "
-                            >{{ listTime(conversation.last_message_at) }}</time
+                            :data-inbox-awaiting-time="
+                                awaitingInfo || undefined
+                            "
+                            >{{ listTime(rowTime) }}</time
                         >
                     </span>
 
@@ -446,7 +489,11 @@ const label = computed(() => {
                             visibleTags.length > 0
                         "
                         class="mt-1 flex min-w-0 items-center gap-x-2.5 overflow-hidden text-[0.6875rem] leading-4 whitespace-nowrap text-muted-foreground"
-                        :class="canAccept && !operationalLine && 'pr-[6.25rem]'"
+                        :class="
+                            (canAccept || canConfirm) &&
+                            !operationalLine &&
+                            'pr-[6.25rem]'
+                        "
                     >
                         <!-- Response objective (SLA) of the request in course. -->
                         <SlaBadge
@@ -455,9 +502,22 @@ const label = computed(() => {
                             variant="compact"
                             class="shrink-0"
                         />
+                        <!-- Waiting for the customer's information: its own state. -->
+                        <span
+                            v-if="awaitingInfo"
+                            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-soft px-1.5 py-px font-semibold text-warning-soft-foreground ring-1 ring-warning/35"
+                            :title="awaitingTitle"
+                            data-inbox-awaiting-info
+                        >
+                            <FileClock
+                                class="size-3 shrink-0"
+                                aria-hidden="true"
+                            />
+                            Esperando información
+                        </span>
                         <!-- Pending: text and icon, never color alone. -->
                         <span
-                            v-if="pending"
+                            v-else-if="pending"
                             class="inline-flex shrink-0 items-center gap-1 font-semibold text-warning-soft-foreground"
                             data-inbox-pending
                         >
@@ -470,6 +530,7 @@ const label = computed(() => {
                         <CompletedBadge
                             v-else-if="completed"
                             :at="conversation.completed_at"
+                            :outcome="conversation.outcome"
                             class="shrink-0"
                         />
                         <span
@@ -582,7 +643,7 @@ const label = computed(() => {
                         v-if="operationalLine"
                         class="mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden text-[0.6875rem] leading-4 whitespace-nowrap text-muted-foreground"
                         :class="[
-                            canAccept &&
+                            (canAccept || canConfirm) &&
                                 'min-h-7 pr-[6.25rem] pointer-coarse:min-h-10',
                             conversation.connection.state !== 'active' &&
                                 'italic',
@@ -636,7 +697,7 @@ const label = computed(() => {
                         </template>
                     </span>
                     <span
-                        v-else-if="canAccept"
+                        v-else-if="canAccept || canConfirm"
                         class="block min-h-7 pointer-coarse:min-h-10"
                         aria-hidden="true"
                     />
@@ -709,6 +770,7 @@ const label = computed(() => {
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                                 v-if="readiness.value === 'needs_info'"
+                                class="font-medium text-success focus:bg-success-soft focus:text-success-soft-foreground [&_svg]:text-success!"
                                 data-readiness-confirm
                                 @select="
                                     queueActions.readiness(
@@ -784,10 +846,24 @@ const label = computed(() => {
                     Aceptar
                 </Button>
             </span>
+            <!-- «Completa»: the waiting request is confirmed complete from the row. -->
+            <span v-if="canConfirm" class="absolute right-2.5 bottom-2">
+                <button
+                    type="button"
+                    class="inline-flex h-7 items-center gap-1 rounded-md bg-success px-2.5 text-xs font-semibold text-background shadow-(--shadow-control) transition-[box-shadow,filter,scale] duration-(--duration-base) outline-none hover:shadow-(--shadow-lift) hover:brightness-110 focus-visible:ring-[3px] focus-visible:ring-success/45 active:scale-95 pointer-coarse:h-10 [&_svg]:size-3.5"
+                    :aria-label="`Confirmar completa la solicitud de ${displayName}`"
+                    title="El cliente ya envió lo que faltaba: la solicitud regresa a «Pendientes» como nueva"
+                    data-inbox-confirm-ready
+                    @click="queueActions.readiness(conversation, 'ready')"
+                >
+                    <CircleCheck aria-hidden="true" />
+                    Completa
+                </button>
+            </span>
         </div>
         <!-- Why it cannot be taken yet, in text (describes «Aceptar»). -->
         <AcceptanceNotice
-            v-if="pending"
+            v-if="pending && !awaitingInfo"
             :id="acceptanceId"
             :conversation="conversation"
             class="relative -mt-0.5 pr-3 pb-2.5 pl-[3.5rem]"

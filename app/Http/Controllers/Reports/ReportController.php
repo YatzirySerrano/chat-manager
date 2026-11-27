@@ -9,6 +9,7 @@ use App\Services\Analytics\AnalyticsFilters;
 use App\Services\Analytics\AnalyticsPeriod;
 use App\Services\Analytics\AnalyticsScope;
 use App\Services\Analytics\OperationalAnalytics;
+use App\Services\Analytics\RequestOutcomes;
 use App\Services\Exports\ReportExporter;
 use App\Services\PlatformSettings;
 use Illuminate\Http\Request;
@@ -40,7 +41,7 @@ class ReportController extends Controller
      * values outside the viewer's reach are dropped (never applied nor
      * echoed back).
      */
-    public function index(Request $request, OperationalAnalytics $analytics, AnalyticsScope $scope, PlatformSettings $settings, ReportExporter $exporter): Response
+    public function index(Request $request, OperationalAnalytics $analytics, AnalyticsScope $scope, PlatformSettings $settings, ReportExporter $exporter, RequestOutcomes $outcomes): Response
     {
         /** @var User $user */
         $user = $request->user();
@@ -70,9 +71,12 @@ class ReportController extends Controller
                 'statuses' => AnalyticsFilters::statusOptions(),
             ],
             'analytics' => Inertia::defer(fn () => $analytics->report($user, $filters)),
+            // «Resultados» (credit results of the completed requests): only computed when that view asks for it.
+            'outcomes' => Inertia::optional(fn () => $outcomes->report($user, $filters)),
             'canExport' => $exporter->allowsReport('analytics', $user),
             'canExportProductivity' => $exporter->allowsReport('agent-productivity', $user),
             'canExportSla' => $exporter->allowsReport('sla-compliance', $user),
+            'canExportOutcomes' => $exporter->allowsReport('request-outcomes', $user),
         ]);
     }
 }

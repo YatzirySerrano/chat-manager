@@ -6,16 +6,18 @@ use App\Actions\Conversations\CloseConversation;
 use App\Actions\Conversations\ContinueImportedConversation;
 use App\Actions\Conversations\ReopenConversation;
 use App\Enums\ConnectionChannel;
+use App\Http\Requests\Conversations\CloseConversationRequest;
 use App\Http\Requests\Conversations\ConversationOperationRequest;
 use App\Models\Conversation;
 use App\Models\User;
 use App\Services\Messaging\ConnectionModality;
+use App\Support\OutcomeText;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 
 class ConversationStatusController extends ConversationOperationController
 {
-    public function close(ConversationOperationRequest $request, Conversation $conversation, CloseConversation $close): RedirectResponse
+    public function close(CloseConversationRequest $request, Conversation $conversation, CloseConversation $close): RedirectResponse
     {
         $this->ensureVisible($conversation);
 
@@ -23,10 +25,13 @@ class ConversationStatusController extends ConversationOperationController
         // «Completar sin despedida»: the connection's farewell is skipped.
         $farewell = $request->boolean('farewell', true);
 
-        $close->handle($conversation, $request->user(), $request->reason(), $request->version(), $completed, $farewell);
+        // Optional credit result («Crédito aprobado» / «Rechazada»), completion only.
+        $outcome = $completed ? $request->outcome() : null;
+
+        $close->handle($conversation, $request->user(), $request->reason(), $request->version(), $completed, $farewell, $outcome, $request->outcomeAmount());
 
         return $this->done($conversation, $request->user(), ($completed
-            ? 'Solicitud completada. Si el cliente vuelve a escribir, entrará como solicitud nueva a «Pendientes».'
+            ? 'Solicitud completada'.($outcome === null ? '' : ' · '.OutcomeText::of($conversation->refresh())).'. Si el cliente vuelve a escribir, entrará como solicitud nueva a «Pendientes».'
             : 'Conversación cerrada. Su historial se conserva.').($farewell ? '' : ' No se envió mensaje de despedida.'));
     }
 

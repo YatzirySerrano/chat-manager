@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Actions\Conversations\ResumeAwaitingInformation;
 use App\Enums\ConnectionProvider;
 use App\Enums\ConversationReadiness;
 use App\Enums\ConversationStatus;
@@ -15,6 +16,7 @@ use App\Services\WhatsAppWeb\WhatsAppWebContactProfiles;
 use App\Support\Features;
 use App\Support\Personalization\ViewerAlias;
 use App\Support\ProtectedAccounts;
+use App\Support\RequestFields\RequestFieldCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Str;
@@ -98,6 +100,13 @@ class ConversationResource extends JsonResource
             'closed_at' => $this->closed_at?->toIso8601String(),
             // Closed as «Solicitud completada».
             'completed_at' => $this->completed_at?->toIso8601String(),
+            // Credit result of a completed request (null without one): «Crédito aprobado» with its amount, or «Rechazada».
+            'outcome' => $this->completed_at !== null && $this->outcome !== null ? [
+                'value' => $this->outcome->value,
+                'label' => $this->outcome->label(),
+                'amount' => $this->outcome_amount,
+                'at' => $this->outcome_at?->toIso8601String(),
+            ] : null,
             'reopen_count' => $this->reopen_count,
             'created_at' => $this->created_at?->toIso8601String(),
             // Request type (kept as history when the category was deleted).
@@ -107,6 +116,8 @@ class ConversationResource extends JsonResource
                 'color' => $this->category->color->value,
                 'is_active' => $this->category->is_active,
             ]),
+            // «Datos de la solicitud» taken from the messages: list of {key, label, value, message_id, captured_at}.
+            'request_fields' => RequestFieldCatalog::fromStored($this->request_fields),
             // Preparation state, independent of the status: it only restrains the queue where the confirmation rule applies.
             // `tracked`: the confirmation rule applies to it right now, or a person marked it as needing information (otherwise the state is only informative).
             'readiness' => [
@@ -118,6 +129,11 @@ class ConversationResource extends JsonResource
             // When it entered the ready queue: clock of the minimum wait and of the chronological order.
             // Masked while phase two is off (still written and used for the distribution order).
             'queued_at' => Features::phaseTwo() ? $this->queued_at?->toIso8601String() : null,
+            // «Esperando información del cliente»: since when a request returned for missing information waits
+            // for the customer, outside «Pendientes» (ResumeAwaitingInformation); null otherwise.
+            'awaiting_info_at' => Features::phaseTwo() && ResumeAwaitingInformation::applies($this->resource) && app(QueueRules::class)->inQueue($this->resource)
+                ? $this->awaiting_info_at?->toIso8601String()
+                : null,
             // Pending rows only: whether the viewer can take it now and, if not, why (QueueRules::acceptance()).
             'acceptance' => app(QueueRules::class)->acceptance($this->resource, $viewer, $viewer?->can('accept', $this->resource) ?? false),
             'messages_count' => $this->whenCounted('messages'),
@@ -154,6 +170,8 @@ class ConversationResource extends JsonResource
                 'confirm_ready' => $viewer->can('confirmReadiness', $this->resource),
                 'override_queue_rules' => $viewer->can('overrideQueueRules', $this->resource),
                 'categorize' => $viewer->can('categorize', $this->resource),
+                // Record or correct the credit result of the completed request.
+                'record_outcome' => $viewer->can('recordOutcome', $this->resource),
                 // Irreversible, reserved to the root authority (permanent-deletion.conversations).
                 'delete_permanently' => $viewer->can('deletePermanently', $this->resource),
             ],

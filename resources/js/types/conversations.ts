@@ -21,7 +21,9 @@ export type ConversationStatusFilter =
     | 'active'
     | 'all'
     /** Closed as «Solicitud completada» (completed_at set). */
-    | 'completed';
+    | 'completed'
+    /** «Esperando información del cliente»: returned for missing information, outside «Pendientes». */
+    | 'awaiting_info';
 
 /** Operations the viewer may perform, resolved by the server's policy. */
 export type ConversationAbilities = {
@@ -46,8 +48,45 @@ export type ConversationAbilities = {
     override_queue_rules: boolean;
     /** May set or clear the request category. */
     categorize: boolean;
+    /** May record or correct the credit result of the completed request. */
+    record_outcome?: boolean;
     /** May erase the chat for good (permanent-deletion.conversations, Superadministrador). */
     delete_permanently?: boolean;
+};
+
+/**
+ * One «Dato de la solicitud» (Cliente, Producto, Monto solicitado...) kept
+ * on the conversation. `key` comes from the label (known labels have a
+ * fixed one); `message_id` is the message it was taken from, if any.
+ */
+export type ConversationRequestField = {
+    key: string;
+    label: string;
+    value: string;
+    message_id: number | null;
+    captured_at: string | null;
+};
+
+/** Credit result of a request: only an approval commissions. */
+export type ConversationOutcomeValue = 'approved' | 'rejected';
+
+/** The result recorded on a completed request; `amount` is a decimal string («3000.00»). */
+export type ConversationOutcome = {
+    value: ConversationOutcomeValue;
+    label: string;
+    amount: string | null;
+    at: string | null;
+};
+
+/** What the completion dialog pre-selects, read from the conversation. */
+export type ConversationOutcomeSuggestion = {
+    outcome: ConversationOutcomeValue;
+    label: string;
+    amount: string | null;
+    /** A reply written by the team, or the captured «Monto autorizado». */
+    source: 'message' | 'request_fields';
+    /** First line of the reply it was read from. */
+    excerpt: string | null;
 };
 
 /** Request category (type). `is_active` false: deleted, kept as history. */
@@ -128,10 +167,14 @@ export type ConversationSummary = {
     closed_at: string | null;
     /** Closed as «Solicitud completada»: a new message enters «Pendientes». */
     completed_at?: string | null;
+    /** Credit result of the completed request (null without one). */
+    outcome?: ConversationOutcome | null;
     reopen_count: number;
     created_at: string | null;
     /** Request type; shown to every viewer. */
     category?: ConversationCategoryRef | null;
+    /** «Datos de la solicitud» taken from the messages (empty when none). */
+    request_fields?: ConversationRequestField[];
     readiness?: {
         value: ConversationReadinessValue;
         label: string;
@@ -140,6 +183,10 @@ export type ConversationSummary = {
     };
     /** When it entered the ready queue (clock of the minimum wait and the order). */
     queued_at?: string | null;
+    /** «Esperando información del cliente»: since when it waits for the customer, outside «Pendientes»; null otherwise. */
+    awaiting_info_at?: string | null;
+    /** What the customer was asked for (open conversation only). */
+    awaiting_info_missing?: string[];
     /** Pending, unassigned rows only; null otherwise. */
     acceptance?: ConversationAcceptance | null;
     tags?: TagOption[];
@@ -226,6 +273,8 @@ export type InboxCounts = {
     mine: number;
     pending: number;
     attending: number;
+    /** «Esperando información»: requests returned for missing information. */
+    awaiting_info?: number;
 };
 
 /** How several tags of the filter combine: any of them (OR) or all (AND). */
@@ -521,6 +570,8 @@ export type ConversationEvent = {
     queue_override?: { rules: string[]; reason: string | null } | null;
     /** Category change: names as they were when it happened. */
     category?: { from: string | null; to: string | null } | null;
+    /** Credit result recorded with a completion or corrected («Crédito aprobado por $3,000»). */
+    outcome?: string | null;
     created_at: string;
 };
 

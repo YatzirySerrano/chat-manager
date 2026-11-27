@@ -22,7 +22,14 @@ import SlaBadge from '@/components/sla/SlaBadge.vue';
 import CategoryBadge from '@/components/categories/CategoryBadge.vue';
 import TagBadge from '@/components/tags/TagBadge.vue';
 import AcceptanceNotice from '@/components/conversations/AcceptanceNotice.vue';
+import AwaitingInfoNotice from '@/components/conversations/AwaitingInfoNotice.vue';
+import { isAwaitingInfo } from '@/components/conversations/queueRules';
 import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
+import RequestFieldsStrip from '@/components/conversations/RequestFieldsStrip.vue';
+import {
+    capturedMessageIds,
+    provideRequestCapture,
+} from '@/components/conversations/requestFields';
 import TemplatePickerDialog from '@/components/conversations/TemplatePickerDialog.vue';
 import { useConversationTimeline } from '@/components/conversations/useConversationTimeline';
 import { reportMessageStatus } from '@/components/conversations/useInboxMessageStatus';
@@ -95,6 +102,8 @@ const timeline = useConversationTimeline(
     toRef(props, 'timeline'),
 );
 const replyTo = ref<ConversationMessage | null>(null);
+/* «Esperando información del cliente»: its own notice replaces the queue rule's. */
+const awaitingInfo = computed(() => isAwaitingInfo(props.conversation));
 const templatesOpen = ref(false);
 
 watch(conversationId, () => {
@@ -386,6 +395,21 @@ const paneStyle = computed(() =>
  * rules exactly as a file chosen with the clip.
  */
 const composerRef = ref<InstanceType<typeof ChatComposer> | null>(null);
+
+/*
+ * «Tomar datos de la solicitud» on a message bubble opens the capture
+ * dialog of the «Datos de la solicitud» strip under the header.
+ */
+const requestFieldsStrip = ref<InstanceType<typeof RequestFieldsStrip> | null>(
+    null,
+);
+provideRequestCapture({
+    enabled: computed(() => props.conversation.can.categorize === true),
+    capturedMessageIds: computed(() =>
+        capturedMessageIds(props.conversation.request_fields),
+    ),
+    capture: (message) => requestFieldsStrip.value?.capture(message),
+});
 const dragDepth = ref(0);
 const dropActive = computed(() => dragDepth.value > 0);
 const dropAllowed = computed(() => composerRef.value?.acceptsFiles ?? false);
@@ -613,6 +637,7 @@ watch(conversationId, () => (dragDepth.value = 0));
                         />
                         <ReadinessBadge
                             v-if="
+                                !awaitingInfo &&
                                 conversation.readiness &&
                                 conversation.status !== 'closed' &&
                                 (conversation.readiness.value ===
@@ -724,12 +749,28 @@ watch(conversationId, () => (dragDepth.value = 0));
                 </Button>
             </header>
 
+            <!-- Returned for missing information: one clear notice, never the queue rule repeated. -->
+            <div
+                v-if="awaitingInfo"
+                class="border-t border-border/60 px-3 py-2 sm:px-4"
+            >
+                <AwaitingInfoNotice
+                    :id="`acceptance-chat-${conversation.id}`"
+                    :conversation="conversation"
+                />
+            </div>
             <!-- Why this pending request cannot be taken yet (describes «Aceptar»). -->
             <AcceptanceNotice
-                v-if="conversation.status === 'pending'"
+                v-else-if="conversation.status === 'pending'"
                 :id="`acceptance-chat-${conversation.id}`"
                 :conversation="conversation"
                 class="border-t border-border/60 px-3 py-2 sm:px-4"
+            />
+
+            <!-- «Datos de la solicitud»: one line of chips, only when there are some. -->
+            <RequestFieldsStrip
+                ref="requestFieldsStrip"
+                :conversation="conversation"
             />
         </div>
 

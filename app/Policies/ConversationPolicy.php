@@ -3,6 +3,7 @@
 namespace App\Policies;
 
 use App\Enums\ConnectionChannel;
+use App\Enums\ConversationStatus;
 use App\Enums\Permission;
 use App\Models\Connection;
 use App\Models\Conversation;
@@ -82,6 +83,36 @@ class ConversationPolicy
     public function close(User $actor, Conversation $conversation): bool
     {
         return $this->permits($actor, 'close', $conversation) && $this->state->allows($actor, 'close', $conversation);
+    }
+
+    /**
+     * Recording or correcting the credit result of a completed request
+     * («Crédito aprobado» / «Rechazada»): permitsOutcome() and a request that
+     * is still completed (closed as «Solicitud completada»).
+     */
+    public function recordOutcome(User $actor, Conversation $conversation): bool
+    {
+        return $conversation->status === ConversationStatus::Closed
+            && $conversation->completed_at !== null
+            && $this->permitsOutcome($actor, $conversation);
+    }
+
+    /**
+     * Permission and reach of the result, whatever the state (a refusal is a
+     * 403): the closing permission, and being who completed it (while they
+     * can still see it) or managing the conversation (assigning or
+     * supervising it within the operational reach). Imported history has no
+     * result.
+     */
+    public function permitsOutcome(User $actor, Conversation $conversation): bool
+    {
+        if ($conversation->isImported() || ! $actor->holdsPermission(Permission::CloseConversations) || ! $this->view($actor, $conversation)) {
+            return false;
+        }
+
+        return ($conversation->closed_by_user_id !== null && $conversation->closed_by_user_id === $actor->id)
+            || (($actor->holdsPermission(Permission::AssignConversations) || $actor->holdsPermission(Permission::SuperviseConversations))
+                && $this->operates($actor, $conversation));
     }
 
     public function reopen(User $actor, Conversation $conversation): bool

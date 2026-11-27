@@ -305,3 +305,38 @@ export type AgentProductivity = {
     };
     workload: AgentWorkload;
 };
+
+/** Figures of a group of completed requests («Resultados de solicitudes»). */
+export type RequestOutcomeFigures = {
+    /** Completed («Solicitud completada»): attended. */
+    completed: number;
+    /** «Crédito aprobado»: the only result that commissions. */
+    approved: number;
+    rejected: number;
+    /** Completed without a recorded result. */
+    without: number;
+    /** Approved over the requests with a result, in percent (null without any). */
+    approval_rate: number | null;
+    /** Authorized amount of the approvals, in pesos. */
+    amount: number;
+    /** Approvals that have an amount (the base of the average). */
+    with_amount: number;
+    average_amount: number | null;
+};
+
+export type RequestOutcomeRow = RequestOutcomeFigures & {
+    /** Null for a protected account or a missing person/department. */
+    id: number | null;
+    name: string;
+};
+
+export type RequestOutcomesReport = {
+    totals: RequestOutcomeFigures;
+    /** Who completed each request, most authorized amount first. */
+    by_agent: RequestOutcomeRow[];
+    by_department: RequestOutcomeRow[];
+    trend: {
+        granularity: AnalyticsGranularity;
+        points: (RequestOutcomeFigures & { key: string; label: string })[];
+    };
+};

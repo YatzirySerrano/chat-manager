@@ -137,6 +137,8 @@ enum AuditAction: string
     case ConversationReadinessReverted = 'conversation.readiness_reverted';
     case ConversationQueueRulesOverridden = 'conversation.queue_rules_overridden';
     case ConversationCategoryChanged = 'conversation.category_changed';
+    case ConversationOutcomeRecorded = 'conversation.outcome_recorded';
+    case ConversationRequestFieldsChanged = 'conversation.request_fields_changed';
     case ConversationPermanentlyDeleted = 'conversation.permanently_deleted';
     case ConversationsBulkPurged = 'conversation.bulk_purged';
     case AuditLogPurged = 'audit.purged';
@@ -281,6 +283,8 @@ enum AuditAction: string
             self::ConversationReadinessReverted => 'Solicitud devuelta a «Necesita información»',
             self::ConversationQueueRulesOverridden => 'Excepción a las reglas de la cola',
             self::ConversationCategoryChanged => 'Categoría de la solicitud cambiada',
+            self::ConversationOutcomeRecorded => 'Resultado de la solicitud registrado',
+            self::ConversationRequestFieldsChanged => 'Datos de la solicitud actualizados',
             self::ConversationPermanentlyDeleted => 'Chat eliminado definitivamente',
             self::ConversationsBulkPurged => 'Conversaciones eliminadas en bloque',
             self::AuditLogPurged => 'Registros de auditoría eliminados',

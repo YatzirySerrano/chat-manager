@@ -3,6 +3,7 @@ import { Deferred, Head, router } from '@inertiajs/vue3';
 import type { LucideIcon } from '@lucide/vue';
 import {
     ArrowLeftRight,
+    BadgeCheck,
     CheckCircle2,
     CircleCheck,
     Clock3,
@@ -51,6 +52,7 @@ import InsightTabs from '@/components/reports/InsightTabs.vue';
 import KpiCard from '@/components/reports/KpiCard.vue';
 import KpiSkeleton from '@/components/reports/KpiSkeleton.vue';
 import ProductivityTable from '@/components/reports/ProductivityTable.vue';
+import RequestOutcomesView from '@/components/reports/RequestOutcomesView.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import {
@@ -76,6 +78,7 @@ import type {
     AnalyticsRange,
     AnalyticsSla,
     OperationalAnalytics,
+    RequestOutcomesReport,
 } from '@/types';
 
 defineOptions({
@@ -96,6 +99,9 @@ const props = defineProps<{
     canExport: boolean;
     canExportProductivity?: boolean;
     canExportSla?: boolean;
+    /** «Resultados» (credit results): only loaded when that view is open. */
+    outcomes?: RequestOutcomesReport;
+    canExportOutcomes?: boolean;
 }>();
 
 const { can } = usePermissions();
@@ -121,8 +127,24 @@ function applyFilters(query: AnalyticsQuery): void {
         preserveState: true,
         preserveScroll: true,
         replace: true,
-        only: ['filters', 'period', 'invalidFilters', 'analytics'],
+        only: [
+            'filters',
+            'period',
+            'invalidFilters',
+            'analytics',
+            // Once loaded they follow the filters (never stale when their view opens again).
+            ...(view.value === 'resultados' || props.outcomes !== undefined
+                ? ['outcomes']
+                : []),
+        ],
     });
+}
+
+/* The credit results are computed on demand: the first time their view opens. */
+function loadOutcomes(): void {
+    if (props.outcomes === undefined) {
+        router.reload({ only: ['outcomes'] });
+    }
 }
 
 function changeGranularity(granularity: AnalyticsGranularity): void {
@@ -133,6 +155,7 @@ function changeGranularity(granularity: AnalyticsGranularity): void {
 
 const allViews = [
     { key: 'resumen', label: 'Resumen', icon: LayoutDashboard },
+    { key: 'resultados', label: 'Resultados', icon: BadgeCheck },
     { key: 'productividad', label: 'Productividad', icon: UsersRound },
     { key: 'sla', label: 'Cumplimiento de SLA', icon: ShieldCheck },
     { key: 'desgloses', label: 'Desgloses', icon: ListTree },
@@ -158,6 +181,10 @@ const view = ref<ViewKey>('resumen');
 function selectView(key: ViewKey): void {
     view.value = key;
 
+    if (key === 'resultados') {
+        loadOutcomes();
+    }
+
     if (typeof window !== 'undefined') {
         window.history.replaceState(
             window.history.state,
@@ -173,10 +200,20 @@ onMounted(() => {
 
     if (match) {
         view.value = match.key;
+
+        if (match.key === 'resultados') {
+            loadOutcomes();
+        }
     }
 });
 
 const exportTarget = computed(() => {
+    if (view.value === 'resultados') {
+        return props.canExportOutcomes
+            ? { report: 'request-outcomes', label: 'Exportar resultados' }
+            : null;
+    }
+
     if (view.value === 'productividad' && props.canExportProductivity) {
         return {
             report: 'agent-productivity',
@@ -689,7 +726,39 @@ const loadingCards = [
             @select="selectView"
         />
 
-        <Deferred data="analytics">
+        <!-- ============================== Resultados (loaded on demand) -->
+        <div
+            v-if="view === 'resultados'"
+            id="reports-panel-resultados"
+            role="tabpanel"
+            aria-labelledby="reports-tab-resultados"
+            class="flex flex-col gap-(--section-gap) transition-opacity"
+            :class="{ 'opacity-60': loading || !outcomes }"
+            :aria-busy="loading || !outcomes"
+            data-reports-outcomes
+        >
+            <RequestOutcomesView
+                v-if="outcomes"
+                :outcomes="outcomes"
+                :period="period"
+                :scope="scope"
+                @granularity="changeGranularity"
+            />
+            <div
+                v-else
+                class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+                role="status"
+                aria-label="Cargando resultados"
+            >
+                <KpiSkeleton
+                    v-for="index in 4"
+                    :key="index"
+                    :index="index - 1"
+                />
+            </div>
+        </div>
+
+        <Deferred v-else data="analytics">
             <template #fallback>
                 <div
                     class="flex flex-col gap-(--section-gap)"

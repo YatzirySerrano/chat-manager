@@ -48,6 +48,11 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $readiness_changed_at
  * @property int|null $readiness_changed_by_user_id
  * @property Carbon|null $queued_at When it entered the queue it waits in (clock of the minimum wait and the chronological order).
+ * @property ConversationOutcome|null $outcome Credit result of a completed request (only an approval commissions).
+ * @property string|null $outcome_amount Authorized amount of an approved request (decimal 12,2).
+ * @property Carbon|null $outcome_at When the result was recorded (date of the result in the reports).
+ * @property int|null $outcome_by_user_id Who recorded the result.
+ * @property Carbon|null $awaiting_info_at Since when a request returned for missing information waits for the customer, outside «Pendientes» (ResumeAwaitingInformation).
  * @property int|null $open_response_cycle_id The open response cycle; kept and read only by ResponseClock, under the row lock.
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at

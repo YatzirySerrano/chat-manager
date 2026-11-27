@@ -24,6 +24,17 @@ const triggers: Record<string, string> = {
     access_change: 'por un cambio en el acceso del agente',
 };
 
+/*
+ * «Esperando información del cliente» ended by the customer's message: the
+ * request came back to «Pendientes» by itself (ResumeAwaitingInformation).
+ * Its label says it all, so the stored note is not repeated.
+ */
+const customerInfo = computed(
+    () =>
+        props.event.type === 'readiness_confirmed' &&
+        props.event.trigger === 'customer_info',
+);
+
 /* An unconfirmed delivery is not a "message not sent": it may have arrived. */
 const deliveryUnknown = computed(() => props.event.reason === DELIVERY_UNKNOWN);
 
@@ -31,9 +42,15 @@ const deliveryUnknown = computed(() => props.event.reason === DELIVERY_UNKNOWN);
 const systemActor = computed(() =>
     props.event.type === 'chatbot_routed' ? 'Chatbot' : 'Sistema',
 );
-const label = computed(() =>
-    deliveryUnknown.value ? deliveryUnknownLabel : props.event.label,
-);
+const label = computed(() => {
+    if (deliveryUnknown.value) {
+        return deliveryUnknownLabel;
+    }
+
+    return customerInfo.value
+        ? 'El cliente envió más información: la solicitud regresó a «Pendientes» como nueva'
+        : props.event.label;
+});
 
 const detail = computed(() => {
     const parts: string[] = [];
@@ -83,6 +100,11 @@ const detail = computed(() => {
         );
     }
 
+    // Credit result recorded with the completion or corrected afterwards.
+    if (event.outcome) {
+        parts.push(event.outcome);
+    }
+
     // A justified exception to the queue rules made with this operation.
     if (event.queue_override) {
         const rules = event.queue_override.rules
@@ -130,7 +152,9 @@ const detail = computed(() => {
                 label
             }}</span>
             <span v-if="detail">· {{ detail }}</span>
-            <span v-if="event.note" class="min-w-0 wrap-anywhere"
+            <span
+                v-if="event.note && !customerInfo"
+                class="min-w-0 wrap-anywhere"
                 >· «{{ event.note }}»</span
             >
             <span v-if="!(event.actor && event.action) || deliveryUnknown"

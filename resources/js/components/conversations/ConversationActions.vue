@@ -23,6 +23,7 @@ import {
 import ConversationReasonDialog from '@/components/conversations/ConversationReasonDialog.vue';
 import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import {
+    isAwaitingInfo,
     noQueueActions,
     QUEUE_ACTIONS,
     useAcceptance,
@@ -58,6 +59,9 @@ import type { ConversationSummary, TransferOptions } from '@/types';
 const ConversationRouteDialog = defineAsyncComponent(
     () => import('@/components/conversations/ConversationRouteDialog.vue'),
 );
+const CompleteRequestDialog = defineAsyncComponent(
+    () => import('@/components/conversations/CompleteRequestDialog.vue'),
+);
 
 /**
  * Operations of the engine on the open conversation (accept, assign,
@@ -92,6 +96,7 @@ function closeDialogsForConflict(message: string): void {
     errors.value = {};
     reasonDialog.value = null;
     routeDialog.value = null;
+    completeDialogOpen.value = false;
     toast.error(message);
 }
 
@@ -332,6 +337,8 @@ type Action = {
     hint?: string;
     /** Id of the visible text that explains why it is disabled. */
     describedBy?: string;
+    /** «Confirmar solicitud completa»: success tone, to stand out. */
+    success?: boolean;
 };
 
 /* Disabled with the reason while customers wait too long for the viewer. */
@@ -339,11 +346,33 @@ const acceptBlock = inject(ACCEPT_BLOCK, noAcceptBlock);
 const queueActions = inject(QUEUE_ACTIONS, noQueueActions);
 const acceptance = useAcceptance(() => props.conversation);
 
+/*
+ * «Esperando información del cliente»: nobody takes it while it waits for
+ * the customer, so a disabled «Aceptar» is not offered (the notice under the
+ * header explains it); the main step is confirming it complete.
+ */
+const awaitingInfo = computed(() => isAwaitingInfo(props.conversation));
+const confirmAsPrimary = computed(
+    () => awaitingInfo.value && can.value.confirm_ready,
+);
+
 /** The main next step, shown as a button. */
 const primary = computed<Action[]>(() => {
     const actions: Action[] = [];
 
-    if (can.value.accept) {
+    if (confirmAsPrimary.value) {
+        actions.push({
+            key: 'readiness',
+            label: 'Confirmar solicitud completa',
+            icon: CircleCheck,
+            hint: 'El cliente ya envió lo que faltaba: la solicitud regresa a «Pendientes» como nueva',
+            success: true,
+            describedBy: `acceptance-chat-${id.value}`,
+            run: () => queueActions.readiness(props.conversation, 'ready'),
+        });
+    }
+
+    if (can.value.accept && !awaitingInfo.value) {
         const blocked =
             acceptBlock.value?.blocked === true || acceptance.value.blocked;
 
@@ -389,12 +418,30 @@ const completeAsButton = computed(
 );
 
 /**
- * Direct, with no comment: the request is done and leaves the list. With a
- * farewell configured on the connection, «Sin despedida» skips it.
+ * No comment to write: the dialog only asks for the credit result
+ * («Crédito aprobado» with its amount, «Rechazada», or none), already
+ * pre-selected from the conversation, and Enter completes it. The request
+ * is done and leaves the list. With a farewell configured on the
+ * connection, «Sin despedida» skips it.
  */
+const completeDialogOpen = ref(false);
+const completeFarewell = ref(true);
+
 function openCompleted(farewell = true): void {
     errors.value = {};
-    operate(close.url(id.value), { completed: true, farewell });
+    completeFarewell.value = farewell;
+    completeDialogOpen.value = true;
+}
+
+function confirmCompleted(payload: {
+    outcome: string | null;
+    outcome_amount: string | null;
+}): void {
+    operate(
+        close.url(id.value),
+        { completed: true, farewell: completeFarewell.value, ...payload },
+        () => (completeDialogOpen.value = false),
+    );
 }
 
 const offersSilentComplete = computed(
@@ -428,7 +475,11 @@ const secondary = computed<Action[]>(() => {
         });
     }
 
-    if (can.value.confirm_ready && props.conversation.readiness) {
+    if (
+        can.value.confirm_ready &&
+        props.conversation.readiness &&
+        !confirmAsPrimary.value
+    ) {
         const needsInfo = props.conversation.readiness.value === 'needs_info';
 
         actions.push({
@@ -437,6 +488,7 @@ const secondary = computed<Action[]>(() => {
                 ? 'Confirmar solicitud completa'
                 : 'Marcar que necesita información',
             icon: needsInfo ? CircleCheck : CircleHelp,
+            success: needsInfo,
             run: () =>
                 queueActions.readiness(
                     props.conversation,
@@ -518,6 +570,10 @@ const secondary = computed<Action[]>(() => {
             :key="action.key"
             size="sm"
             class="h-9 rounded-full px-3.5 pointer-coarse:h-11"
+            :class="
+                action.success &&
+                'bg-success font-semibold text-background hover:bg-success hover:brightness-110 focus-visible:ring-success/45 active:not-disabled:bg-success'
+            "
             :disabled="processing || action.disabled"
             :aria-describedby="action.describedBy"
             :data-conversation-action="action.key"
@@ -608,7 +664,7 @@ const secondary = computed<Action[]>(() => {
                         "
                         class="pointer-coarse:min-h-11"
                         :class="
-                            action.key === 'complete' &&
+                            (action.key === 'complete' || action.success) &&
                             'text-success focus:bg-success-soft focus:text-success-soft-foreground [&_svg]:text-success!'
                         "
                         :data-conversation-action="action.key"
@@ -643,6 +699,21 @@ const secondary = computed<Action[]>(() => {
             :processing="processing"
             :error="errors.reason ?? errors.conversation"
             @confirm="confirmReason"
+        />
+
+        <CompleteRequestDialog
+            v-if="can.close"
+            v-model:open="completeDialogOpen"
+            mode="complete"
+            :conversation-id="conversation.id"
+            :farewell="
+                completeFarewell && Boolean(conversation.connection.farewell)
+            "
+            :processing="processing"
+            :error="
+                errors.outcome_amount ?? errors.outcome ?? errors.conversation
+            "
+            @confirm="confirmCompleted"
         />
 
         <ConversationRouteDialog

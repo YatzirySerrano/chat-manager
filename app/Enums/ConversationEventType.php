@@ -29,6 +29,8 @@ enum ConversationEventType: string
     case SlaBreached = 'sla_breached';
     case ChatbotRouted = 'chatbot_routed';
     case AiHandoff = 'ai_handoff';
+    /** The result of a completed request was recorded or corrected afterwards. */
+    case OutcomeRecorded = 'outcome_recorded';
 
     public function label(): string
     {
@@ -54,6 +56,7 @@ enum ConversationEventType: string
             self::SlaBreached => 'Objetivo de respuesta incumplido',
             self::ChatbotRouted => 'Enviada por el chatbot',
             self::AiHandoff => 'La IA la pasó a un asesor',
+            self::OutcomeRecorded => 'Resultado de la solicitud registrado',
         };
     }
 
@@ -80,6 +83,7 @@ enum ConversationEventType: string
             self::ReadinessConfirmed => 'confirmó la solicitud como completa',
             self::ReadinessReverted => 'marcó la solicitud como «Necesita información»',
             self::CategoryChanged => 'cambió la categoría',
+            self::OutcomeRecorded => 'registró el resultado de la solicitud',
             self::AutoAssigned, self::OutboundBlocked, self::MessageFailed, self::SlaBreached, self::ChatbotRouted, self::AiHandoff => null,
         };
     }

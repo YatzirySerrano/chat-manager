@@ -27,6 +27,7 @@ import SlaBadge from '@/components/sla/SlaBadge.vue';
 import CustomerWindowIndicator from '@/components/conversations/CustomerWindowIndicator.vue';
 import CategoryBadge from '@/components/categories/CategoryBadge.vue';
 import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
+import RequestOutcomeCard from '@/components/conversations/RequestOutcomeCard.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
 import TagPicker from '@/components/tags/TagPicker.vue';
@@ -42,6 +43,7 @@ import {
     save as saveContact,
 } from '@/routes/conversations/contact';
 import { update as updateCategory } from '@/routes/conversations/category';
+import RequestFieldsSection from '@/components/conversations/RequestFieldsSection.vue';
 import { update as updateTags } from '@/routes/conversations/tags';
 import type {
     ConversationCategoryRef,
@@ -575,6 +577,8 @@ function safeUrl(url: string | null): string | null {
                         >
                     </p>
                 </div>
+                <!-- Credit result of the completed request (record or correct it). -->
+                <RequestOutcomeCard :conversation="conversation" />
                 <div
                     v-if="
                         conversation.readiness &&
@@ -606,6 +610,9 @@ function safeUrl(url: string | null): string | null {
                     />
                 </div>
             </section>
+
+            <!-- «Datos de la solicitud» taken from the messages. -->
+            <RequestFieldsSection :conversation="conversation" />
 
             <section
                 class="grid gap-2.5 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"

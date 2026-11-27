@@ -73,6 +73,15 @@ use Illuminate\Validation\ValidationException;
  * customer wrote last and nobody answered yet (the row's `awaiting_reply`),
  * never closed ones.
  *
+ * `status=awaiting_info` lists «Esperando información del cliente»: the
+ * requests a person returned for missing information that wait, pending and
+ * without agent, for the customer to write again (`awaiting_info_at` set,
+ * AWAITING_INFO_SQL), sorted by that moment. They are never part of
+ * «Pendientes» (the status filter, the general inbox's pending branch and
+ * the `pending` counter leave them out) and get their own counter
+ * (`awaiting_info`), for the same people who could take them from that
+ * department or, in "all", whoever sees them.
+ *
  * `category=<id>` narrows to one request category and
  * `readiness=ready|needs_info` to the preparation state of the request;
  * like every common filter they apply to the list and to its counters.
@@ -84,7 +93,7 @@ use Illuminate\Validation\ValidationException;
  * not inherit its whole history as unread (docs/bandejas-y-asignacion.md).
  *
  * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, search_in?: string, tags?: list<int>, tag_match?: string, sort?: string, unread?: bool, awaiting?: bool, channel?: string|null, space?: string|null, category?: int|null, readiness?: string|null}
- * @phpstan-type InboxCounts array{general: int, mine: int, pending: int, attending: int}
+ * @phpstan-type InboxCounts array{general: int, mine: int, pending: int, attending: int, awaiting_info: int}
  * @phpstan-type InboxCursor array{rank: int, at: string|null, id: int}
  */
 class ConversationInboxQuery
@@ -158,13 +167,30 @@ class ConversationInboxQuery
      *
      * @var list<string>
      */
-    private const STATUS_FILTERS = ['active', 'all', 'pending', 'open', 'closed', self::STATUS_COMPLETED, 'on_hold'];
+    private const STATUS_FILTERS = ['active', 'all', 'pending', 'open', 'closed', self::STATUS_COMPLETED, self::STATUS_AWAITING_INFO, 'on_hold'];
 
     /**
      * Status filter of the closed conversations closed as «Solicitud
      * completada» (`conversations.completed_at` set).
      */
     public const STATUS_COMPLETED = 'completed';
+
+    /**
+     * Status filter of «Esperando información del cliente»: pending requests
+     * a person returned for missing information (AWAITING_INFO_SQL).
+     */
+    public const STATUS_AWAITING_INFO = 'awaiting_info';
+
+    /**
+     * A request waiting for the customer's missing information: pending,
+     * without agent, «Necesita información» and stamped by the person who
+     * returned it (`awaiting_info_at`). The readiness is checked too, so a
+     * stale stamp never hides a request that is ready.
+     */
+    private const AWAITING_INFO_SQL = "conversations.status = 'pending' AND conversations.assigned_user_id IS NULL AND conversations.readiness = 'needs_info' AND conversations.awaiting_info_at IS NOT NULL";
+
+    /** Its negation, for rows already known to be pending: what «Pendientes» lists. */
+    private const NOT_AWAITING_INFO_SQL = "(conversations.awaiting_info_at IS NULL OR conversations.readiness <> 'needs_info' OR conversations.assigned_user_id IS NOT NULL)";
 
     /** «Mensajes web»: only conversations of the web chat. */
     public const SPACE_WEB = 'web';
@@ -234,7 +260,7 @@ class ConversationInboxQuery
         // (readsClosedConversations()) and "on hold"
         // is retired: all of them fall back to the active conversations
         // instead of an always empty (or legacy) list.
-        if (($view === self::VIEW_MINE && $status === ConversationStatus::Pending->value)
+        if (($view === self::VIEW_MINE && in_array($status, [ConversationStatus::Pending->value, self::STATUS_AWAITING_INFO], true))
             || $status === ConversationStatus::OnHold->value
             || (in_array($status, [ConversationStatus::Closed->value, self::STATUS_COMPLETED], true) && ! $this->access->readsClosedConversations($actor))) {
             $status = 'active';
@@ -327,7 +353,10 @@ class ConversationInboxQuery
      * - mine: the active conversations assigned to the actor (legacy rows
      *   on hold included, as the "mine" list shows them);
      * - pending and attending: the branches of the default view (for "all",
-     *   every visible pending or open conversation).
+     *   every visible pending or open conversation); pending never counts
+     *   the requests waiting for the customer's missing information;
+     * - awaiting_info: those requests («Esperando información»), in the
+     *   departments the actor may accept from (for "all", every visible one).
      * There is no "on hold" counter: that status is retired. Closed
      * conversations are not counted: the history is large and its chip
      * shows no number.
@@ -342,15 +371,17 @@ class ConversationInboxQuery
 
         if ($filters['views'][0] === self::VIEW_GENERAL) {
             $pending = $this->pendingBranchSql($actor);
+            $awaitingInfo = $this->pendingBranchSql($actor, awaitingInfo: true);
             $attending = ['conversations.status = ? AND conversations.assigned_user_id = ?', [ConversationStatus::Open->value, $actor->id]];
             $general = ["({$pending[0]}) OR ({$attending[0]})", [...$pending[1], ...$attending[1]]];
         } else {
-            $pending = ['conversations.status = ?', [ConversationStatus::Pending->value]];
+            $pending = ['conversations.status = ? AND '.self::NOT_AWAITING_INFO_SQL, [ConversationStatus::Pending->value]];
+            $awaitingInfo = [self::AWAITING_INFO_SQL, []];
             $attending = ['conversations.status = ?', [ConversationStatus::Open->value]];
             $general = ['1 = 1', []];
         }
 
-        $columns = ['general' => $general, 'mine' => $mine, 'pending' => $pending, 'attending' => $attending];
+        $columns = ['general' => $general, 'mine' => $mine, 'pending' => $pending, 'attending' => $attending, 'awaiting_info' => $awaitingInfo];
         $sql = [];
         $bindings = [];
 
@@ -372,6 +403,7 @@ class ConversationInboxQuery
             'mine' => (int) ($row['mine'] ?? 0),
             'pending' => (int) ($row['pending'] ?? 0),
             'attending' => (int) ($row['attending'] ?? 0),
+            'awaiting_info' => (int) ($row['awaiting_info'] ?? 0),
         ];
     }
 
@@ -444,44 +476,60 @@ class ConversationInboxQuery
     {
         $status = $filters['status'];
         $sort = $filters['sort'] ?? self::SORT_OLDEST;
+        $column = self::orderColumn($status);
 
         return $this->filtered($actor, $filters)
             ->when($status === 'active', fn (Builder $query) => $query->notClosed())
             ->when($status === self::STATUS_COMPLETED, fn (Builder $query) => $query->where('conversations.status', ConversationStatus::Closed->value)->whereNotNull('conversations.completed_at'))
-            ->when(! in_array($status, ['active', 'all', self::STATUS_COMPLETED], true), fn (Builder $query) => $query->where('conversations.status', $status))
+            // «Pendientes» never lists the requests waiting for the customer's
+            // missing information; «Esperando información» lists only them.
+            ->when($status === ConversationStatus::Pending->value, fn (Builder $query) => $query->where('conversations.status', $status)->whereRaw(self::NOT_AWAITING_INFO_SQL))
+            ->when($status === self::STATUS_AWAITING_INFO, fn (Builder $query) => $query->whereRaw(self::AWAITING_INFO_SQL))
+            ->when(! in_array($status, ['active', 'all', self::STATUS_COMPLETED, self::STATUS_AWAITING_INFO, ConversationStatus::Pending->value], true), fn (Builder $query) => $query->where('conversations.status', $status))
             ->when($sort === self::SORT_PRIORITY, fn (Builder $query) => $query->orderByRaw(self::PRIORITY_RANK))
-            ->when($sort === self::SORT_OLDEST, fn (Builder $query) => $query->orderBy('conversations.last_message_at')->orderBy('conversations.id'))
-            ->when($sort !== self::SORT_OLDEST, fn (Builder $query) => $query->orderByDesc('conversations.last_message_at')->orderByDesc('conversations.id'));
+            ->when($sort === self::SORT_OLDEST, fn (Builder $query) => $query->orderBy($column)->orderBy('conversations.id'))
+            ->when($sort !== self::SORT_OLDEST, fn (Builder $query) => $query->orderByDesc($column)->orderByDesc('conversations.id'));
+    }
+
+    /**
+     * The moment the list is ordered (and paged) by: the latest activity, or,
+     * in «Esperando información», since when the request waits for the
+     * customer (never null there).
+     */
+    private static function orderColumn(?string $status): string
+    {
+        return $status === self::STATUS_AWAITING_INFO ? 'conversations.awaiting_info_at' : 'conversations.last_message_at';
     }
 
     /**
      * Narrows the list to the rows that follow the cursor in its order.
      * Conversations without activity yet (no last_message_at) go last in
      * the descending orders and first in the "oldest" one, as MariaDB sorts
-     * NULL values.
+     * NULL values. `$status` picks the ordering moment (orderColumn()).
      *
      * @param  Builder<Conversation>  $query
      * @param  InboxCursor  $cursor
      * @return Builder<Conversation>
      */
-    public function startingAfter(Builder $query, array $cursor, string $sort): Builder
+    public function startingAfter(Builder $query, array $cursor, string $sort, ?string $status = null): Builder
     {
         ['rank' => $rank, 'at' => $at, 'id' => $id] = $cursor;
+        $column = self::orderColumn($status);
 
         if ($sort === self::SORT_OLDEST) {
             return $query->where(fn (Builder $after) => $at === null
-                ? $after->where(fn (Builder $same) => $same->whereNull('conversations.last_message_at')->where('conversations.id', '>', $id))
-                    ->orWhereNotNull('conversations.last_message_at')
-                : $after->where('conversations.last_message_at', '>', $at)
-                    ->orWhere(fn (Builder $same) => $same->where('conversations.last_message_at', $at)->where('conversations.id', '>', $id)));
+                ? $after->where(fn (Builder $same) => $same->whereNull($column)->where('conversations.id', '>', $id))
+                    ->orWhereNotNull($column)
+                : $after->where($column, '>', $at)
+                    ->orWhere(fn (Builder $same) => $same->where($column, $at)->where('conversations.id', '>', $id)));
         }
 
         $laterInTime = fn (Builder $after) => $at === null
-            ? $after->whereNull('conversations.last_message_at')->where('conversations.id', '<', $id)
+            ? $after->whereNull($column)->where('conversations.id', '<', $id)
             : $after->where(fn (Builder $older) => $older
-                ->where('conversations.last_message_at', '<', $at)
-                ->orWhere(fn (Builder $same) => $same->where('conversations.last_message_at', $at)->where('conversations.id', '<', $id))
-                ->orWhereNull('conversations.last_message_at'));
+                ->where($column, '<', $at)
+                ->orWhere(fn (Builder $same) => $same->where($column, $at)->where('conversations.id', '<', $id))
+                ->orWhereNull($column));
 
         if ($sort === self::SORT_RECENT) {
             return $query->where($laterInTime);
@@ -499,9 +547,9 @@ class ConversationInboxQuery
      *
      * @return InboxCursor
      */
-    public function cursorFor(Conversation $row): array
+    public function cursorFor(Conversation $row, ?string $status = null): array
     {
-        $at = $row->getRawOriginal('last_message_at');
+        $at = $row->getRawOriginal($status === self::STATUS_AWAITING_INFO ? 'awaiting_info_at' : 'last_message_at');
 
         return [
             'rank' => $row->status === ConversationStatus::OnHold ? 2 : (int) array_search($row->status->value, self::PRIORITY, true) + 1,
@@ -722,8 +770,12 @@ class ConversationInboxQuery
 
         $closed = ConversationStatus::Closed->value;
 
+        $awaitingInfo = $this->pendingBranchSql($actor, awaitingInfo: true);
+
         match ($status) {
             $closed, self::STATUS_COMPLETED => $query->where('conversations.status', $closed),
+            // «Esperando información»: the same reach as the pending branch.
+            self::STATUS_AWAITING_INFO => $query->whereRaw("({$awaitingInfo[0]})", $awaitingInfo[1]),
             'all' => $query->where(fn (Builder $either) => $either
                 ->where(fn (Builder $general) => $this->generalPredicate($general, $actor))
                 ->orWhere('conversations.status', $closed)),
@@ -753,11 +805,13 @@ class ConversationInboxQuery
      * SQL of the pending branch of the general inbox, shared by the list and
      * the counters so both always agree: pending, unassigned, in a
      * department the actor may accept from or, for whoever accepts
-     * conversations without department, without one.
+     * conversations without department, without one. The requests waiting
+     * for the customer's missing information are left out; with
+     * `$awaitingInfo`, only they are kept («Esperando información», same reach).
      *
      * @return array{0: literal-string, 1: list<int|string>}
      */
-    private function pendingBranchSql(User $actor): array
+    private function pendingBranchSql(User $actor, bool $awaitingInfo = false): array
     {
         $departments = $this->access->acceptableDepartmentIds($actor);
         $reach = $departments === []
@@ -769,7 +823,9 @@ class ConversationInboxQuery
         }
 
         return [
-            'conversations.status = ? AND conversations.assigned_user_id IS NULL AND ('.implode(' OR ', $reach).')',
+            'conversations.status = ? AND conversations.assigned_user_id IS NULL AND '
+                .($awaitingInfo ? self::AWAITING_INFO_SQL : self::NOT_AWAITING_INFO_SQL)
+                .' AND ('.implode(' OR ', $reach).')',
             [ConversationStatus::Pending->value, ...$departments],
         ];
     }

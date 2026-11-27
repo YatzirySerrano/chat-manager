@@ -38,6 +38,14 @@ use Illuminate\Validation\ValidationException;
  *   information is missing nobody attends it and, where the confirmation
  *   rule applies, nobody takes it until it is confirmed complete. The
  *   agent's freed room is offered to their other queues.
+ * - «Esperando información del cliente»: whenever a person returns a
+ *   request waiting in a queue (or the open one that goes back to it), it
+ *   is stamped `awaiting_info_at = now()`. While stamped, the request is out
+ *   of «Pendientes» (its own chip, ConversationInboxQuery) and never blocks
+ *   the chronological order (it is not eligible). The customer's next
+ *   message brings it back by itself (ResumeAwaitingInformation); a person
+ *   may also confirm it complete, which clears the stamp and restarts its
+ *   queue clock (`queued_at = now()`), as a new request with the same folio.
  * - Recorded as a conversation event and in the audit log, with the
  *   previous and the new state and the reason. Once committed, the queue of
  *   an automatic department is offered again.
@@ -81,7 +89,12 @@ class SetConversationReadiness
 
             $releasedFrom = $conversation->assigned_user_id;
             $this->lifecycle->lockDepartment($conversation->department_id, exclusive: true);
-            $this->lifecycle->apply($conversation, ConversationStatus::Pending, $this->lifecycle->queued($conversation));
+            // Out of «Pendientes» until the customer writes again or someone
+            // confirms it complete (ResumeAwaitingInformation).
+            $this->lifecycle->apply($conversation, ConversationStatus::Pending, [
+                ...$this->lifecycle->queued($conversation),
+                'awaiting_info_at' => now(),
+            ]);
             $this->lifecycle->record($conversation, ConversationEventType::Unassigned, $actor, [
                 'from_user_id' => $releasedFrom,
                 'from_department_id' => $conversation->department_id,
@@ -125,18 +138,25 @@ class SetConversationReadiness
             $inQueue = $this->queueRules->inQueue($conversation);
             // Whether the confirmation rule was keeping it out of the ready queue.
             $wasHeld = $this->queueRules->needsInformation($conversation);
+            $wasAwaiting = $conversation->awaiting_info_at !== null;
 
             $conversation->forceFill([
                 'readiness' => $target,
                 'readiness_changed_at' => now(),
                 'readiness_changed_by_user_id' => $actor->id,
                 'version' => $conversation->version + 1,
+                // Returned by a person while waiting in a queue: it waits for
+                // the customer outside «Pendientes». Confirmed: it no longer
+                // waits for anything (any state, so no stale stamp survives).
+                'awaiting_info_at' => $target === ConversationReadiness::NeedsInfo
+                    ? ($inQueue ? now() : $conversation->awaiting_info_at)
+                    : null,
             ]);
 
             if ($inQueue) {
                 $conversation->forceFill(['queued_at' => match (true) {
                     // Enters the ready queue now (or had no clock yet).
-                    $target === ConversationReadiness::Ready => $wasHeld || $conversation->queued_at === null ? now() : $conversation->queued_at,
+                    $target === ConversationReadiness::Ready => $wasHeld || $wasAwaiting || $conversation->queued_at === null ? now() : $conversation->queued_at,
                     // Leaves the ready queue only where the rule applies to it.
                     $this->queueRules->needsInformation($conversation) => null,
                     default => $conversation->queued_at,

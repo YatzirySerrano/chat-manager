@@ -100,6 +100,7 @@ test('every counter is exactly what its chip lists with the same filters', funct
         'mine' => ['view' => 'mine'],
         'pending' => ['status' => 'pending'],
         'attending' => ['status' => 'open'],
+        'awaiting_info' => ['status' => 'awaiting_info'],
     ];
 
     $counts = $this->actingAs($user)->get(route('conversations.index', $filters))->viewData('page')['props']['counts'];

@@ -249,6 +249,8 @@ class ConversationLifecycle
 
     /**
      * Attributes of a conversation that now has the given agent responsible.
+     * Someone attends it, so it no longer waits for the customer's missing
+     * information outside «Pendientes» (`awaiting_info_at`).
      *
      * @return array<string, mixed>
      */
@@ -259,6 +261,7 @@ class ConversationLifecycle
             'assigned_at' => now(),
             'on_hold_at' => null,
             'on_hold_reason' => null,
+            'awaiting_info_at' => null,
         ];
     }
 

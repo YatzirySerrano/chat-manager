@@ -51,7 +51,7 @@ test('an agent\'s inbox opens on the general inbox: their own conversations and 
             ->where('filters.view', 'general')
             ->where('inbox', ['personal' => true, 'views' => ['general', 'mine'], 'scope' => 'assigned', 'supervises' => false])
             ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->mine, $this->mineClosed, $this->queued]))
-            ->where('counts', ['general' => 2, 'mine' => 1, 'pending' => 1, 'attending' => 1])
+            ->where('counts', ['general' => 2, 'mine' => 1, 'pending' => 1, 'attending' => 1, 'awaiting_info' => 0])
             ->where('agents', []));
 
     // The legacy queue is the general inbox narrowed to the pending ones.
@@ -97,7 +97,7 @@ test('without the accept permission the pending ones of an agent are always empt
             ->where('filters.view', 'general')
             ->where('filters.status', 'pending')
             ->where('conversations.data', [])
-            ->where('counts', ['general' => 1, 'mine' => 1, 'pending' => 0, 'attending' => 1]));
+            ->where('counts', ['general' => 1, 'mine' => 1, 'pending' => 0, 'attending' => 1, 'awaiting_info' => 0]));
 
     $this->actingAs($agent)
         ->get(route('conversations.index', ['status' => 'active']))
@@ -170,7 +170,7 @@ test('supervised team inboxes open on every authorized conversation, with the ge
         ->get(route('conversations.index', ['view' => 'all', 'department' => (string) $this->support->id, 'status' => 'active']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversations.data', fn ($rows) => listedIds($rows) === [$own->id])
-            ->where('counts', ['general' => 1, 'mine' => 1, 'pending' => 0, 'attending' => 1]));
+            ->where('counts', ['general' => 1, 'mine' => 1, 'pending' => 0, 'attending' => 1, 'awaiting_info' => 0]));
 });
 
 test('a team inbox without attending conversations only has every authorized conversation', function () {

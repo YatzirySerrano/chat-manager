@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Conversations;
 
 use App\Actions\Conversations\ConversationInboxQuery;
+use App\Actions\Conversations\ResumeAwaitingInformation;
 use App\Enums\ConnectionChannel;
 use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
@@ -300,6 +301,8 @@ class ConversationController extends Controller
                 ...ConversationResource::make($selected)->resolve($request),
                 // The viewer's own chat colors only (PERSONALIZATION); never another user's.
                 'appearance' => app(ChatAppearances::class)->forViewer($actor, $selected),
+                // «Esperando información del cliente»: what the customer was asked for (open conversation only).
+                'awaiting_info_missing' => Features::phaseTwo() ? ResumeAwaitingInformation::missing($selected) : [],
             ],
             'window' => fn (): ?array => ($selected = $selection()) === null ? null : $window->for($selected)->toArray(),
             'timeline' => fn (): ?array => ($selected = $selection()) === null ? null : $timeline->page($selected, $request),
@@ -455,7 +458,7 @@ class ConversationController extends Controller
         $listed = $inbox->handle($actor, $filters);
 
         if ($after !== null) {
-            $inbox->startingAfter($listed, $after, $sort);
+            $inbox->startingAfter($listed, $after, $sort, $filters['status']);
         }
 
         $rows = $inbox->withListColumns($listed, $actor)
@@ -502,7 +505,7 @@ class ConversationController extends Controller
             'data' => $data,
             'server_time' => now()->toIso8601String(),
             'has_more' => $hasMore,
-            'next_cursor' => $last === null ? null : ConversationInboxQuery::encodeCursor($inbox->cursorFor($last)),
+            'next_cursor' => $last === null ? null : ConversationInboxQuery::encodeCursor($inbox->cursorFor($last, $filters['status'])),
         ];
     }
 

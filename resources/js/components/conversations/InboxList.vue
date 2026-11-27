@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
     CircleCheck,
+    FileClock,
     Hourglass,
     Inbox,
     MailWarning,
@@ -271,6 +272,7 @@ const statusLabels: Record<string, string> = {
     open: 'En atención',
     closed: 'Cerradas',
     completed: 'Solicitudes completadas',
+    awaiting_info: 'Esperando información del cliente',
     all: 'Todos los estados',
 };
 
@@ -281,7 +283,7 @@ const statusOptions = computed<
     const values: ConversationStatusFilter[] = ['active'];
 
     if (draft.view !== 'mine') {
-        values.push('pending');
+        values.push('pending', 'awaiting_info');
     }
 
     values.push('open');
@@ -309,7 +311,13 @@ const plural = (count: number, one: string, many: string): string =>
 
 /* ---- Tabs: the view + status pairs the server offers. ---- */
 
-type InboxTab = 'base' | 'pending' | 'attending' | 'mine' | 'closed';
+type InboxTab =
+    | 'base'
+    | 'pending'
+    | 'awaiting'
+    | 'attending'
+    | 'mine'
+    | 'closed';
 
 /** The tab the filters belong to, or null (a combination of the panel). */
 function tabOf(filters: InboxFilterState): InboxTab | null {
@@ -321,6 +329,10 @@ function tabOf(filters: InboxFilterState): InboxTab | null {
 
     if (base && filters.status === 'pending') {
         return 'pending';
+    }
+
+    if (base && filters.status === 'awaiting_info') {
+        return 'awaiting';
     }
 
     if (
@@ -348,6 +360,12 @@ function tabOf(filters: InboxFilterState): InboxTab | null {
 
 const activeTab = computed(() => tabOf(state));
 const pendingCount = computed(() => props.counts.pending);
+/*
+ * «Esperando información»: requests returned for missing information wait
+ * for the customer outside «Pendientes». Its chip shows while any waits (or
+ * while it is open), so nobody loses track of them.
+ */
+const awaitingInfoCount = computed(() => props.counts.awaiting_info ?? 0);
 const pendingActive = computed(() => activeTab.value === 'pending');
 const generalActive = computed(() => activeTab.value === 'base');
 const closedActive = computed(() => isClosedStatus(state.status));
@@ -380,6 +398,22 @@ const tabs = computed<FilterTabOption<InboxTab>[]>(() => {
             attrs: { 'data-inbox-chip': 'base', 'data-tour': 'inbox.general' },
         },
     ];
+
+    if (awaitingInfoCount.value > 0 || activeTab.value === 'awaiting') {
+        options.splice(1, 0, {
+            value: 'awaiting',
+            label: 'Esperando información',
+            icon: FileClock,
+            count: awaitingInfoCount.value,
+            title: 'Solicitudes devueltas por falta de información: esperan a que el cliente escriba y no cuentan en «Pendientes». Regresan solas cuando el cliente envía algo.',
+            srLabel: plural(
+                awaitingInfoCount.value,
+                'solicitud esperando información del cliente',
+                'solicitudes esperando información del cliente',
+            ),
+            attrs: { 'data-inbox-chip': 'awaiting_info' },
+        });
+    }
 
     if (!isGeneral.value) {
         options.push({
@@ -434,6 +468,12 @@ function chooseTab(tab: InboxTab): void {
             view: baseView.value,
             status: 'pending',
             sort: defaultSort(baseView.value),
+        },
+        // The one waiting the longest for the customer first.
+        awaiting: {
+            view: baseView.value,
+            status: 'awaiting_info',
+            sort: 'oldest',
         },
         attending: { view: 'all', status: 'open', sort: defaultSort('all') },
         // Their own requests, the one waiting the longest first.
@@ -758,8 +798,11 @@ watchDebounced(search, apply, { debounce: 300 });
 function change(patch: Partial<InboxFilterState>): void {
     Object.assign(state, patch);
 
-    // "Mis conversaciones" never holds pending ones.
-    if (state.view === 'mine' && state.status === 'pending') {
+    // "Mis conversaciones" never holds pending ones (nor those waiting for the customer).
+    if (
+        state.view === 'mine' &&
+        (state.status === 'pending' || state.status === 'awaiting_info')
+    ) {
         state.status = 'active';
     }
 
@@ -778,7 +821,10 @@ function change(patch: Partial<InboxFilterState>): void {
 function changeDraft(patch: Partial<InboxFilterState>): void {
     Object.assign(draft, patch);
 
-    if (draft.view === 'mine' && draft.status === 'pending') {
+    if (
+        draft.view === 'mine' &&
+        (draft.status === 'pending' || draft.status === 'awaiting_info')
+    ) {
         draft.status = 'active';
     }
 }
@@ -1014,6 +1060,14 @@ const emptyCopy = computed(() => {
         return {
             title: 'No hay conversaciones cerradas',
             description: 'Aquí queda el historial de las cerradas.',
+        };
+    }
+
+    if (state.status === 'awaiting_info') {
+        return {
+            title: 'Ninguna solicitud espera información',
+            description:
+                'Cuando alguien marque que falta información, la solicitud esperará aquí hasta que el cliente escriba.',
         };
     }
 

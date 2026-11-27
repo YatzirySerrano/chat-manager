@@ -58,6 +58,8 @@ use Illuminate\Support\Str;
  * 4. moves the activity dates forward only (late events never move them
  *    back) and links the provider's referral to the conversation;
  * 5. distributes the conversation when its department does so automatically;
+ *    a request waiting for the customer's missing information comes back to
+ *    «Pendientes» with a new queue clock (ResumeAwaitingInformation);
  * 6. registers the media it announces as a pending attachment and queues
  *    its download (DownloadInboundMedia), never inside this transaction:
  *    a WhatsApp media id, the CDN URL of a Messenger/Instagram attachment,
@@ -97,6 +99,7 @@ class ReceiveInboundMessage
         private AssignAutomatically $assignAutomatically,
         private ReadCommittedTransaction $transaction,
         private ChatbotConversations $chatbot,
+        private ResumeAwaitingInformation $resumeAwaitingInformation,
     ) {}
 
     public function handle(Connection $connection, InboundMessage $inbound): InboundMessageReceipt
@@ -173,6 +176,13 @@ class ReceiveInboundMessage
 
         // The customer waits for a human answer from now on (response cycle).
         app(ResponseClock::class)->customerWrote($conversation, $sentAt);
+
+        // A request returned for missing information («Esperando información
+        // del cliente») comes back to «Pendientes» with a new queue clock, in
+        // this same conversation (its row is locked since conversationFor()).
+        if (in_array($outcome, [InboundMessageOutcome::Appended, InboundMessageOutcome::Reopened], true)) {
+            $this->resumeAwaitingInformation->handle($conversation);
+        }
 
         // While the chatbot's welcome menu waits for the customer's choice,
         // the conversation is not distributed (ChatbotConversations).

@@ -1,10 +1,12 @@
 import { computed } from 'vue';
 import type { ComputedRef, InjectionKey } from 'vue';
+import { dayLabel, formatTime } from '@/components/conversations/messageFormat';
 import {
     formatCountdown,
     secondsUntil,
     useServerNow,
 } from '@/composables/useServerNow';
+import { formatDateTime } from '@/lib/format';
 import type {
     AcceptanceCode,
     ConversationReadinessValue,
@@ -158,4 +160,41 @@ export function nextAvailability(
     }
 
     return next;
+}
+
+/**
+ * «Esperando información del cliente»: the request was returned for missing
+ * information and waits, outside «Pendientes», for the customer to write
+ * again (the server sends `awaiting_info_at` only then). It comes back to
+ * «Pendientes» by itself with the customer's next message, or when someone
+ * confirms it complete.
+ */
+export function isAwaitingInfo(conversation: ConversationSummary): boolean {
+    return (
+        conversation.status === 'pending' &&
+        Boolean(conversation.awaiting_info_at)
+    );
+}
+
+/**
+ * Since when it waits, to read after «desde»: «las 10:00 a. m.» today,
+ * «ayer, 10:00 a. m.» or «20 nov, 10:00 a. m.».
+ */
+export function awaitingSince(iso: string | null | undefined): string {
+    if (!iso) {
+        return '';
+    }
+
+    const label = dayLabel(iso);
+    const time = formatTime(iso);
+
+    if (label === 'Hoy') {
+        return `las ${time}`;
+    }
+
+    if (label === 'Ayer') {
+        return `ayer, ${time}`;
+    }
+
+    return `el ${formatDateTime(iso, { day: 'numeric', month: 'short' })}, ${time}`;
 }

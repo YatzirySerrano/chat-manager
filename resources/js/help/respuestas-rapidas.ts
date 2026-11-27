@@ -41,7 +41,7 @@ const help: ModuleHelp = {
         {
             name: 'Datos de la solicitud',
             description:
-                'Variables como {solicitud.cliente}, {solicitud.producto} o {solicitud.monto_solicitado} toman los datos guardados en la conversación con «Tomar datos de la solicitud». Además, una línea «Etiqueta:» vacía (por ejemplo «Producto:» o «Monto solicitado: $») se completa con el dato del mismo nombre; si no hay dato, la línea queda igual.',
+                'Variables como {solicitud.cliente}, {solicitud.producto} o {solicitud.monto_solicitado} toman los datos guardados en la conversación con «Tomar datos de la solicitud». {solicitud.monto_autorizado}, {solicitud.desembolso} y {solicitud.cantidad_a_pagar} toman la «Resolución» de «Detalles». Además, una línea «Etiqueta:» vacía (por ejemplo «Producto:», «Monto autorizado: $» o «Desembolso: $») se completa con el dato del mismo nombre, aunque la etiqueta tenga faltas o no lleve acentos; en una autorización, «Monto: $» es el monto autorizado. Si no hay dato, la línea queda igual.',
         },
         {
             name: 'Disponibilidad',
@@ -102,7 +102,7 @@ const help: ModuleHelp = {
     tips: [
         'Usa atajos cortos y fáciles de recordar: «hola», «horario», «pago».',
         'Revisa siempre el texto insertado antes de enviarlo; puedes ajustarlo para cada cliente.',
-        'Deja vacías las líneas «Producto:», «Cliente:» o «Monto solicitado: $» de tus plantillas de autorización: se completan solas con los datos tomados de la solicitud.',
+        'Deja vacías las líneas «Producto:», «Cliente:», «Monto autorizado: $», «Desembolso: $» o «Cantidad a pagar: $» de tus plantillas de autorización: se completan solas con los datos de la solicitud y de «Resolución».',
     ],
     examples: [
         '«/horario» → «Hola {contacto.nombre}, nuestro horario es de lunes a viernes de 9:00 a 18:00.»',

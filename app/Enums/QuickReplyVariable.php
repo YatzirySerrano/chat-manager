@@ -26,6 +26,9 @@ enum QuickReplyVariable: string
     case RequestBusiness = 'solicitud.giro_de_negocio';
     case RequestPaymentDay = 'solicitud.dia_de_pago';
     case RequestType = 'solicitud.tipo';
+    case RequestAuthorizedAmount = 'solicitud.monto_autorizado';
+    case RequestDisbursement = 'solicitud.desembolso';
+    case RequestPayment = 'solicitud.cantidad_a_pagar';
 
     /** Prefix of the variables filled from the request data. */
     public const REQUEST_PREFIX = 'solicitud.';
@@ -55,6 +58,9 @@ enum QuickReplyVariable: string
             self::RequestBusiness => 'Giro de negocio',
             self::RequestPaymentDay => 'Día de pago',
             self::RequestType => 'Tipo de solicitud',
+            self::RequestAuthorizedAmount => 'Monto autorizado',
+            self::RequestDisbursement => 'Desembolso',
+            self::RequestPayment => 'Cantidad a pagar',
         };
     }
 
@@ -78,6 +84,9 @@ enum QuickReplyVariable: string
             self::RequestBusiness => 'Tortillas',
             self::RequestPaymentDay => 'Lunes',
             self::RequestType => 'Nuevo',
+            self::RequestAuthorizedAmount => '$3,000',
+            self::RequestDisbursement => '$2,130',
+            self::RequestPayment => '$398',
         };
     }
 

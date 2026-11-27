@@ -45,3 +45,13 @@ test('amounts written by people are read as decimals', function (?string $text, 
     ['99999999999', null],
     [null, null],
 ]);
+
+test('a decision still to come announces nothing', function (string $text) {
+    expect(RequestOutcomeEvidence::announced($text))->toBeNull();
+})->with([
+    "*Se autorizará crédito* en cuanto llegue el comprobante\nMonto autorizado: $3000",
+    'Se autorizara la reactivación mañana',
+    "Crédito por autorizar\nMonto: $3000",
+    'Solicitud en revisión',
+    'Se va a autorizar el crédito',
+]);

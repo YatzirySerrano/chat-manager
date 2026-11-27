@@ -2,20 +2,29 @@
 import { ClipboardList, Copy, Pencil } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import RequestFieldsDialog from '@/components/conversations/RequestFieldsDialog.vue';
-import { copyRequestField } from '@/components/conversations/requestFields';
+import {
+    copyRequestField,
+    RESOLUTION_KEYS,
+} from '@/components/conversations/requestFields';
+import RequestResolutionFields from '@/components/conversations/RequestResolutionFields.vue';
 import { Button } from '@/components/ui/button';
 import type { ConversationSummary } from '@/types';
 
 /**
  * «Datos de la solicitud» in the details panel: every field kept on the
  * conversation, each one copyable, and «Editar» (correct, remove, add,
- * «Quitar todo») for whoever may keep request data (can.categorize).
+ * «Quitar todo») for whoever may keep request data (can.categorize). The
+ * amounts of the resolution are typed inline in «Resolución» below
+ * (RequestResolutionFields), so they are not repeated in the list.
  */
 const props = defineProps<{
     conversation: ConversationSummary;
 }>();
 
-const fields = computed(() => props.conversation.request_fields ?? []);
+const allFields = computed(() => props.conversation.request_fields ?? []);
+const fields = computed(() =>
+    allFields.value.filter((field) => !RESOLUTION_KEYS.has(field.key)),
+);
 const canEdit = computed(() => props.conversation.can.categorize === true);
 const editing = ref(false);
 </script>
@@ -39,7 +48,7 @@ const editing = ref(false);
                 @click="editing = true"
             >
                 <Pencil class="size-3.5" aria-hidden="true" />
-                {{ fields.length > 0 ? 'Editar' : 'Agregar' }}
+                {{ allFields.length > 0 ? 'Editar' : 'Agregar' }}
             </Button>
         </div>
 
@@ -71,6 +80,8 @@ const editing = ref(false);
             Sin datos. En un mensaje del gestor usa «Tomar datos de la
             solicitud» para guardarlos y completar las respuestas rápidas.
         </p>
+
+        <RequestResolutionFields :conversation="conversation" />
 
         <RequestFieldsDialog
             v-if="canEdit"

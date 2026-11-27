@@ -16,7 +16,10 @@ export type QuickReplyVariableValue =
     | 'solicitud.telefono'
     | 'solicitud.giro_de_negocio'
     | 'solicitud.dia_de_pago'
-    | 'solicitud.tipo';
+    | 'solicitud.tipo'
+    | 'solicitud.monto_autorizado'
+    | 'solicitud.desembolso'
+    | 'solicitud.cantidad_a_pagar';
 
 export type QuickReplyVariableOption = {
     value: QuickReplyVariableValue;

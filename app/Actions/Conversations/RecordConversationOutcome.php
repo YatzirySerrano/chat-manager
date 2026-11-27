@@ -10,6 +10,7 @@ use App\Models\Conversation;
 use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\Conversations\ConversationLifecycle;
+use App\Services\Conversations\RequestResolutionCapture;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -26,7 +27,8 @@ use Illuminate\Support\Facades\Gate;
  * data. It does not change the status nor the version (it is not an
  * operational decision), and keeps who and when (`outcome_by_user_id`,
  * `outcome_at`): the date of the result in the reports. Recorded as a
- * conversation event (previous and new result) and in the audit log.
+ * conversation event (previous and new result) and in the audit log. The
+ * authorized amount is kept as «Monto autorizado» in the request data too.
  */
 class RecordConversationOutcome
 {
@@ -35,6 +37,7 @@ class RecordConversationOutcome
     public function __construct(
         private ConversationLifecycle $lifecycle,
         private AuditLogger $audit,
+        private RequestResolutionCapture $resolution,
     ) {}
 
     /**
@@ -91,6 +94,10 @@ class RecordConversationOutcome
                 'previous_outcome_amount' => $previousAmount,
                 'on_completion' => false,
             ], $actor);
+
+            if ($amount !== null) {
+                $this->resolution->keepAuthorizedAmount($conversation, $amount, $actor, 'outcome');
+            }
 
             return true;
         });

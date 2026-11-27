@@ -23,7 +23,26 @@ export const REQUEST_FIELD_LABELS = [
     'Teléfono',
     'Día de pago',
     'Tipo',
+    'Monto autorizado',
+    'Desembolso',
+    'Cantidad a pagar',
+    'Plazo',
 ] as const;
+
+/**
+ * «Resolución»: the amounts of the authorization, typed inline in the
+ * details panel and also taken from the authorization the team sends
+ * (RequestResolutionCapture). Quick replies fill their lines from them.
+ */
+export const RESOLUTION_FIELDS = [
+    { key: 'monto_autorizado', label: 'Monto autorizado' },
+    { key: 'desembolso', label: 'Desembolso' },
+    { key: 'cantidad_a_pagar', label: 'Cantidad a pagar' },
+] as const;
+
+export const RESOLUTION_KEYS: ReadonlySet<string> = new Set(
+    RESOLUTION_FIELDS.map((field) => field.key),
+);
 
 export const REQUEST_FIELDS_MAX = 20;
 export const REQUEST_FIELD_LABEL_MAX = 40;

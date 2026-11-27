@@ -12,6 +12,7 @@ use App\Notifications\ConversationCompletedNotification;
 use App\Notifications\NotificationRecipients;
 use App\Services\AuditLogger;
 use App\Services\Conversations\ConversationLifecycle;
+use App\Services\Conversations\RequestResolutionCapture;
 use App\Services\PlatformSettings;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -30,6 +31,7 @@ class CloseConversation
         private NotificationRecipients $recipients,
         private PlatformSettings $settings,
         private AuditLogger $audit,
+        private RequestResolutionCapture $resolution,
     ) {}
 
     /**
@@ -43,6 +45,8 @@ class CloseConversation
      * Without it the request is completed without a result, which can be
      * recorded afterwards (RecordConversationOutcome). Any close resets the
      * previous result: a plain close has none, a completion has the new one.
+     * The authorized amount is also kept as «Monto autorizado» in the
+     * request data (RequestResolutionCapture), so both always agree.
      */
     public function handle(Conversation $conversation, User $actor, ?string $reason = null, ?int $expectedVersion = null, bool $completed = false, bool $farewell = true, ?ConversationOutcome $outcome = null, ?string $outcomeAmount = null): Conversation
     {
@@ -89,6 +93,10 @@ class CloseConversation
                     'outcome_amount' => $outcomeAmount,
                     'on_completion' => true,
                 ], $actor);
+            }
+
+            if ($outcomeAmount !== null) {
+                $this->resolution->keepAuthorizedAmount($conversation, $outcomeAmount, $actor);
             }
 
             $this->assignAutomatically->distributeForAgentAfterCommit($conversation->assigned_user_id);

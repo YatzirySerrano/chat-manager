@@ -15,13 +15,16 @@ use Illuminate\Support\Str;
  * The result to pre-select when a request is completed (or its result is
  * corrected), from the evidence in the conversation:
  *
- * 1. the most recent of the latest text replies written by a person that
+ * 1. the «Monto autorizado» kept in the request data (`request_fields`,
+ *    key `monto_autorizado`): typed by the analyst in «Resolución», taken
+ *    from the authorization sent (RequestResolutionCapture) or confirmed
+ *    on a previous completion. When present it is the amount of the
+ *    approval, and an approval by itself when no reply announces a result;
+ * 2. the most recent of the latest text replies written by a person that
  *    announces a result («Se autoriza …» with its «Monto autorizado», or
- *    «Solicitud rechazada»). Automatic messages (the farewell, greetings)
- *    are skipped, so a correction made after the farewell still finds it;
- * 2. the «Monto autorizado» captured in the request data (`request_fields`,
- *    key `monto_autorizado`): the amount of an approval without one in the
- *    text, or an approval by itself when no reply announces a result.
+ *    «Solicitud rechazada»): the result, and the amount when the request
+ *    data has none. Automatic messages (the farewell, greetings) are
+ *    skipped, so a correction made after the farewell still finds it.
  *
  * Only a suggestion: nothing is recorded until the person confirms it.
  *
@@ -53,7 +56,7 @@ class RequestOutcomeSuggestions
             return [
                 'outcome' => $evidence['outcome']->value,
                 'label' => $evidence['outcome']->label(),
-                'amount' => $approved ? ($evidence['amount'] ?? $captured) : null,
+                'amount' => $approved ? ($captured ?? $evidence['amount']) : null,
                 'source' => 'message',
                 'excerpt' => Str::limit(trim(str_replace(['*', '_', '~'], '', (string) strtok((string) $message->body, "\n"))), 80),
             ];

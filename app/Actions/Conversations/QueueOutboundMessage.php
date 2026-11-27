@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
 use App\Services\Conversations\PendingAttention;
+use App\Services\Conversations\RequestResolutionCapture;
 use App\Services\Conversations\ResponseClock;
 use App\Services\Storage\MediaDisk;
 use App\Services\Storage\MediaPaths;
@@ -206,6 +207,17 @@ class QueueOutboundMessage
                 // Answering an overdue customer may lift the agent's block.
                 app(PendingAttention::class)->answered($conversation, $wasOverdue);
                 app(ResponseClock::class)->answered($conversation, $actor);
+
+                // An authorization or rejection written here («Se autoriza …»,
+                // «Monto autorizado: $3000») keeps its amounts in «Datos de la
+                // solicitud». Best-effort: it never stops the reply.
+                if ($attachment === null) {
+                    try {
+                        app(RequestResolutionCapture::class)->fromMessage($conversation, $message, $actor);
+                    } catch (Throwable $exception) {
+                        report($exception);
+                    }
+                }
 
                 DeliverOutboundMessage::dispatch($message->id)->afterCommit();
                 MessageRecorded::dispatch($message->id, $conversation->id, MessageDirection::Outbound->value);

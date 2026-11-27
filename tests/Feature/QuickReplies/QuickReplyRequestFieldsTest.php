@@ -74,3 +74,41 @@ test('the request variables are accepted in a reply and filled from the conversa
         ->assertJsonPath('data.0.text', "Para ()\nProducto:\nMonto autorizado: \$")
         ->assertJsonPath('data.0.filled', []);
 });
+
+test('an authorization reply is completed with the resolution typed once', function () {
+    $body = "*Se autoriza reactivación de crédito*\nProducto:\nCliente:\nMonto autorizado: \$\nDesembolso: \$\nCantidad a pagar: \$";
+    $values = ['producto' => 'S12 JUEVES', 'cliente' => 'Beatriz', 'monto_autorizado' => '$3,000', 'desembolso' => '$2,130', 'cantidad_a_pagar' => '$398'];
+
+    expect(fillLines($body, $values))->toBe([
+        'text' => "*Se autoriza reactivación de crédito*\nProducto: S12 JUEVES\nCliente: Beatriz\nMonto autorizado: \$3,000\nDesembolso: \$2,130\nCantidad a pagar: \$398",
+        'filled' => ['producto', 'cliente', 'monto_autorizado', 'desembolso', 'cantidad_a_pagar'],
+    ]);
+});
+
+test('resolution lines match with typos, without the colon and with a bare «Monto»', function (string $line, string $expected) {
+    $values = ['monto_autorizado' => '$3,000', 'monto_solicitado' => '$5,000', 'desembolso' => '$2,130', 'cantidad_a_pagar' => '$398'];
+
+    expect(fillLines("Se autoriza renovación\n{$line}", $values)['text'])->toBe("Se autoriza renovación\n{$expected}");
+})->with([
+    'bare amount in an authorization' => ['Monto: $', 'Monto: $3,000'],
+    'typo' => ['*Desenbolso:* $', '*Desenbolso:* $2,130'],
+    'truncated' => ['Cant a pagar: $', 'Cant a pagar: $398'],
+    'no colon' => ['Desembolso $', 'Desembolso $2,130'],
+    'misspelled' => ['Monto autorisado: $', 'Monto autorisado: $3,000'],
+]);
+
+test('a bare «Monto» outside an authorization is the amount requested', function () {
+    expect(fillLines('Monto: $', ['monto_autorizado' => '$3,000', 'monto_solicitado' => '$5,000'])['text'])->toBe('Monto: $5,000');
+});
+
+test('the resolution variables are filled from the conversation', function () {
+    $conversation = Conversation::factory()->create(['request_fields' => [
+        ['key' => 'monto_autorizado', 'label' => 'Monto autorizado', 'value' => '$3,000'],
+        ['key' => 'desembolso', 'label' => 'Desembolso', 'value' => '$2,130'],
+        ['key' => 'cantidad_a_pagar', 'label' => 'Cantidad a pagar', 'value' => '$398'],
+    ]]);
+    $renderer = app(QuickReplyRenderer::class);
+
+    expect($renderer->render('{solicitud.monto_autorizado} / {solicitud.desembolso} / {solicitud.cantidad_a_pagar}', $renderer->context(conversation: $conversation))['text'])
+        ->toBe('$3,000 / $2,130 / $398');
+});

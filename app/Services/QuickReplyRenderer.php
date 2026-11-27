@@ -9,6 +9,7 @@ use App\Models\Department;
 use App\Models\QuickReply;
 use App\Models\User;
 use App\Support\RequestFields\RequestFieldCatalog;
+use App\Support\RequestOutcomeEvidence;
 
 /**
  * Turns a quick reply body into the plain text inserted in the composer.
@@ -111,10 +112,15 @@ class QuickReplyRenderer
      * request field of the same label: «Producto:» → «Producto: S12»,
      * «*Cliente:*» → «*Cliente:* Beatriz», «Monto solicitado: $» →
      * «Monto solicitado: $5,000» (never «$$5,000»). Labels are compared
-     * normalized (RequestFieldCatalog::keyFor(): accents, case, WhatsApp
-     * markers and emojis do not matter). Lines that already have a value,
-     * hold several labels, or whose label has no captured value stay as
-     * written. The values are plain text on one line, never evaluated.
+     * normalized and tolerantly (RequestFieldCatalog::keyFor(): accents,
+     * case, WhatsApp markers, emojis, typos and truncations do not matter:
+     * «Desenbolso: $», «Cant a pagar: $»); a known label left with a bare
+     * «$» and no colon («Desembolso $») is completed too. In a reply that
+     * announces a result («Se autoriza …») the labels are read as a
+     * resolution: a bare «Monto: $» is the «Monto autorizado». Lines that
+     * already have a value, hold several labels, or whose label has no
+     * captured value stay as written. The values are plain text on one
+     * line, never evaluated.
      *
      * @param  array<string, string>  $values  Request field values by key (RequestFieldCatalog::values()).
      * @return array{text: string, filled: list<string>}
@@ -126,25 +132,42 @@ class QuickReplyRenderer
         }
 
         $filled = [];
+        $context = RequestOutcomeEvidence::announced($text) === null ? RequestFieldCatalog::REQUEST : RequestFieldCatalog::RESOLUTION;
+
+        $fill = function (string $label, string $key, string $dollar) use ($values, &$filled): ?string {
+            $value = $this->clean($values[$key] ?? null);
+
+            if ($key === '' || $value === '') {
+                return null;
+            }
+
+            $filled[$key] = true;
+
+            if ($dollar === '$' || str_starts_with($value, '$')) {
+                $value = '$'.ltrim($value, "$ \t");
+            }
+
+            return $label.' '.$value;
+        };
 
         $text = (string) preg_replace_callback(
             '/^(?<label>[^:\r\n]{1,60}?[ \t]*:(?:[ \t]*[*_~]+)?)[ \t]*(?<dollar>\$?)[ \t]*$/mu',
-            function (array $match) use ($values, &$filled): string {
-                $key = RequestFieldCatalog::keyFor(substr($match['label'], 0, (int) strrpos($match['label'], ':')));
-                $value = $this->clean($values[$key] ?? null);
+            fn (array $match): string => $fill(
+                $match['label'],
+                RequestFieldCatalog::keyFor(substr($match['label'], 0, (int) strrpos($match['label'], ':')), $context),
+                $match['dollar'],
+            ) ?? $match[0],
+            $text,
+        );
 
-                if ($key === '' || $value === '') {
-                    return $match[0];
-                }
-
-                $filled[$key] = true;
-
-                if ($match['dollar'] === '$' || str_starts_with($value, '$')) {
-                    $value = '$'.ltrim($value, "$ \t");
-                }
-
-                return $match['label'].' '.$value;
-            },
+        // A known label and a blank amount without the colon: «Desembolso $».
+        $text = (string) preg_replace_callback(
+            '/^(?<label>[^:$\r\n]{1,60}?)[ \t]+\$[ \t]*$/mu',
+            fn (array $match): string => $fill(
+                $match['label'],
+                RequestFieldCatalog::knownKey(RequestFieldCatalog::normalize($match['label']), $context) ?? '',
+                '$',
+            ) ?? $match[0],
             $text,
         );
 

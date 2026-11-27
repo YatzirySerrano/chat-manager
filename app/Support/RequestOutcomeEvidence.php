@@ -3,6 +3,9 @@
 namespace App\Support;
 
 use App\Enums\ConversationOutcome;
+use App\Support\RequestFields\FuzzyText;
+use App\Support\RequestFields\RequestFieldCatalog;
+use App\Support\RequestFields\RequestFieldParser;
 
 /**
  * Reads the result of a credit request out of the text the team sent the
@@ -11,6 +14,12 @@ use App\Enums\ConversationOutcome;
  * reactivación de crédito*», «Solicitud rechazada») and carry the amount on
  * a «Monto autorizado: $3,000» line. It only suggests: the person confirms
  * or changes it, and nothing is ever recorded from the text alone.
+ *
+ * Read tolerantly, as people type in a hurry: the opening words may have
+ * typos or be cut short («Se autorisa reactibacion de cred», «Solicitud
+ * rechasada», FuzzyText) and the amount line is any label that reads as
+ * «Monto autorizado» in an authorization, a bare «Monto:» included
+ * (RequestFieldParser in the RESOLUTION context).
  */
 final class RequestOutcomeEvidence
 {
@@ -42,6 +51,7 @@ final class RequestOutcomeEvidence
      */
     private const REJECTED = [
         'solicitud rechazada',
+        'solicitud rechazado',
         'se rechaza',
         'rechazada',
         'rechazado',
@@ -52,6 +62,34 @@ final class RequestOutcomeEvidence
         'solicitud no aprobada',
         'no se autoriza',
         'no se aprueba',
+        'no autorizado',
+        'no autorizada',
+        'no aprobado',
+        'no aprobada',
+    ];
+
+    /**
+     * Words of the openings, read tolerantly (FuzzyText::canonical()).
+     *
+     * @var list<string>
+     */
+    private const VOCABULARY = [
+        'autoriza', 'autorizado', 'autorizada', 'aprueba', 'aprobado', 'aprobada',
+        'rechaza', 'rechazada', 'rechazado', 'credito', 'solicitud',
+    ];
+
+    /**
+     * Short or mistaken forms that the distance alone does not settle.
+     *
+     * @var array<string, string>
+     */
+    private const ALIASES = [
+        'autorizo' => 'autoriza',
+        'autoriso' => 'autoriza',
+        'aprobo' => 'aprueba',
+        'rechazo' => 'rechaza',
+        'cred' => 'credito',
+        'credit' => 'credito',
     ];
 
     /**
@@ -72,18 +110,44 @@ final class RequestOutcomeEvidence
             return null;
         }
 
+        $outcome = self::announced($text);
+
+        if ($outcome === null) {
+            return null;
+        }
+
+        return [
+            'outcome' => $outcome,
+            'amount' => $outcome === ConversationOutcome::Approved ? self::authorizedAmount($text) : null,
+        ];
+    }
+
+    /**
+     * The result the opening of the text announces, or null.
+     */
+    public static function announced(?string $text): ?ConversationOutcome
+    {
+        if ($text === null || trim($text) === '') {
+            return null;
+        }
+
         $lines = array_slice(array_values(array_filter(
-            array_map(fn (string $line): string => self::normalize($line), preg_split('/\R/u', $text) ?: []),
+            array_map(
+                // A future or pending decision («Se autorizará…», «por autorizar»,
+                // «en revisión») announces nothing yet, however close it reads.
+                fn (string $line): string => self::undecided($line) ? '' : self::normalize($line),
+                preg_split('/\R/u', $text) ?: [],
+            ),
             fn (string $line): bool => $line !== '',
         )), 0, self::LINES);
 
         foreach ($lines as $line) {
             if (self::startsWithAny($line, self::REJECTED)) {
-                return ['outcome' => ConversationOutcome::Rejected, 'amount' => null];
+                return ConversationOutcome::Rejected;
             }
 
             if (self::startsWithAny($line, self::APPROVED)) {
-                return ['outcome' => ConversationOutcome::Approved, 'amount' => self::authorizedAmount($text)];
+                return ConversationOutcome::Approved;
             }
         }
 
@@ -91,18 +155,23 @@ final class RequestOutcomeEvidence
     }
 
     /**
-     * The amount of the «Monto autorizado: …» line of the text, as a decimal
-     * string with two places («3000.00»), or null.
+     * The amount of the «Monto autorizado: …» line of the text (or of any
+     * label that reads as it in an authorization: «Monto aut», «Monto»), as
+     * a decimal string with two places («3000.00»), or null.
      */
     public static function authorizedAmount(string $text): ?string
     {
-        $plain = str_replace(['*', '_', '~'], '', $text);
+        foreach ((new RequestFieldParser)->parse($text, RequestFieldCatalog::RESOLUTION) as $row) {
+            if ($row['key'] === 'monto_autorizado') {
+                $amount = self::amount($row['value']);
 
-        if (preg_match('/monto\s+autorizado\s*[:=\-]?\s*([^\r\n]+)/iu', $plain, $match) !== 1) {
-            return null;
+                if ($amount !== null) {
+                    return $amount;
+                }
+            }
         }
 
-        return self::amount($match[1]);
+        return null;
     }
 
     /**
@@ -112,7 +181,18 @@ final class RequestOutcomeEvidence
      */
     public static function amount(?string $text): ?string
     {
-        if ($text === null || preg_match('/\d[\d,. ]*\d|\d/u', $text, $match) !== 1) {
+        if ($text === null) {
+            return null;
+        }
+
+        // «3 mil», «2.5 mil».
+        if (preg_match('/(\d{1,7})(?:[.,](\d{1,3}))?\s*mil\b/iu', $text, $thousands) === 1) {
+            $number = (float) ($thousands[1].'.'.($thousands[2] ?? '0')) * 1000;
+
+            return $number > self::MAX_AMOUNT ? null : number_format($number, 2, '.', '');
+        }
+
+        if (preg_match('/\d[\d,. ]*\d|\d/u', $text, $match) !== 1) {
             return null;
         }
 
@@ -138,16 +218,33 @@ final class RequestOutcomeEvidence
     }
 
     /**
-     * Lower case, without accents, WhatsApp formatting (*, _, ~) nor
-     * leading symbols or emoji, with single spaces.
+     * A decimal amount («3000.00») as people read it: «$3,000», «$3,000.50».
+     */
+    public static function display(string $decimal): string
+    {
+        $value = (float) $decimal;
+
+        return '$'.number_format($value, floor($value) === $value ? 0 : 2, '.', ',');
+    }
+
+    /**
+     * Lower case, without accents, WhatsApp formatting, emojis nor
+     * punctuation, with single spaces, and its words read as those of the
+     * openings when they are close enough («autorisa» → «autoriza»).
      */
     private static function normalize(string $line): string
     {
-        $line = mb_strtolower(str_replace(['*', '_', '~'], '', $line));
-        $line = strtr($line, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u']);
-        $line = (string) preg_replace('/^[^\p{L}\p{N}]+/u', '', $line);
+        return FuzzyText::canonical(RequestFieldCatalog::normalize($line), self::VOCABULARY, self::ALIASES);
+    }
 
-        return trim((string) preg_replace('/\s+/u', ' ', $line));
+    /**
+     * Whether the line speaks of a decision still to come: a future tense
+     * («autorizará», «aprobará», «rechazará»), «va a autorizar», «por
+     * autorizar», «pendiente» or «en revisión».
+     */
+    private static function undecided(string $line): bool
+    {
+        return preg_match('/\b(autori[sz]ara|aprobara|rechazara|va a (autori[sz]ar|aprobar|rechazar)|por (autori[sz]ar|aprobar)|pendiente|en revision)\b/u', RequestFieldCatalog::normalize($line)) === 1;
     }
 
     /**

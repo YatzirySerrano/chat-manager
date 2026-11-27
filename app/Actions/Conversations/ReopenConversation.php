@@ -68,11 +68,6 @@ class ReopenConversation
                 'closed_at' => null,
                 'closed_by_user_id' => null,
                 'completed_at' => null,
-                // No longer completed: its credit result goes with it (recorded again when it is completed).
-                'outcome' => null,
-                'outcome_amount' => null,
-                'outcome_at' => null,
-                'outcome_by_user_id' => null,
                 'reopened_at' => now(),
                 'reopen_count' => $conversation->reopen_count + 1,
             ],

@@ -159,15 +159,15 @@ test('the body only accepts catalog variables', function (string $body, string $
 })->with([
     'unknown variable' => [
         'Hola {cliente.nombre}',
-        'La variable {cliente.nombre} no existe. Solo puedes usar: {contacto.nombre}, {agente.nombre}, {departamento.nombre}, {empresa.nombre} y los datos de la solicitud, como {solicitud.cliente} o {solicitud.producto} (todas en «Insertar»).',
+        'La variable {cliente.nombre} no existe. Solo puedes usar: {contacto.nombre}, {agente.nombre}, {departamento.nombre}, {empresa.nombre}.',
     ],
     'expression' => [
         'Total: {1+1}',
-        'La variable {1+1} no existe. Solo puedes usar: {contacto.nombre}, {agente.nombre}, {departamento.nombre}, {empresa.nombre} y los datos de la solicitud, como {solicitud.cliente} o {solicitud.producto} (todas en «Insertar»).',
+        'La variable {1+1} no existe. Solo puedes usar: {contacto.nombre}, {agente.nombre}, {departamento.nombre}, {empresa.nombre}.',
     ],
     'stray braces' => [
         'Hola {{contacto.nombre}}',
-        'Las llaves { } solo pueden usarse para escribir variables completas. Variables disponibles: {contacto.nombre}, {agente.nombre}, {departamento.nombre}, {empresa.nombre} y los datos de la solicitud, como {solicitud.cliente} o {solicitud.producto} (todas en «Insertar»).',
+        'Las llaves { } solo pueden usarse para escribir variables completas. Variables disponibles: {contacto.nombre}, {agente.nombre}, {departamento.nombre}, {empresa.nombre}.',
     ],
     'html tag' => [
         'Hola <b>cliente</b>',

@@ -25,11 +25,6 @@ import AcceptanceNotice from '@/components/conversations/AcceptanceNotice.vue';
 import AwaitingInfoNotice from '@/components/conversations/AwaitingInfoNotice.vue';
 import { isAwaitingInfo } from '@/components/conversations/queueRules';
 import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
-import RequestFieldsStrip from '@/components/conversations/RequestFieldsStrip.vue';
-import {
-    capturedMessageIds,
-    provideRequestCapture,
-} from '@/components/conversations/requestFields';
 import TemplatePickerDialog from '@/components/conversations/TemplatePickerDialog.vue';
 import { useConversationTimeline } from '@/components/conversations/useConversationTimeline';
 import { reportMessageStatus } from '@/components/conversations/useInboxMessageStatus';
@@ -395,21 +390,6 @@ const paneStyle = computed(() =>
  * rules exactly as a file chosen with the clip.
  */
 const composerRef = ref<InstanceType<typeof ChatComposer> | null>(null);
-
-/*
- * «Tomar datos de la solicitud» on a message bubble opens the capture
- * dialog of the «Datos de la solicitud» strip under the header.
- */
-const requestFieldsStrip = ref<InstanceType<typeof RequestFieldsStrip> | null>(
-    null,
-);
-provideRequestCapture({
-    enabled: computed(() => props.conversation.can.categorize === true),
-    capturedMessageIds: computed(() =>
-        capturedMessageIds(props.conversation.request_fields),
-    ),
-    capture: (message) => requestFieldsStrip.value?.capture(message),
-});
 const dragDepth = ref(0);
 const dropActive = computed(() => dragDepth.value > 0);
 const dropAllowed = computed(() => composerRef.value?.acceptsFiles ?? false);
@@ -765,12 +745,6 @@ watch(conversationId, () => (dragDepth.value = 0));
                 :id="`acceptance-chat-${conversation.id}`"
                 :conversation="conversation"
                 class="border-t border-border/60 px-3 py-2 sm:px-4"
-            />
-
-            <!-- «Datos de la solicitud»: one line of chips, only when there are some. -->
-            <RequestFieldsStrip
-                ref="requestFieldsStrip"
-                :conversation="conversation"
             />
         </div>
 

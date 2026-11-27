@@ -39,11 +39,6 @@ const help: ModuleHelp = {
                 '{contacto.nombre}, {agente.nombre}, {departamento.nombre} y {empresa.nombre}. Si falta un dato se deja en blanco y se te avisa antes de enviar.',
         },
         {
-            name: 'Datos de la solicitud',
-            description:
-                'Variables como {solicitud.cliente}, {solicitud.producto} o {solicitud.monto_solicitado} toman los datos guardados en la conversación con «Tomar datos de la solicitud». Además, una línea «Etiqueta:» vacía (por ejemplo «Producto:» o «Monto solicitado: $») se completa con el dato del mismo nombre; si no hay dato, la línea queda igual.',
-        },
-        {
             name: 'Disponibilidad',
             description:
                 '«Disponible para todos los departamentos» (solo si tu rol ve toda la organización) o «Departamentos seleccionados».',
@@ -102,12 +97,10 @@ const help: ModuleHelp = {
     tips: [
         'Usa atajos cortos y fáciles de recordar: «hola», «horario», «pago».',
         'Revisa siempre el texto insertado antes de enviarlo; puedes ajustarlo para cada cliente.',
-        'Deja vacías las líneas «Producto:», «Cliente:» o «Monto solicitado: $» de tus plantillas de autorización: se completan solas con los datos tomados de la solicitud.',
     ],
     examples: [
         '«/horario» → «Hola {contacto.nombre}, nuestro horario es de lunes a viernes de 9:00 a 18:00.»',
         'Una respuesta personal «/firma» con tu nombre y extensión.',
-        '«/reactivacion» con «Producto:» y «Cliente:» vacíos → al insertarla en una conversación con datos tomados queda «Producto: S12» y «Cliente: Beatriz Guerrero».',
     ],
 };
 

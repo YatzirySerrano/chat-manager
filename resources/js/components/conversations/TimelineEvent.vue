@@ -100,11 +100,6 @@ const detail = computed(() => {
         );
     }
 
-    // Credit result recorded with the completion or corrected afterwards.
-    if (event.outcome) {
-        parts.push(event.outcome);
-    }
-
     // A justified exception to the queue rules made with this operation.
     if (event.queue_override) {
         const rules = event.queue_override.rules

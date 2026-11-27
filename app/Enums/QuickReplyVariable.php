@@ -5,10 +5,6 @@ namespace App\Enums;
 /**
  * Fixed catalog of placeholders a quick reply may contain. They are replaced
  * by plain text; nothing else inside braces is ever evaluated.
- *
- * The «solicitud.*» ones are the request data the team took from the
- * messages of the conversation («Datos de la solicitud»); without a value
- * they are left blank and reported, like any other variable.
  */
 enum QuickReplyVariable: string
 {
@@ -16,19 +12,6 @@ enum QuickReplyVariable: string
     case AgentName = 'agente.nombre';
     case DepartmentName = 'departamento.nombre';
     case CompanyName = 'empresa.nombre';
-    case RequestClient = 'solicitud.cliente';
-    case RequestBranch = 'solicitud.sucursal';
-    case RequestProduct = 'solicitud.producto';
-    case RequestCycle = 'solicitud.ciclo';
-    case RequestAmount = 'solicitud.monto_solicitado';
-    case RequestPreviousAmount = 'solicitud.monto_anterior';
-    case RequestPhone = 'solicitud.telefono';
-    case RequestBusiness = 'solicitud.giro_de_negocio';
-    case RequestPaymentDay = 'solicitud.dia_de_pago';
-    case RequestType = 'solicitud.tipo';
-
-    /** Prefix of the variables filled from the request data. */
-    public const REQUEST_PREFIX = 'solicitud.';
 
     /**
      * The placeholder as written in the body, e.g. "{contacto.nombre}".
@@ -45,16 +28,6 @@ enum QuickReplyVariable: string
             self::AgentName => 'Nombre del agente',
             self::DepartmentName => 'Nombre del departamento',
             self::CompanyName => 'Nombre de la empresa',
-            self::RequestClient => 'Cliente',
-            self::RequestBranch => 'Sucursal',
-            self::RequestProduct => 'Producto',
-            self::RequestCycle => 'Ciclo',
-            self::RequestAmount => 'Monto solicitado',
-            self::RequestPreviousAmount => 'Monto anterior',
-            self::RequestPhone => 'Teléfono',
-            self::RequestBusiness => 'Giro de negocio',
-            self::RequestPaymentDay => 'Día de pago',
-            self::RequestType => 'Tipo de solicitud',
         };
     }
 
@@ -68,39 +41,11 @@ enum QuickReplyVariable: string
             self::AgentName => 'Carlos Ruiz',
             self::DepartmentName => 'Ventas',
             self::CompanyName => 'Mi Empresa',
-            self::RequestClient => 'Beatriz Guerrero Olvera',
-            self::RequestBranch => 'Tula',
-            self::RequestProduct => 'S12',
-            self::RequestCycle => '01',
-            self::RequestAmount => '$5,000',
-            self::RequestPreviousAmount => '$3,000',
-            self::RequestPhone => '773 153 6979',
-            self::RequestBusiness => 'Tortillas',
-            self::RequestPaymentDay => 'Lunes',
-            self::RequestType => 'Nuevo',
         };
     }
 
     /**
-     * «general» (contact, agent, department, company) or «solicitud» (the
-     * request data of the conversation), to group the form buttons.
-     */
-    public function group(): string
-    {
-        return str_starts_with($this->value, self::REQUEST_PREFIX) ? 'solicitud' : 'general';
-    }
-
-    /**
-     * Key of the request field it reads («solicitud.producto» → "producto"),
-     * null for the other variables.
-     */
-    public function requestKey(): ?string
-    {
-        return $this->group() === 'solicitud' ? substr($this->value, strlen(self::REQUEST_PREFIX)) : null;
-    }
-
-    /**
-     * @return list<array{value: string, token: string, label: string, example: string, group: string}>
+     * @return list<array{value: string, token: string, label: string, example: string}>
      */
     public static function options(): array
     {
@@ -109,7 +54,6 @@ enum QuickReplyVariable: string
             'token' => $variable->token(),
             'label' => $variable->label(),
             'example' => $variable->example(),
-            'group' => $variable->group(),
         ], self::cases());
     }
 }

@@ -12,7 +12,6 @@ import {
 } from '@lucide/vue';
 import { useMediaQuery } from '@vueuse/core';
 import { computed, nextTick, ref, watch } from 'vue';
-import { toast } from 'vue-sonner';
 import {
     COMPOSER_CARD,
     COMPOSER_DOCK,
@@ -702,17 +701,6 @@ async function insertQuickReply(reply: AvailableQuickReply): Promise<void> {
 
     trigger.value = null;
     await insertAtCaret(reply.text, current?.start);
-
-    // Lines completed from «Datos de la solicitud»: inserted, never sent alone.
-    const filled = reply.filled?.length ?? 0;
-
-    if (filled > 0) {
-        toast.info(
-            filled === 1
-                ? 'Se completó 1 dato de la solicitud. Revísalo antes de enviar.'
-                : `Se completaron ${filled} datos de la solicitud. Revísalos antes de enviar.`,
-        );
-    }
 }
 
 function onKeydown(event: KeyboardEvent): void {
@@ -1322,7 +1310,6 @@ defineExpose({ focus, addFiles, acceptsFiles });
                             :query="trigger.query"
                             :contact-id="conversation.contact.id"
                             :department-id="conversation.department?.id ?? null"
-                            :conversation-id="conversation.id"
                             @select="insertQuickReply"
                             @close="closePicker"
                         />

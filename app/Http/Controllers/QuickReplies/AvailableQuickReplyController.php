@@ -5,7 +5,6 @@ namespace App\Http\Controllers\QuickReplies;
 use App\Enums\DataScope;
 use App\Http\Controllers\Controller;
 use App\Models\Contact;
-use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\QuickReply;
 use App\Models\User;
@@ -38,11 +37,6 @@ class AvailableQuickReplyController extends Controller
      * The actor's own personal replies are always offered (never anybody
      * else's) and listed first, flagged with `is_personal` so the picker
      * groups them under «Mis respuestas».
-     *
-     * With a conversation the actor sees, its request data («Datos de la
-     * solicitud») completes the «solicitud.*» variables and the empty
-     * «Etiqueta:» lines of each reply; `filled` names the fields used. A
-     * conversation outside the actor's reach is ignored, never revealed.
      */
     public function __invoke(Request $request, QuickReplyRenderer $renderer, PrivilegeGuard $guard): JsonResponse
     {
@@ -55,7 +49,6 @@ class AvailableQuickReplyController extends Controller
             'q' => ['nullable', 'string', 'max:100'],
             'contact_id' => ['nullable', 'integer'],
             'department_id' => ['nullable', 'integer'],
-            'conversation_id' => ['nullable', 'integer'],
         ]);
 
         $search = mb_strtolower(ltrim(trim((string) ($input['q'] ?? '')), '/'));
@@ -68,15 +61,7 @@ class AvailableQuickReplyController extends Controller
             ? Department::query()->find((int) $input['department_id'])
             : null;
 
-        $conversation = isset($input['conversation_id'])
-            ? Conversation::query()->find((int) $input['conversation_id'])
-            : null;
-
-        if ($conversation !== null && ! $actor->can('view', $conversation)) {
-            $conversation = null;
-        }
-
-        $context = $renderer->context($actor, $contact, $department, $conversation);
+        $context = $renderer->context($actor, $contact, $department);
 
         $quickReplies = QuickReply::query()
             ->usableBy($actor)
@@ -103,10 +88,8 @@ class AvailableQuickReplyController extends Controller
         $reachableDepartmentIds = $actor->dataScope() === DataScope::Global ? null : $actor->departmentIds();
 
         return response()->json([
-            'data' => $quickReplies->map(function (QuickReply $quickReply) use ($renderer, $context, $conversation, $reachableDepartmentIds): array {
-                $rendered = $conversation === null
-                    ? [...$renderer->render($quickReply, $context), 'filled' => []]
-                    : $renderer->renderForConversation($quickReply, $context, $conversation);
+            'data' => $quickReplies->map(function (QuickReply $quickReply) use ($renderer, $context, $reachableDepartmentIds): array {
+                $rendered = $renderer->render($quickReply, $context);
 
                 return [
                     'id' => $quickReply->id,
@@ -121,8 +104,6 @@ class AvailableQuickReplyController extends Controller
                         ->all()),
                     'text' => $rendered['text'],
                     'missing' => $rendered['missing'],
-                    // Request fields that completed «Etiqueta:» lines (to review before sending).
-                    'filled' => $rendered['filled'],
                 ];
             })->values()->all(),
         ]);

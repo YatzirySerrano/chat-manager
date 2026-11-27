@@ -4,7 +4,6 @@ import {
     Bot,
     ChartNoAxesColumn,
     CircleAlert,
-    ClipboardList,
     CircleQuestionMark,
     Copy,
     FlaskConical,
@@ -41,10 +40,6 @@ import LinkPreviewCard from '@/components/chat/LinkPreviewCard.vue';
 import LocationCard from '@/components/chat/LocationCard.vue';
 import MessageAttachmentPreview from '@/components/conversations/MessageAttachmentPreview.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
-import {
-    looksLikeRequest,
-    useRequestCapture,
-} from '@/components/conversations/requestFields';
 import SaveFileButton from '@/components/video-exports/SaveFileButton.vue';
 import {
     DELIVERY_UNKNOWN,
@@ -157,29 +152,6 @@ const importedLabel = computed(() => {
 });
 /* Deleted for everyone by its sender: only a tombstone is left. */
 const revoked = computed(() => Boolean(props.message.revoked_at));
-
-/*
- * «Tomar datos de la solicitud»: offered on received messages with text in
- * an open chat where the viewer may keep request data. Prominent (under the
- * bubble) when the text reads as a request, otherwise among the quick
- * actions beside it. Optional: nothing requires using it.
- */
-const requestCapture = useRequestCapture();
-const canCapture = computed(
-    () =>
-        requestCapture !== null &&
-        requestCapture.enabled.value &&
-        !outbound.value &&
-        !revoked.value &&
-        (props.message.body ?? '').trim() !== '',
-);
-const captureProminent = computed(
-    () => canCapture.value && looksLikeRequest(props.message.body),
-);
-const captured = computed(
-    () =>
-        requestCapture?.capturedMessageIds.value.has(props.message.id) ?? false,
-);
 const edited = computed(
     () => !revoked.value && Boolean(props.message.edited_at),
 );
@@ -1238,26 +1210,6 @@ async function copyText(): Promise<void> {
                 </div>
             </div>
 
-            <!-- The message reads as a credit request: take its data. -->
-            <div
-                v-if="captureProminent"
-                class="mt-1 flex justify-start"
-                data-request-capture
-            >
-                <button
-                    type="button"
-                    class="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-xs font-medium text-primary shadow-xs hover:bg-accent pointer-coarse:min-h-9"
-                    @click="requestCapture?.capture(message)"
-                >
-                    <ClipboardList class="size-3.5" aria-hidden="true" />
-                    {{
-                        captured
-                            ? 'Datos tomados · Volver a tomar'
-                            : 'Tomar datos de la solicitud'
-                    }}
-                </button>
-            </div>
-
             <!-- Reactions left on the message. -->
             <ul
                 v-if="reactionChips.length > 0 && !revoked"
@@ -1293,7 +1245,6 @@ async function copyText(): Promise<void> {
                     !revoked &&
                     (canQuote ||
                         copyable ||
-                        canCapture ||
                         message.can_edit ||
                         message.can_delete)
                 "
@@ -1316,16 +1267,6 @@ async function copyText(): Promise<void> {
                 >
                     <Reply class="size-3.5" aria-hidden="true" />
                     <span class="sr-only">Responder citando este mensaje</span>
-                </button>
-                <button
-                    v-if="canCapture && !captureProminent"
-                    type="button"
-                    :class="ROW_ACTION_BUTTON"
-                    title="Tomar datos de la solicitud"
-                    @click="requestCapture?.capture(message)"
-                >
-                    <ClipboardList class="size-3.5" aria-hidden="true" />
-                    <span class="sr-only">Tomar datos de la solicitud</span>
                 </button>
                 <button
                     v-if="copyable"

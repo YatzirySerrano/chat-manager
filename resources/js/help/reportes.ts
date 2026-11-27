@@ -3,14 +3,13 @@ import type { ModuleHelp } from './types';
 const help: ModuleHelp = {
     title: 'Reportes',
     objective:
-        'Indicadores de la atención en el periodo que elijas, en cinco vistas: Resumen (volumen, tiempos y demanda), Resultados (créditos aprobados, rechazadas y monto autorizado), Productividad (qué hizo cada colaborador), Cumplimiento de SLA y Desgloses (departamento, categoría, conexión, canal y responsable actual). Siempre se comparan con el periodo anterior.',
+        'Indicadores de la atención en el periodo que elijas, en cuatro vistas: Resumen (volumen, tiempos y demanda), Productividad (qué hizo cada colaborador), Cumplimiento de SLA y Desgloses (departamento, categoría, conexión, canal y responsable actual). Siempre se comparan con el periodo anterior.',
     mainActions: [
         'Elegir el periodo («Hoy», «Últimos 7 días», «Últimos 30 días», «Este mes», «Rango personalizado»…).',
         'Filtrar por departamento, agente responsable, conexión, canal, categoría y estado entre los que puedes ver.',
         'Agrupar el volumen por día, semana o mes.',
         'Ordenar la tabla de productividad por cualquier columna y ver la evolución de cada colaborador.',
-        'En «Resultados», ver cuántas solicitudes completadas se aprobaron o rechazaron y el monto autorizado, por colaborador (base de la comisión), por departamento y por día, y exportarlo.',
-        'Exportar a Excel (.xlsx) o PDF la vista abierta: reporte general, resultados de solicitudes, productividad por colaborador o cumplimiento de SLA con el detalle de incumplimientos.',
+        'Exportar a Excel (.xlsx) o PDF la vista abierta: reporte general, productividad por colaborador o cumplimiento de SLA con el detalle de incumplimientos.',
     ],
     workflow: [
         'Elige el periodo; con «Rango personalizado» indica «Desde» y «Hasta» (máximo 366 días) y pulsa «Aplicar rango».',
@@ -77,16 +76,6 @@ const help: ModuleHelp = {
             name: 'Productividad: Tiempo de atención',
             description:
                 'Promedio del tiempo en que la persona fue responsable de cada solicitud. Solo se promedian los tramos ya concluidos.',
-        },
-        {
-            name: 'Resultados: Completadas, Créditos aprobados, Rechazadas, Sin resultado',
-            description:
-                'Solicitudes cerradas como «Solicitud completada» y el resultado que se registró al completarlas o después. Cada una cuenta en la fecha de su resultado (o de la completación si no tiene) y para quien la completó. No incluye el historial importado.',
-        },
-        {
-            name: 'Resultados: Tasa de aprobación y montos',
-            description:
-                'Tasa: aprobadas entre las que tienen resultado (las que no tienen no cuentan en contra). Monto autorizado: suma de los créditos aprobados; el promedio solo usa los aprobados que tienen monto.',
         },
         {
             name: 'Pendientes actuales / Vencidas',

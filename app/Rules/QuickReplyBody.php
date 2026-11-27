@@ -30,7 +30,7 @@ class QuickReplyBody implements ValidationRule
             return;
         }
 
-        $allowed = implode(', ', array_map(fn (QuickReplyVariable $variable): string => $variable->token(), QuickReplyVariable::cases()));
+        $allowed = self::allowedList();
 
         preg_match_all('/\{([^{}]*)\}/u', $value, $matches);
 
@@ -50,5 +50,17 @@ class QuickReplyBody implements ValidationRule
         if (str_contains($withoutVariables, '{') || str_contains($withoutVariables, '}')) {
             $fail("Las llaves { } solo pueden usarse para escribir variables completas. Variables disponibles: {$allowed}.");
         }
+    }
+
+    /**
+     * The general variables, and the request ones summarized: the form
+     * lists all of them under «Insertar».
+     */
+    private static function allowedList(): string
+    {
+        $general = array_filter(QuickReplyVariable::cases(), fn (QuickReplyVariable $variable): bool => $variable->group() === 'general');
+
+        return implode(', ', array_map(fn (QuickReplyVariable $variable): string => $variable->token(), $general))
+            .' y los datos de la solicitud, como '.QuickReplyVariable::RequestClient->token().' o '.QuickReplyVariable::RequestProduct->token().' (todas en «Insertar»)';
     }
 }

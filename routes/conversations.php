@@ -6,10 +6,12 @@ use App\Http\Controllers\Conversations\ConversationCategoryController;
 use App\Http\Controllers\Conversations\ConversationController;
 use App\Http\Controllers\Conversations\ConversationMessageController;
 use App\Http\Controllers\Conversations\ConversationNoteController;
+use App\Http\Controllers\Conversations\ConversationOutcomeController;
 use App\Http\Controllers\Conversations\ConversationPermanentDeletionController;
 use App\Http\Controllers\Conversations\ConversationPreviewController;
 use App\Http\Controllers\Conversations\ConversationReadController;
 use App\Http\Controllers\Conversations\ConversationReadinessController;
+use App\Http\Controllers\Conversations\ConversationRequestFieldController;
 use App\Http\Controllers\Conversations\ConversationStartController;
 use App\Http\Controllers\Conversations\ConversationStatusController;
 use App\Http\Controllers\Conversations\ConversationTagController;
@@ -69,6 +71,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('conversations/{conversation}/tags', [ConversationTagController::class, 'update'])->name('conversations.tags.update');
     Route::post('conversations/{conversation}/readiness', [ConversationReadinessController::class, 'update'])->middleware('phase-two')->name('conversations.readiness.update');
     Route::put('conversations/{conversation}/category', [ConversationCategoryController::class, 'update'])->name('conversations.category.update');
+    // Credit result of a completed request: the suggestion read from the chat, and its correction.
+    Route::get('conversations/{conversation}/outcome/suggestion', [ConversationOutcomeController::class, 'suggestion'])
+        ->middleware('throttle:120,1')
+        ->name('conversations.outcome.suggestion');
+    Route::put('conversations/{conversation}/outcome', [ConversationOutcomeController::class, 'update'])
+        ->middleware('throttle:60,1')
+        ->name('conversations.outcome.update');
+    // «Datos de la solicitud»: suggestions read from one message, and the fields kept.
+    Route::get('conversations/{conversation}/messages/{message}/request-fields', [ConversationRequestFieldController::class, 'parse'])
+        ->middleware('throttle:120,1')
+        ->name('conversations.request-fields.parse');
+    Route::put('conversations/{conversation}/request-fields', [ConversationRequestFieldController::class, 'update'])
+        ->middleware('throttle:60,1')
+        ->name('conversations.request-fields.update');
     Route::delete('conversations/{conversation}/permanent', ConversationPermanentDeletionController::class)
         ->middleware('throttle:20,1')
         ->name('conversations.destroy-permanently');

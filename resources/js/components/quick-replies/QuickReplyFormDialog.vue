@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { Braces, Building2, Globe, Lock, Users } from '@lucide/vue';
+import {
+    Braces,
+    Building2,
+    ClipboardList,
+    Globe,
+    Lock,
+    Users,
+} from '@lucide/vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import FieldHelp from '@/components/FieldHelp.vue';
@@ -153,6 +160,14 @@ async function insertVariable(token: string): Promise<void> {
     element?.focus();
     element?.setSelectionRange(start + token.length, start + token.length);
 }
+
+/* Buttons: the general variables, then the request data ones. */
+const generalVariables = computed(() =>
+    props.variables.filter((variable) => variable.group !== 'solicitud'),
+);
+const requestVariables = computed(() =>
+    props.variables.filter((variable) => variable.group === 'solicitud'),
+);
 
 const allowedVariables = computed(() =>
     props.variables.map((variable) => variable.value),
@@ -421,7 +436,7 @@ function submit(): void {
                             Insertar:
                         </span>
                         <Button
-                            v-for="variable in variables"
+                            v-for="variable in generalVariables"
                             :key="variable.value"
                             type="button"
                             variant="outline"
@@ -445,6 +460,43 @@ function submit(): void {
                                     '.',
                                 warning:
                                     'Cualquier otro texto entre llaves será rechazado.',
+                            }"
+                        />
+                    </div>
+                    <div
+                        v-if="requestVariables.length > 0"
+                        class="flex flex-wrap items-center gap-1.5"
+                    >
+                        <span
+                            class="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                        >
+                            <ClipboardList
+                                class="size-3.5"
+                                aria-hidden="true"
+                            />
+                            Datos de la solicitud:
+                        </span>
+                        <Button
+                            v-for="variable in requestVariables"
+                            :key="variable.value"
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            class="h-7 rounded-full px-2.5 text-xs"
+                            :title="`Inserta ${variable.token}`"
+                            @click="insertVariable(variable.token)"
+                        >
+                            {{ variable.label }}
+                        </Button>
+                        <FieldHelp
+                            title="Datos de la solicitud"
+                            :help="{
+                                description:
+                                    'Los datos que el analista tomó del mensaje del gestor con «Tomar datos de la solicitud» (Cliente, Producto, Monto solicitado…).',
+                                howTo: 'Inserta la variable donde quieras el dato. También basta con dejar una línea «Etiqueta:» vacía, por ejemplo «Producto:» o «Monto solicitado: $»: al insertar la respuesta en una conversación se completa con el dato del mismo nombre.',
+                                example: 'Producto: {solicitud.producto}',
+                                warning:
+                                    'Si la conversación no tiene ese dato, queda en blanco y se avisa al agente. La respuesta siempre se inserta para revisarla; nunca se envía sola.',
                             }"
                         />
                     </div>

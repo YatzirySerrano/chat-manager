@@ -11,6 +11,7 @@ const help: ModuleHelp = {
         'Transferir la conversación a otro departamento o agente, o devolverla a «Pendientes» de su departamento.',
         'Cerrar la conversación cuando la atención terminó y reabrirla si el cliente necesita seguimiento.',
         'Aplicar etiquetas a la conversación desde la bandeja o desde el panel de detalles.',
+        'Tomar los datos de una solicitud de crédito (Cliente, Producto, Monto solicitado…) desde el mensaje del gestor con «Tomar datos de la solicitud»; quedan a la vista bajo el encabezado del chat y completan las respuestas rápidas.',
         'Guardar al cliente en el directorio de Contactos con «Guardar contacto» cuando aún no está registrado.',
         'Ponerle a un contacto un alias privado (solo lo ves tú) y personalizar los colores de tus chats.',
         'Enviar una plantilla aprobada de WhatsApp, solo si eres administrador con ese permiso.',
@@ -20,7 +21,7 @@ const help: ModuleHelp = {
         'Revisa «Pendientes» y pulsa «Aceptar». A partir de ese momento tú eres el responsable y la conversación pasa a «En atención».',
         'Responde desde el compositor. Usa «Nota interna» para dejar contexto al equipo sin que el cliente lo vea.',
         'Si otra área debe atenderla, usa «Más acciones» → «Transferir». Se conservan mensajes, notas, etiquetas y procedencia, y no se envía nada al cliente.',
-        'Al terminar, «Solicitud completada» (envía la despedida) o «Completada sin despedida». Su historial se conserva en «Cerradas» y, si la persona vuelve a escribir, entra como solicitud nueva a «Pendientes».',
+        'Al terminar, «Solicitud completada» (envía la despedida) o «Completada sin despedida». Antes de completarla eliges el resultado del crédito: «Crédito aprobado» con su «Monto autorizado», «Rechazada» o «Sin resultado»; ya viene sugerido por tu mensaje «Se autoriza…» o «Solicitud rechazada», así que basta con pulsar «Completar» (o Enter). Su historial se conserva en «Cerradas» y, si la persona vuelve a escribir, entra como solicitud nueva a «Pendientes».',
         'Si el cliente vuelve a escribir después del cierre, la conversación regresa a la bandeja para atenderla de nuevo.',
     ],
     fields: [
@@ -53,6 +54,11 @@ const help: ModuleHelp = {
             name: 'Hacer una excepción',
             description:
                 'Solo para quien tiene el permiso de hacer excepciones a las reglas de la cola: permite aceptar una solicitud saltándose la confirmación, el tiempo de espera o el orden, siempre con un motivo. Queda en el historial de la conversación y en la auditoría. No omite tu límite de conversaciones ni el control de conversaciones pendientes de atención.',
+        },
+        {
+            name: 'Resultado del crédito',
+            description:
+                '«Solicitud completada» solo dice que se atendió; el resultado dice si el crédito se aprobó (lo único que comisiona, con su monto autorizado) o se rechazó. Es opcional: puedes completar sin resultado y registrarlo después en «Detalles» → «Resultado del crédito» → «Registrar» o «Cambiar». Quien completó la solicitud, o quien la supervisa, puede corregirlo; el cambio queda en el historial de la conversación y en la auditoría. Si la solicitud se reabre, su resultado se borra y se registra de nuevo al completarla.',
         },
         {
             name: 'Categoría de la solicitud',
@@ -179,6 +185,7 @@ const help: ModuleHelp = {
     ],
     tips: [
         'Escribe «/» en el compositor para buscar respuestas rápidas; se insertan para revisarlas y nunca se envían solas.',
+        '«Tomar datos de la solicitud» es opcional: aparece bajo los mensajes que parecen una solicitud (o junto al mensaje, al pasar el cursor). Marca los datos que quieres, corrige el valor y elige qué es cada uno. Un clic en un dato de la franja lo copia; el lápiz permite corregir o quitar.',
         'Usa los chips de filtro aplicados para saber siempre qué estás viendo y quítalos con un clic.',
         'Antes de transferir, deja una nota interna con el contexto para que la siguiente persona no tenga que preguntar de nuevo.',
         'Los contactos que escriben por primera vez no aparecen en el directorio hasta que alguien los guarda con «Guardar contacto».',

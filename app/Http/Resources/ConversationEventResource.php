@@ -3,7 +3,9 @@
 namespace App\Http\Resources;
 
 use App\Enums\ConversationEventType;
+use App\Enums\ConversationOutcome;
 use App\Models\ConversationEvent;
+use App\Support\OutcomeText;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -45,6 +47,8 @@ class ConversationEventResource extends JsonResource
                 'from' => is_string($this->metadata['from_category'] ?? null) ? $this->metadata['from_category'] : null,
                 'to' => is_string($this->metadata['to_category'] ?? null) ? $this->metadata['to_category'] : null,
             ] : null,
+            // Credit result recorded with a completion or corrected afterwards, in words.
+            'outcome' => $this->outcomeText(),
             'created_at' => $this->created_at->toIso8601String(),
         ];
     }
@@ -56,6 +60,23 @@ class ConversationEventResource extends JsonResource
     private function completedClose(): bool
     {
         return $this->type === ConversationEventType::Closed && ($this->metadata['completed'] ?? false) === true;
+    }
+
+    /**
+     * «Crédito aprobado por $3,000», «Rechazada»; a correction that removed
+     * the result reads «sin resultado». Null for every other event.
+     */
+    private function outcomeText(): ?string
+    {
+        $metadata = $this->metadata ?? [];
+        $outcome = is_string($metadata['outcome'] ?? null) ? ConversationOutcome::tryFrom($metadata['outcome']) : null;
+        $amount = is_string($metadata['outcome_amount'] ?? null) || is_numeric($metadata['outcome_amount'] ?? null) ? $metadata['outcome_amount'] : null;
+
+        return match (true) {
+            $this->type === ConversationEventType::OutcomeRecorded => OutcomeText::spell($outcome, $amount) ?? 'sin resultado',
+            $this->completedClose() => OutcomeText::spell($outcome, $amount),
+            default => null,
+        };
     }
 
     /**

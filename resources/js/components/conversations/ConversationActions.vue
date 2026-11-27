@@ -59,6 +59,9 @@ import type { ConversationSummary, TransferOptions } from '@/types';
 const ConversationRouteDialog = defineAsyncComponent(
     () => import('@/components/conversations/ConversationRouteDialog.vue'),
 );
+const CompleteRequestDialog = defineAsyncComponent(
+    () => import('@/components/conversations/CompleteRequestDialog.vue'),
+);
 
 /**
  * Operations of the engine on the open conversation (accept, assign,
@@ -93,6 +96,7 @@ function closeDialogsForConflict(message: string): void {
     errors.value = {};
     reasonDialog.value = null;
     routeDialog.value = null;
+    completeDialogOpen.value = false;
     toast.error(message);
 }
 
@@ -414,12 +418,30 @@ const completeAsButton = computed(
 );
 
 /**
- * Direct, with no comment: the request is done and leaves the list. With a
- * farewell configured on the connection, «Sin despedida» skips it.
+ * No comment to write: the dialog only asks for the credit result
+ * («Crédito aprobado» with its amount, «Rechazada», or none), already
+ * pre-selected from the conversation, and Enter completes it. The request
+ * is done and leaves the list. With a farewell configured on the
+ * connection, «Sin despedida» skips it.
  */
+const completeDialogOpen = ref(false);
+const completeFarewell = ref(true);
+
 function openCompleted(farewell = true): void {
     errors.value = {};
-    operate(close.url(id.value), { completed: true, farewell });
+    completeFarewell.value = farewell;
+    completeDialogOpen.value = true;
+}
+
+function confirmCompleted(payload: {
+    outcome: string | null;
+    outcome_amount: string | null;
+}): void {
+    operate(
+        close.url(id.value),
+        { completed: true, farewell: completeFarewell.value, ...payload },
+        () => (completeDialogOpen.value = false),
+    );
 }
 
 const offersSilentComplete = computed(
@@ -677,6 +699,21 @@ const secondary = computed<Action[]>(() => {
             :processing="processing"
             :error="errors.reason ?? errors.conversation"
             @confirm="confirmReason"
+        />
+
+        <CompleteRequestDialog
+            v-if="can.close"
+            v-model:open="completeDialogOpen"
+            mode="complete"
+            :conversation-id="conversation.id"
+            :farewell="
+                completeFarewell && Boolean(conversation.connection.farewell)
+            "
+            :processing="processing"
+            :error="
+                errors.outcome_amount ?? errors.outcome ?? errors.conversation
+            "
+            @confirm="confirmCompleted"
         />
 
         <ConversationRouteDialog

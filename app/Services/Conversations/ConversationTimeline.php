@@ -203,6 +203,60 @@ class ConversationTimeline
     }
 
     /**
+     * A slice of one conversation for «Conversación completa» (the contact's
+     * whole history, ContactFullHistory): its newest `$limit` messages, or
+     * those right before the given one, delimited exactly as page() does
+     * (by id, or by written time for imported history). Reactions are left
+     * out: they travel on the message they react to. Relations are not
+     * loaded here, so the caller loads them once for every slice of a page
+     * and presents each slice with presentHistory().
+     *
+     * @return array{messages: Collection<int, Message>, has_more: bool}
+     */
+    public function historySlice(Conversation $conversation, ?int $beforeMessageId, int $limit): array
+    {
+        $byTime = $conversation->isImported();
+        $upper = null;
+
+        if ($beforeMessageId !== null) {
+            $upper = Message::query()->where('conversation_id', $conversation->id)->whereKey($beforeMessageId)->value('created_at');
+
+            if ($upper === null) {
+                return ['messages' => new Collection, 'has_more' => false];
+            }
+        }
+
+        $messages = Message::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('type', '!=', MessageType::Reaction)
+            ->when($beforeMessageId !== null && ! $byTime, fn (Builder $query) => $query->where('id', '<', $beforeMessageId))
+            ->when($beforeMessageId !== null && $byTime, fn (Builder $query) => $query->where(fn (Builder $older) => $older
+                ->where('created_at', '<', $upper)
+                ->orWhere(fn (Builder $same) => $same->where('created_at', $upper)->where('id', '<', $beforeMessageId))))
+            ->when($byTime, fn (Builder $query) => $query->orderByDesc('created_at'))
+            ->orderByDesc('id')
+            ->limit($limit + 1)
+            ->get();
+
+        return [
+            'messages' => $messages->take($limit)->values(),
+            'has_more' => $messages->count() > $limit,
+        ];
+    }
+
+    /**
+     * The messages of a slice (historySlice(), relations already loaded),
+     * in the order they were written, as the chat renders them.
+     *
+     * @param  Collection<int, Message>  $messages
+     * @return list<array<string, mixed>>
+     */
+    public function presentHistory(Conversation $conversation, Collection $messages, Request $request): array
+    {
+        return $this->presentMessages($conversation, $this->inWrittenOrder($messages), $request);
+    }
+
+    /**
      * The bound an `until` describes, or null when it is malformed.
      *
      * @return array{at: string, note: int|null, event: int|null}|null

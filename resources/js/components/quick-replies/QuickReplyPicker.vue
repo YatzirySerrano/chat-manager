@@ -24,10 +24,13 @@ const props = withDefaults(
         query: string;
         contactId?: number | null;
         departmentId?: number | null;
+        /** Open conversation: its «Datos de la solicitud» complete the replies. */
+        conversationId?: number | null;
     }>(),
     {
         contactId: null,
         departmentId: null,
+        conversationId: null,
     },
 );
 
@@ -68,6 +71,10 @@ async function load(): Promise<void> {
         query.department_id = props.departmentId;
     }
 
+    if (props.conversationId !== null) {
+        query.conversation_id = props.conversationId;
+    }
+
     try {
         const response = await http.get(available.url({ query }));
 
@@ -89,10 +96,19 @@ async function load(): Promise<void> {
     }
 }
 
-watchDebounced(() => [props.query, props.contactId, props.departmentId], load, {
-    debounce: 150,
-    immediate: true,
-});
+watchDebounced(
+    () => [
+        props.query,
+        props.contactId,
+        props.departmentId,
+        props.conversationId,
+    ],
+    load,
+    {
+        debounce: 150,
+        immediate: true,
+    },
+);
 
 const activeReply = computed(() => replies.value[activeIndex.value] ?? null);
 

@@ -5,13 +5,26 @@ export type QuickReplyVariableValue =
     | 'contacto.nombre'
     | 'agente.nombre'
     | 'departamento.nombre'
-    | 'empresa.nombre';
+    | 'empresa.nombre'
+    // Request data of the conversation («Datos de la solicitud»).
+    | 'solicitud.cliente'
+    | 'solicitud.sucursal'
+    | 'solicitud.producto'
+    | 'solicitud.ciclo'
+    | 'solicitud.monto_solicitado'
+    | 'solicitud.monto_anterior'
+    | 'solicitud.telefono'
+    | 'solicitud.giro_de_negocio'
+    | 'solicitud.dia_de_pago'
+    | 'solicitud.tipo';
 
 export type QuickReplyVariableOption = {
     value: QuickReplyVariableValue;
     token: string;
     label: string;
     example: string;
+    /** «solicitud»: filled from the request data of the conversation. */
+    group?: 'general' | 'solicitud';
 };
 
 export type QuickReplySummary = {
@@ -76,4 +89,6 @@ export type AvailableQuickReply = {
     departments: { id: number; name: string }[];
     text: string;
     missing: QuickReplyVariableValue[];
+    /** Request fields that completed its «Etiqueta:» lines (keys), to review. */
+    filled?: string[];
 };

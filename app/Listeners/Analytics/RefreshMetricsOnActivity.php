@@ -27,6 +27,7 @@ class RefreshMetricsOnActivity
         'read',
         'tags',
         'contact',
+        'request_fields',
     ];
 
     public function handleConversationChanged(ConversationChanged $event): void

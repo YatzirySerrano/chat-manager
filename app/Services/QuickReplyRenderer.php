@@ -4,9 +4,11 @@ namespace App\Services;
 
 use App\Enums\QuickReplyVariable;
 use App\Models\Contact;
+use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\QuickReply;
 use App\Models\User;
+use App\Support\RequestFields\RequestFieldCatalog;
 
 /**
  * Turns a quick reply body into the plain text inserted in the composer.
@@ -18,6 +20,12 @@ use App\Models\User;
  * A variable without a value becomes an empty string, the spaces around it
  * are tidied up and the variable is reported as missing so the agent can
  * review the text before sending it.
+ *
+ * Inserted in a conversation, a reply is also completed with the request
+ * data the team took from its messages («Datos de la solicitud»): through
+ * the «solicitud.*» variables and through its «Etiqueta:» lines left empty
+ * («Producto:», «Monto solicitado: $»), see fillRequestLines(). The result
+ * is always inserted in the composer for review, never sent on its own.
  */
 class QuickReplyRenderer
 {
@@ -76,14 +84,87 @@ class QuickReplyRenderer
      *
      * @return array<string, string|null>
      */
-    public function context(?User $agent = null, ?Contact $contact = null, ?Department $department = null): array
+    public function context(?User $agent = null, ?Contact $contact = null, ?Department $department = null, ?Conversation $conversation = null): array
     {
-        return [
+        $context = [
             QuickReplyVariable::ContactName->value => $contact?->name,
             QuickReplyVariable::AgentName->value => $agent?->name,
             QuickReplyVariable::DepartmentName->value => $department?->name,
             QuickReplyVariable::CompanyName->value => (string) $this->settings->get('general.platform_name', ''),
         ];
+
+        $values = $conversation === null ? [] : RequestFieldCatalog::values($conversation->request_fields);
+
+        foreach (QuickReplyVariable::cases() as $variable) {
+            $key = $variable->requestKey();
+
+            if ($key !== null) {
+                $context[$variable->value] = $values[$key] ?? null;
+            }
+        }
+
+        return $context;
+    }
+
+    /**
+     * Completes the «Etiqueta:» lines whose value was left empty with the
+     * request field of the same label: «Producto:» → «Producto: S12»,
+     * «*Cliente:*» → «*Cliente:* Beatriz», «Monto solicitado: $» →
+     * «Monto solicitado: $5,000» (never «$$5,000»). Labels are compared
+     * normalized (RequestFieldCatalog::keyFor(): accents, case, WhatsApp
+     * markers and emojis do not matter). Lines that already have a value,
+     * hold several labels, or whose label has no captured value stay as
+     * written. The values are plain text on one line, never evaluated.
+     *
+     * @param  array<string, string>  $values  Request field values by key (RequestFieldCatalog::values()).
+     * @return array{text: string, filled: list<string>}
+     */
+    public function fillRequestLines(string $text, array $values): array
+    {
+        if ($values === []) {
+            return ['text' => $text, 'filled' => []];
+        }
+
+        $filled = [];
+
+        $text = (string) preg_replace_callback(
+            '/^(?<label>[^:\r\n]{1,60}?[ \t]*:(?:[ \t]*[*_~]+)?)[ \t]*(?<dollar>\$?)[ \t]*$/mu',
+            function (array $match) use ($values, &$filled): string {
+                $key = RequestFieldCatalog::keyFor(substr($match['label'], 0, (int) strrpos($match['label'], ':')));
+                $value = $this->clean($values[$key] ?? null);
+
+                if ($key === '' || $value === '') {
+                    return $match[0];
+                }
+
+                $filled[$key] = true;
+
+                if ($match['dollar'] === '$' || str_starts_with($value, '$')) {
+                    $value = '$'.ltrim($value, "$ \t");
+                }
+
+                return $match['label'].' '.$value;
+            },
+            $text,
+        );
+
+        return ['text' => $text, 'filled' => array_keys($filled)];
+    }
+
+    /**
+     * A reply rendered for a conversation: its variables (the context comes
+     * from context() with the conversation) and then its empty «Etiqueta:»
+     * lines, reported in `filled` so the agent knows what to review.
+     *
+     * @param  array<string, string|null>  $context
+     * @return array{text: string, missing: list<string>, filled: list<string>}
+     */
+    public function renderForConversation(QuickReply|string $body, array $context, Conversation $conversation): array
+    {
+        $rendered = $this->render($body, $context);
+        $completed = $this->fillRequestLines($rendered['text'], RequestFieldCatalog::values($conversation->request_fields));
+
+        return ['text' => $completed['text'], 'missing' => $rendered['missing'], 'filled' => $completed['filled']];
     }
 
     /**

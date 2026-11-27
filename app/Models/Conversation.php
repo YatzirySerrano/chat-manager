@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ConversationOrigin;
+use App\Enums\ConversationOutcome;
 use App\Enums\ConversationReadiness;
 use App\Enums\ConversationStatus;
 use App\Services\Conversations\ConversationAccess;
@@ -96,6 +97,11 @@ class Conversation extends Model
             'readiness' => ConversationReadiness::class,
             'readiness_changed_at' => 'datetime',
             'queued_at' => 'datetime',
+            'request_fields' => 'array',
+            'outcome' => ConversationOutcome::class,
+            'outcome_amount' => 'decimal:2',
+            'outcome_at' => 'datetime',
+            'awaiting_info_at' => 'datetime',
         ];
     }
 

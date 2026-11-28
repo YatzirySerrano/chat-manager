@@ -3,13 +3,17 @@
 namespace App\Actions\Conversations;
 
 use App\Enums\AuditAction;
+use App\Enums\ConversationStatus;
 use App\Events\Conversations\ConversationChanged;
 use App\Models\Conversation;
 use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Support\RequestFields\RequestFieldCatalog;
+use App\Support\RequestFields\RequestResolution;
+use App\Support\RequestOutcomeEvidence;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -32,6 +36,13 @@ use Illuminate\Validation\ValidationException;
  * category (the responsible agent, or whoever assigns conversations or
  * confirms requests within their reach), again under lock. Recorded in the
  * audit log and signalled in real time so other viewers refresh.
+ *
+ * On a completed request the resolution amounts («Monto autorizado»,
+ * «Desembolso», «Cantidad a pagar») stay correctable by whoever may record
+ * its result (ConversationPolicy::correctResolution()), even when the rest
+ * of the data no longer is; and «Monto autorizado» of an approved request
+ * is the result's amount: a correction moves both in the same transaction
+ * (RecordConversationOutcome::followAuthorizedAmount()).
  */
 class SaveRequestFields
 {
@@ -39,9 +50,12 @@ class SaveRequestFields
 
     public const REPLACE = 'replace';
 
+    public const RESOLUTION_ONLY_MESSAGE = 'En una solicitud completada solo se corrigen los montos de la resolución (monto autorizado, desembolso y cantidad a pagar).';
+
     public function __construct(
         private ConversationLifecycle $lifecycle,
         private AuditLogger $audit,
+        private RecordConversationOutcome $outcome,
     ) {}
 
     /**
@@ -54,7 +68,10 @@ class SaveRequestFields
     {
         return DB::transaction(function () use ($conversation, $fields, $mode, $actor): bool {
             $conversation = $this->lifecycle->lock($conversation);
-            $actor = $this->lifecycle->authorize($actor, 'categorize', $conversation);
+            $correcting = $this->correctsResolution($conversation, $actor);
+            $actor = $correcting
+                ? $this->lifecycle->freshUser($actor->id, lock: false)
+                : $this->lifecycle->authorize($actor, 'categorize', $conversation);
 
             $current = RequestFieldCatalog::fromStored($conversation->request_fields);
             $currentByKey = [];
@@ -79,6 +96,12 @@ class SaveRequestFields
                 return false;
             }
 
+            $changedKeys = $this->changedKeys($currentByKey, $next);
+
+            if ($correcting && array_diff($changedKeys, RequestResolution::MONEY) !== []) {
+                throw ValidationException::withMessages(['fields' => self::RESOLUTION_ONLY_MESSAGE]);
+            }
+
             $conversation->forceFill(['request_fields' => $next === [] ? null : $next])->save();
 
             $this->audit->record(AuditAction::ConversationRequestFieldsChanged, $conversation, [
@@ -86,10 +109,85 @@ class SaveRequestFields
                 'changes' => $changes,
             ], $actor);
 
+            if (in_array('monto_autorizado', $changedKeys, true)) {
+                $this->followAuthorizedAmount($conversation, $next, $actor);
+            }
+
             ConversationChanged::dispatch($conversation->id, 'request_fields', $actor->id);
 
             return true;
         });
+    }
+
+    /**
+     * Whether this save is a correction of the resolution of a completed
+     * request by someone who may record its result but not keep the rest
+     * of its data now (the row is locked).
+     */
+    private function correctsResolution(Conversation $conversation, User $actor): bool
+    {
+        if ($conversation->status !== ConversationStatus::Closed) {
+            return false;
+        }
+
+        $gate = Gate::forUser($this->lifecycle->freshUser($actor->id, lock: false));
+
+        return $gate->denies('categorize', $conversation) && $gate->allows('correctResolution', $conversation);
+    }
+
+    /**
+     * The approved result takes the new «Monto autorizado» (removed: no
+     * amount). A value that does not read as money leaves the result alone.
+     *
+     * @param  list<array{key: string, label: string, value: string, message_id: int|null, captured_at: string|null}>  $next
+     */
+    private function followAuthorizedAmount(Conversation $conversation, array $next, User $actor): void
+    {
+        $value = null;
+
+        foreach ($next as $field) {
+            if ($field['key'] === 'monto_autorizado') {
+                $value = $field['value'];
+            }
+        }
+
+        $amount = $value !== null ? RequestOutcomeEvidence::amount($value) : null;
+
+        if ($value !== null && $amount === null) {
+            return;
+        }
+
+        $this->outcome->followAuthorizedAmount($conversation, $actor, $amount);
+    }
+
+    /**
+     * Keys added, changed or removed.
+     *
+     * @param  array<string, array{key: string, label: string, value: string, message_id: int|null, captured_at: string|null}>  $currentByKey
+     * @param  list<array{key: string, label: string, value: string, message_id: int|null, captured_at: string|null}>  $next
+     * @return list<string>
+     */
+    private function changedKeys(array $currentByKey, array $next): array
+    {
+        $keys = [];
+        $nextKeys = [];
+
+        foreach ($next as $field) {
+            $nextKeys[$field['key']] = true;
+            $previous = $currentByKey[$field['key']] ?? null;
+
+            if ($previous === null || $previous['value'] !== $field['value'] || $previous['label'] !== $field['label']) {
+                $keys[] = $field['key'];
+            }
+        }
+
+        foreach (array_keys($currentByKey) as $key) {
+            if (! isset($nextKeys[$key])) {
+                $keys[] = $key;
+            }
+        }
+
+        return $keys;
     }
 
     /**

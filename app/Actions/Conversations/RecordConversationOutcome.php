@@ -70,30 +70,7 @@ class RecordConversationOutcome
                 return false;
             }
 
-            $conversation->forceFill([
-                'outcome' => $outcome,
-                'outcome_amount' => $amount,
-                'outcome_at' => $outcome === null ? null : now(),
-                'outcome_by_user_id' => $outcome === null ? null : $actor->id,
-            ])->save();
-
-            $this->lifecycle->record($conversation, ConversationEventType::OutcomeRecorded, $actor, [
-                'metadata' => [
-                    'outcome' => $outcome?->value,
-                    'outcome_amount' => $amount,
-                    'from_outcome' => $previous?->value,
-                    'from_outcome_amount' => $previousAmount,
-                ],
-            ]);
-
-            $this->audit->record(AuditAction::ConversationOutcomeRecorded, $conversation, [
-                'outcome' => $outcome?->value,
-                'outcome_label' => $outcome?->label() ?? 'Sin resultado',
-                'outcome_amount' => $amount,
-                'previous_outcome' => $previous?->value,
-                'previous_outcome_amount' => $previousAmount,
-                'on_completion' => false,
-            ], $actor);
+            $this->apply($conversation, $actor, $outcome, $amount);
 
             if ($amount !== null) {
                 $this->resolution->keepAuthorizedAmount($conversation, $amount, $actor, 'outcome');
@@ -101,5 +78,73 @@ class RecordConversationOutcome
 
             return true;
         });
+    }
+
+    /**
+     * «Monto autorizado» corrected in the request data of an approved
+     * request: the result follows it, so the reports read the same amount.
+     * Runs inside the caller's transaction with the row already locked and
+     * the actor authorized; it does not write the request data back.
+     *
+     * @param  string|null  $amount  Decimal amount («3500.00»), null when removed.
+     * @return bool Whether the result changed.
+     */
+    public function followAuthorizedAmount(Conversation $conversation, User $actor, ?string $amount): bool
+    {
+        if ($conversation->outcome !== ConversationOutcome::Approved) {
+            return false;
+        }
+
+        $amount = $amount !== null ? number_format((float) $amount, 2, '.', '') : null;
+
+        if ($conversation->outcome_amount === $amount) {
+            return false;
+        }
+
+        $this->apply($conversation, $actor, ConversationOutcome::Approved, $amount, 'request_fields');
+
+        return true;
+    }
+
+    /**
+     * Stores the result, with its event and audit entry. Correcting only the
+     * amount keeps when and by whom the result was recorded: a typo does not
+     * move the credit to another period of the reports.
+     */
+    private function apply(Conversation $conversation, User $actor, ?ConversationOutcome $outcome, ?string $amount, string $source = 'outcome'): void
+    {
+        $previous = $conversation->outcome;
+        $previousAmount = $conversation->outcome_amount;
+        $amountOnly = $outcome !== null && $previous === $outcome;
+
+        $conversation->forceFill([
+            'outcome' => $outcome,
+            'outcome_amount' => $amount,
+            'outcome_at' => $outcome === null ? null : ($amountOnly && $conversation->outcome_at !== null ? $conversation->outcome_at : now()),
+            'outcome_by_user_id' => $outcome === null ? null : ($amountOnly && $conversation->outcome_by_user_id !== null ? $conversation->outcome_by_user_id : $actor->id),
+        ])->save();
+
+        $this->lifecycle->record($conversation, ConversationEventType::OutcomeRecorded, $actor, [
+            'metadata' => [
+                'outcome' => $outcome?->value,
+                'outcome_amount' => $amount,
+                'from_outcome' => $previous?->value,
+                'from_outcome_amount' => $previousAmount,
+                // «corrigió el monto autorizado: $3,000 → $3,500».
+                ...($amountOnly && $outcome === ConversationOutcome::Approved ? ['amount_corrected' => true] : []),
+                ...($source !== 'outcome' ? ['source' => $source] : []),
+            ],
+        ]);
+
+        $this->audit->record(AuditAction::ConversationOutcomeRecorded, $conversation, [
+            'outcome' => $outcome?->value,
+            'outcome_label' => $outcome?->label() ?? 'Sin resultado',
+            'outcome_amount' => $amount,
+            'previous_outcome' => $previous?->value,
+            'previous_outcome_amount' => $previousAmount,
+            'on_completion' => false,
+            'amount_corrected' => $amountOnly && $outcome === ConversationOutcome::Approved,
+            'source' => $source,
+        ], $actor);
     }
 }

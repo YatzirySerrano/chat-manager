@@ -16,7 +16,10 @@ import type { ConversationSummary } from '@/types';
  * Enter (Esc undoes the edit); emptying it removes the field. They are
  * also taken from the authorization the team sends («Se autoriza …») and
  * the quick replies fill their «Monto autorizado: $» lines from them.
- * Read-only for whoever may not keep request data (can.categorize).
+ * Read-only for whoever may not keep request data (can.categorize) nor
+ * correct the resolution of the completed request (can.correct_resolution).
+ * On an approved request «Monto autorizado» is the result's amount: the
+ * server keeps both in step.
  */
 const props = defineProps<{
     conversation: ConversationSummary;
@@ -24,7 +27,12 @@ const props = defineProps<{
 
 type Key = (typeof RESOLUTION_FIELDS)[number]['key'];
 
-const canEdit = computed(() => props.conversation.can.categorize === true);
+// A completed request keeps its amounts correctable (a typo) by whoever may record its result.
+const canEdit = computed(
+    () =>
+        props.conversation.can.categorize === true ||
+        props.conversation.can.correct_resolution === true,
+);
 const stored = computed(() => props.conversation.request_fields ?? []);
 
 function storedValue(key: Key): string {
@@ -129,7 +137,7 @@ function undo(key: Key, event: KeyboardEvent): void {
 <template>
     <div
         v-if="canEdit || hasAny"
-        class="grid gap-1.5 rounded-lg border border-dashed px-3 py-2.5"
+        class="grid min-w-0 grid-cols-1 gap-1.5 rounded-lg border border-dashed px-3 py-2.5"
         data-request-resolution
     >
         <h4

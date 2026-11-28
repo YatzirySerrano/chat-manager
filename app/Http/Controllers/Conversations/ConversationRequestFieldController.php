@@ -12,6 +12,7 @@ use App\Support\SaveToast;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 
 /**
@@ -21,8 +22,10 @@ use Illuminate\Validation\Rule;
  *   conversation and returns them as suggestions for the capture dialog.
  *   It changes nothing, so seeing the conversation is enough.
  * - `update` saves the fields the analyst kept (merged, or the whole edited
- *   list), authorized like the request category; the engine authorizes the
- *   actor again under lock (SaveRequestFields).
+ *   list), authorized like the request category (or, on a completed
+ *   request, only its resolution amounts by whoever may record its
+ *   result); the engine authorizes the actor again under lock
+ *   (SaveRequestFields).
  */
 class ConversationRequestFieldController extends ConversationOperationController
 {
@@ -47,8 +50,12 @@ class ConversationRequestFieldController extends ConversationOperationController
         /** @var User $actor */
         $actor = $request->user();
 
-        // Permission before validation: a refusal is a 403, never a 422.
-        $this->ensurePermitted($actor, 'categorize', $conversation);
+        // Permission before validation: a refusal is a 403, never a 422. A
+        // completed request keeps its resolution amounts correctable by
+        // whoever may record its result (SaveRequestFields).
+        if (! Gate::forUser($actor)->allows('correctResolution', $conversation)) {
+            $this->ensurePermitted($actor, 'categorize', $conversation);
+        }
 
         $validated = $request->validate([
             'mode' => ['required', Rule::in([SaveRequestFields::MERGE, SaveRequestFields::REPLACE])],

@@ -26,8 +26,16 @@ class ConversationEventResource extends JsonResource
             'id' => $this->id,
             'type' => $this->type->value,
             // «cerró la conversación»: read after the actor's name.
-            'action' => $this->completedClose() ? 'completó la solicitud' : $this->type->action(),
-            'label' => $this->completedClose() ? 'Solicitud completada' : $this->label(),
+            'action' => match (true) {
+                $this->completedClose() => 'completó la solicitud',
+                $this->amountCorrected() => 'corrigió el monto autorizado',
+                default => $this->type->action(),
+            },
+            'label' => match (true) {
+                $this->completedClose() => 'Solicitud completada',
+                $this->amountCorrected() => 'Monto autorizado corregido',
+                default => $this->label(),
+            },
             'actor' => $protected->nameForRequest($this->actor, $request),
             'from_user' => $protected->nameForRequest($this->fromUser, $request),
             'to_user' => $protected->nameForRequest($this->toUser, $request),
@@ -63,6 +71,15 @@ class ConversationEventResource extends JsonResource
     }
 
     /**
+     * Only the authorized amount of an approved request changed (a typo):
+     * read as «corrigió el monto autorizado: $3,000 → $3,500».
+     */
+    private function amountCorrected(): bool
+    {
+        return $this->type === ConversationEventType::OutcomeRecorded && ($this->metadata['amount_corrected'] ?? false) === true;
+    }
+
+    /**
      * «Crédito aprobado por $3,000», «Rechazada»; a correction that removed
      * the result reads «sin resultado». Null for every other event.
      */
@@ -71,6 +88,12 @@ class ConversationEventResource extends JsonResource
         $metadata = $this->metadata ?? [];
         $outcome = is_string($metadata['outcome'] ?? null) ? ConversationOutcome::tryFrom($metadata['outcome']) : null;
         $amount = is_string($metadata['outcome_amount'] ?? null) || is_numeric($metadata['outcome_amount'] ?? null) ? $metadata['outcome_amount'] : null;
+
+        if ($this->amountCorrected()) {
+            $from = is_string($metadata['from_outcome_amount'] ?? null) || is_numeric($metadata['from_outcome_amount'] ?? null) ? OutcomeText::money($metadata['from_outcome_amount']) : 'sin monto';
+
+            return $from.' → '.($amount !== null ? OutcomeText::money($amount) : 'sin monto');
+        }
 
         return match (true) {
             $this->type === ConversationEventType::OutcomeRecorded => OutcomeText::spell($outcome, $amount) ?? 'sin resultado',

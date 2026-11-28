@@ -184,6 +184,8 @@ class ApiToken extends Model
     {
         // Imported history (Whaticket) is never exposed to integrations.
         $query->where($query->qualifyColumn('origin'), ConversationOrigin::Live->value);
+        // Neither is a request absorbed by the one next to it (AdjustRequestBoundary).
+        $query->whereNull($query->qualifyColumn('merged_at'));
 
         $query->whereIn($query->qualifyColumn('connection_id'), Connection::query()
             ->select('id')

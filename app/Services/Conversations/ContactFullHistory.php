@@ -40,12 +40,12 @@ class ContactFullHistory
     /** Conversations per page at most (empty ones still count as a segment). */
     public const SEGMENTS_MAX = 15;
 
-    public function __construct(private ConversationTimeline $timeline, private RequestSummary $summary) {}
+    public function __construct(private ConversationTimeline $timeline, private RequestSummary $summary, private RequestBoundary $boundary) {}
 
     /**
      * The newest page of the contact's history, or the one the cursor names.
      *
-     * @return array{segments: list<array{conversation: array<string, mixed>, messages: list<array<string, mixed>>, starts: bool}>, next: Cursor|null}
+     * @return array{segments: list<array{conversation: array<string, mixed>, messages: list<array<string, mixed>>, starts: bool, can_adjust_boundary: bool}>, next: Cursor|null}
      */
     public function page(Conversation $anchor, User $viewer, Request $request, ?int $beforeConversationId = null, ?int $beforeMessageId = null): array
     {
@@ -100,6 +100,8 @@ class ContactFullHistory
                 'messages' => $this->timeline->presentHistory($conversation, $messages, $request),
                 // The page reached the first message of the conversation: its separator goes on top.
                 'starts' => ! $slice['has_more'],
+                // «Corregir tamaño»: the viewer may move the boundary with the request before this one.
+                'can_adjust_boundary' => $this->boundary->canAdjust($viewer, $conversation),
             ];
         }
 

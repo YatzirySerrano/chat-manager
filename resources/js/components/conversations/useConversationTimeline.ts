@@ -423,9 +423,23 @@ export function useConversationTimeline(
         return messages.value.get(id);
     }
 
+    /**
+     * Forget everything loaded and take the newest page again, for a change
+     * that moved messages out of the conversation (AdjustRequestBoundary):
+     * merging in place would keep showing them.
+     */
+    function reload(page: ConversationTimelinePage | null): void {
+        reset();
+
+        if (page) {
+            ingest(page, true);
+        }
+    }
+
     return {
         items,
         hasMore,
+        reload,
         loadingOlder,
         failed,
         latestMessageId,

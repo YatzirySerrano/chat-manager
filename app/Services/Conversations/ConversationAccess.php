@@ -137,7 +137,9 @@ class ConversationAccess
     {
         // History archived as read-only is consulted only from the history
         // archive (admin.history.*, its own policy), never operationally.
-        if (! $user->holdsPermission(Permission::ViewConversations) || $conversation->isHistoryOnly()) {
+        // A request absorbed by the one next to it (AdjustRequestBoundary)
+        // has no messages left: it is never listed or opened again.
+        if (! $user->holdsPermission(Permission::ViewConversations) || $conversation->isHistoryOnly() || $conversation->isMerged()) {
             return false;
         }
 
@@ -345,6 +347,8 @@ class ConversationAccess
         }
 
         $query->whereNull('conversations.history_only_at');
+        // Absorbed by the request next to it (AdjustRequestBoundary): outside every list, count and history.
+        $query->whereNull('conversations.merged_at');
 
         if (! $this->readsClosedConversations($user)) {
             $query->where('conversations.status', '!=', ConversationStatus::Closed);

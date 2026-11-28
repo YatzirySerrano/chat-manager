@@ -199,6 +199,8 @@ class RequestOutcomes
         $query
             ->where('conversations.origin', ConversationOrigin::Live->value)
             ->whereNull('conversations.history_only_at')
+            // Absorbed by the request next to it: its result counts there.
+            ->whereNull('conversations.merged_at')
             ->where('conversations.status', ConversationStatus::Closed->value)
             ->whereNotNull('conversations.completed_at')
             ->whereRaw(self::DATE.' >= ?', [$filters->period->fromUtc()->format('Y-m-d H:i:s')])

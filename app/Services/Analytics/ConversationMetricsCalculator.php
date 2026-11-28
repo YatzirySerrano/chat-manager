@@ -92,10 +92,12 @@ class ConversationMetricsCalculator
     {
         $conversation = Conversation::query()->find($conversationId);
 
-        // Imported history (Whaticket) and conversations closed as «No es
-        // solicitud» are outside every metric: any row is removed (an undo
-        // or a manual reopening brings it back on the next recomputation).
-        if ($conversation === null || $conversation->created_at === null || $conversation->isImported() || $conversation->isNotRequest()) {
+        // Imported history (Whaticket), conversations closed as «No es
+        // solicitud» and requests absorbed by the one next to them
+        // (AdjustRequestBoundary) are outside every metric: any row is
+        // removed (an undo or a manual reopening brings it back on the next
+        // recomputation).
+        if ($conversation === null || $conversation->created_at === null || $conversation->isImported() || $conversation->isNotRequest() || $conversation->isMerged()) {
             ConversationMetric::query()->where('conversation_id', $conversationId)->delete();
             $this->attribution->forget($conversationId);
 

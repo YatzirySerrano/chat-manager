@@ -123,7 +123,8 @@ final class RequestOutcomeEvidence
     }
 
     /**
-     * The result the opening of the text announces, or null.
+     * The result the opening of the text announces, or null. Blank lines
+     * and a quote pasted on top («> …») do not count as the opening.
      */
     public static function announced(?string $text): ?ConversationOutcome
     {
@@ -136,7 +137,7 @@ final class RequestOutcomeEvidence
                 // A future or pending decision («Se autorizará…», «por autorizar»,
                 // «en revisión») announces nothing yet, however close it reads.
                 fn (string $line): string => self::undecided($line) ? '' : self::normalize($line),
-                preg_split('/\R/u', $text) ?: [],
+                self::withoutLeadingQuote(preg_split('/\R/u', $text) ?: []),
             ),
             fn (string $line): bool => $line !== '',
         )), 0, self::LINES);
@@ -235,6 +236,26 @@ final class RequestOutcomeEvidence
     private static function normalize(string $line): string
     {
         return FuzzyText::canonical(RequestFieldCatalog::normalize($line), self::VOCABULARY, self::ALIASES);
+    }
+
+    /**
+     * The lines without the quote that opens them («> Cliente: Ana …», the
+     * message being answered pasted on top), when the answer follows it.
+     *
+     * @param  list<string>  $lines
+     * @return list<string>
+     */
+    private static function withoutLeadingQuote(array $lines): array
+    {
+        $index = 0;
+
+        while ($index < count($lines) && (trim($lines[$index]) === '' || str_starts_with(ltrim($lines[$index]), '>'))) {
+            $index++;
+        }
+
+        $rest = array_slice($lines, $index);
+
+        return $index > 0 && implode('', array_map('trim', $rest)) !== '' ? $rest : $lines;
     }
 
     /**

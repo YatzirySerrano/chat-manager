@@ -23,7 +23,10 @@ use App\Support\RequestOutcomeEvidence;
  *   wins) and completes the client, product and type when missing;
  * - keepAuthorizedAmount(): the amount confirmed when the request is
  *   completed (or its result corrected) becomes «Monto autorizado», so
- *   the panel, the quick replies and the result always agree.
+ *   the panel, the quick replies and the result always agree;
+ * - merge(): any other automatic capture (the request a field manager
+ *   writes, RequestSubmissionCapture; the backfill of older requests),
+ *   by the system when there is no actor.
  *
  * Callers run it inside their transaction with the conversation row
  * already locked. Like SaveRequestFields it never touches the status, the
@@ -63,10 +66,27 @@ class RequestResolutionCapture
     }
 
     /**
+     * Stores captured values on the (locked) conversation, recorded in the
+     * audit log as mode «auto» with $source and $audit (a «note», say).
+     *
      * @param  array<string, string>  $latest  Values that replace the stored ones.
      * @param  array<string, string>  $ifMissing  Values kept only when the field has none.
+     * @param  User|null  $actor  Null: the system (an inbound message, a command).
+     * @param  array<string, mixed>  $audit  Extra properties of the audit entry.
+     * @param  bool  $signal  Whether open panels are told in real time (not for a bulk backfill).
+     * @return bool Whether anything changed.
      */
-    private function write(Conversation $conversation, array $latest, array $ifMissing, ?int $messageId, User $actor, string $source): bool
+    public function merge(Conversation $conversation, array $latest, array $ifMissing, ?int $messageId, ?User $actor, string $source, array $audit = [], bool $signal = true): bool
+    {
+        return $this->write($conversation, $latest, $ifMissing, $messageId, $actor, $source, $audit, $signal);
+    }
+
+    /**
+     * @param  array<string, string>  $latest  Values that replace the stored ones.
+     * @param  array<string, string>  $ifMissing  Values kept only when the field has none.
+     * @param  array<string, mixed>  $audit
+     */
+    private function write(Conversation $conversation, array $latest, array $ifMissing, ?int $messageId, ?User $actor, string $source, array $audit = [], bool $signal = true): bool
     {
         if ($latest === [] && $ifMissing === []) {
             return false;
@@ -124,9 +144,12 @@ class RequestResolutionCapture
             'source' => $source,
             'message_id' => $messageId,
             'changes' => $changes,
+            ...$audit,
         ], $actor);
 
-        ConversationChanged::dispatch($conversation->id, 'request_fields', $actor->id);
+        if ($signal) {
+            ConversationChanged::dispatch($conversation->id, 'request_fields', $actor?->id);
+        }
 
         return true;
     }

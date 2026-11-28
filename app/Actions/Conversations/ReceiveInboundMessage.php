@@ -33,6 +33,7 @@ use App\Services\Chatbot\ChatbotKeywords;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\ConversationRouter;
 use App\Services\Conversations\QueueRules;
+use App\Services\Conversations\RequestSubmissionCapture;
 use App\Services\Conversations\ResponseClock;
 use App\Services\Meta\MediaFileName;
 use App\Services\Telegram\TelegramBotClient;
@@ -44,6 +45,7 @@ use App\Support\ReadCommittedTransaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Receives one customer message, independently of how it arrived (webhook,
@@ -56,7 +58,9 @@ use Illuminate\Support\Str;
  * 3. stores the message once (the provider id is unique), so repeated
  *    deliveries change nothing;
  * 4. moves the activity dates forward only (late events never move them
- *    back) and links the provider's referral to the conversation;
+ *    back) and links the provider's referral to the conversation; a credit
+ *    request written in the text fills «Datos de la solicitud» while the
+ *    conversation has no client yet (RequestSubmissionCapture, best-effort);
  * 5. distributes the conversation when its department does so automatically;
  *    a request waiting for the customer's missing information comes back to
  *    «Pendientes» with a new queue clock (ResumeAwaitingInformation);
@@ -173,6 +177,18 @@ class ReceiveInboundMessage
         ])->save();
 
         $this->linkReferral($registration->attribution, $conversation);
+
+        // A credit request written by the field manager («Cliente: …»,
+        // «Solicito autorización …») fills «Datos de la solicitud» while the
+        // conversation has no client yet (RequestSubmissionCapture), on this
+        // locked row. Best-effort: it never stops nor fails the receipt.
+        if ($message->type === MessageType::Text && $message->body !== null) {
+            try {
+                app(RequestSubmissionCapture::class)->fromMessage($conversation, $message);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
 
         // The customer waits for a human answer from now on (response cycle).
         app(ResponseClock::class)->customerWrote($conversation, $sentAt);

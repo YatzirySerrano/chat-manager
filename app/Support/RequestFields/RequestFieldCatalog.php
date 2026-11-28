@@ -35,6 +35,8 @@ final class RequestFieldCatalog
      */
     private const FIELDS = [
         'cliente' => ['Cliente', ['cliente', 'clienta', 'nombre', 'nombre del cliente', 'nombre de cliente', 'nombre cliente', 'nombre del acreditado', 'acreditado', 'acreditada']],
+        // The group of a group credit («Nombre del grupo EMPRENDEDORAS»).
+        'grupo' => ['Grupo', ['grupo', 'nombre del grupo', 'nombre de grupo', 'nombre grupo', 'grupo solidario']],
         'sucursal' => ['Sucursal', ['sucursal', 'suc']],
         'monto_anterior' => ['Monto anterior', ['monto anterior', 'monto previo']],
         'monto_solicitado' => ['Monto solicitado', ['monto solicitado', 'monto a solicitar', 'monto requerido', 'monto que solicita']],

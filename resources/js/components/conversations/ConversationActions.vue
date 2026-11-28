@@ -609,7 +609,7 @@ const secondary = computed<Action[]>(() => {
             can.undo_not_request ||
             $slots['menu-extra']
         "
-        class="flex shrink-0 items-center gap-1.5"
+        class="ml-auto flex shrink-0 items-center gap-1.5"
         role="group"
         aria-label="Operaciones de la conversación"
     >
@@ -640,7 +640,7 @@ const secondary = computed<Action[]>(() => {
             v-if="notRequestAsButton"
             variant="outline"
             size="sm"
-            class="h-9 rounded-full px-3.5 text-muted-foreground hover:text-foreground pointer-coarse:h-11"
+            class="size-9 rounded-full px-0 text-muted-foreground hover:text-foreground @2xl/chat-header:w-auto @2xl/chat-header:px-3.5 pointer-coarse:size-11 pointer-coarse:@2xl/chat-header:w-auto"
             :disabled="processing"
             aria-label="No es solicitud"
             title="No es solicitud: se cierra sin enviar nada al cliente y no cuenta en los reportes"
@@ -648,7 +648,9 @@ const secondary = computed<Action[]>(() => {
             @click="markNotRequest"
         >
             <MessageCircleOff aria-hidden="true" />
-            <span class="sm:@max-md/chat-header:sr-only">No es solicitud</span>
+            <!-- Icon only (name in the title and aria-label) until the
+                 chat is wide enough for both buttons and the contact. -->
+            <span class="hidden @2xl/chat-header:inline">No es solicitud</span>
         </Button>
         <!-- Right after «No es solicitud»: put it back where it was. -->
         <Button

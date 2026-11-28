@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import RequestFieldsDialog from '@/components/conversations/RequestFieldsDialog.vue';
 import {
     copyRequestField,
+    displayRequestFieldValue,
     RESOLUTION_KEYS,
 } from '@/components/conversations/requestFields';
 import RequestResolutionFields from '@/components/conversations/RequestResolutionFields.vue';
@@ -31,7 +32,7 @@ const editing = ref(false);
 
 <template>
     <section
-        class="grid gap-2.5 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
+        class="grid min-w-0 grid-cols-1 gap-2.5 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
         data-request-fields-details
     >
         <div class="flex items-center justify-between gap-2">
@@ -44,7 +45,7 @@ const editing = ref(false);
                 type="button"
                 variant="ghost"
                 size="sm"
-                class="h-7 px-2 text-xs"
+                class="h-7 shrink-0 px-2 text-xs"
                 @click="editing = true"
             >
                 <Pencil class="size-3.5" aria-hidden="true" />
@@ -59,9 +60,9 @@ const editing = ref(false);
             <template v-for="field in fields" :key="field.key">
                 <dt class="text-xs text-muted-foreground">{{ field.label }}</dt>
                 <dd class="min-w-0 font-medium break-words">
-                    {{ field.value }}
+                    {{ displayRequestFieldValue(field) }}
                 </dd>
-                <dd>
+                <dd class="shrink-0">
                     <Button
                         type="button"
                         variant="ghost"

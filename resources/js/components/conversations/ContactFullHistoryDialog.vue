@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { Link, useHttp } from '@inertiajs/vue3';
-import { ExternalLink, History, Loader2, RefreshCw } from '@lucide/vue';
+import { Link, router, useHttp } from '@inertiajs/vue3';
+import {
+    ArrowUpDown,
+    ExternalLink,
+    History,
+    Loader2,
+    RefreshCw,
+} from '@lucide/vue';
 import { useIntersectionObserver } from '@vueuse/core';
 import { computed, nextTick, ref, watch } from 'vue';
 import ChatPreviewBubble from '@/components/chat-preview/ChatPreviewBubble.vue';
 import type { ChatPreviewItem } from '@/components/chat-preview/types';
 import { dayLabel } from '@/components/conversations/messageFormat';
 import { toPreviewItem } from '@/components/conversations/previewItem';
+import RequestBoundaryDialog from '@/components/conversations/RequestBoundaryDialog.vue';
 import {
     requestClient,
     requestFacts,
@@ -31,7 +38,12 @@ import {
     fullHistory as fullHistoryRoute,
     show as showRoute,
 } from '@/routes/conversations';
-import type { ChatColors, FullHistoryPage, FullHistorySegment } from '@/types';
+import type {
+    ChatColors,
+    FullHistoryPage,
+    FullHistorySegment,
+    RequestBoundaryResult,
+} from '@/types';
 
 /**
  * «Conversación completa»: everything the contact wrote and was answered,
@@ -75,6 +87,7 @@ function toSegment(segment: FullHistorySegment): Segment {
     return {
         conversation: segment.conversation,
         starts: segment.starts,
+        can_adjust_boundary: segment.can_adjust_boundary,
         items: segment.messages.map((message) =>
             toPreviewItem(message, name.value),
         ),
@@ -229,6 +242,38 @@ function days(
 }
 
 const requestCount = computed(() => segments.value.length);
+
+/* «Corregir tamaño»: the boundary between a request and the one before it. */
+const boundaryOpen = ref(false);
+const boundaryFor = ref<number | null>(null);
+
+function adjustBoundary(conversationId: number): void {
+    boundaryFor.value = conversationId;
+    boundaryOpen.value = true;
+}
+
+/**
+ * After a correction the history is read again; when the conversation it
+ * was opened from was absorbed by the other request, that one is opened.
+ */
+function onBoundaryAdjusted(result: RequestBoundaryResult): void {
+    const absorbed =
+        result.merged === 'into_previous'
+            ? result.current_id
+            : result.merged === 'into_current'
+              ? result.previous_id
+              : null;
+
+    if (absorbed === props.conversationId && result.survivor_id !== null) {
+        open.value = false;
+        router.visit(showRoute.url(result.survivor_id));
+
+        return;
+    }
+
+    reset();
+    void load(false);
+}
 </script>
 
 <template>
@@ -394,7 +439,7 @@ const requestCount = computed(() => segments.value.length);
                                 <span
                                     v-if="segment.conversation.is_current"
                                     class="rounded-full bg-primary-soft px-1.5 py-px text-[0.6875rem] font-semibold text-primary-soft-foreground"
-                                    >Esta conversación</span
+                                    >Estás aquí</span
                                 >
                                 <Link
                                     v-else
@@ -412,7 +457,7 @@ const requestCount = computed(() => segments.value.length);
                                 </Link>
                             </p>
                             <p class="min-w-0 truncate">
-                                <span class="text-muted-foreground"
+                                <span class="mr-1 text-muted-foreground"
                                     >Cliente:</span
                                 >
                                 <span
@@ -444,6 +489,24 @@ const requestCount = computed(() => segments.value.length);
                                         ? `atendió ${segment.conversation.assignee}`
                                         : 'sin agente'
                                 }}
+                            </p>
+                            <p
+                                v-if="segment.can_adjust_boundary"
+                                class="flex justify-end"
+                            >
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    class="h-7 px-2 text-xs"
+                                    :title="'Mover mensajes entre esta solicitud y la anterior'"
+                                    data-full-history-adjust
+                                    @click="
+                                        adjustBoundary(segment.conversation.id)
+                                    "
+                                >
+                                    <ArrowUpDown aria-hidden="true" />
+                                    Corregir tamaño de la solicitud
+                                </Button>
                             </p>
                         </header>
 
@@ -488,4 +551,10 @@ const requestCount = computed(() => segments.value.length);
             </div>
         </DialogContent>
     </Dialog>
+    <RequestBoundaryDialog
+        v-if="boundaryFor !== null"
+        v-model:open="boundaryOpen"
+        :conversation-id="boundaryFor"
+        @adjusted="onBoundaryAdjusted"
+    />
 </template>

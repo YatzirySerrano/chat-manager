@@ -40,6 +40,12 @@ class QuickReplyRenderer
      */
     private const SPACE = "\u{E001}";
 
+    /**
+     * Request fields that hold an amount of money: inserted with the sign
+     * and thousands separators («3000» → «$3,000»).
+     */
+    private const MONEY_KEYS = ['monto_solicitado', 'monto_anterior', 'monto_autorizado', 'desembolso', 'cantidad_a_pagar'];
+
     public function __construct(private PlatformSettings $settings) {}
 
     /**
@@ -100,7 +106,7 @@ class QuickReplyRenderer
             $key = $variable->requestKey();
 
             if ($key !== null) {
-                $context[$variable->value] = $values[$key] ?? null;
+                $context[$variable->value] = isset($values[$key]) ? self::displayValue($key, $values[$key]) : null;
             }
         }
 
@@ -140,6 +146,8 @@ class QuickReplyRenderer
             if ($key === '' || $value === '') {
                 return null;
             }
+
+            $value = self::displayValue($key, $value);
 
             $filled[$key] = true;
 
@@ -215,6 +223,29 @@ class QuickReplyRenderer
     /**
      * Values are inserted as a single line of plain text.
      */
+    /**
+     * A request field value as it reads in a message: amounts of money
+     * («3000», «$2130.5», «2,130») with the sign and thousands separators
+     * («$3,000», «$2,130.50»). Anything that does not read as an amount, or
+     * any other field, is returned as stored.
+     */
+    public static function displayValue(string $key, string $value): string
+    {
+        if (! in_array($key, self::MONEY_KEYS, true)) {
+            return $value;
+        }
+
+        $raw = (string) preg_replace('/[\s$,]/u', '', $value);
+
+        if (preg_match('/^(\d{1,10})(?:\.(\d{1,2}))?$/', $raw, $match) !== 1) {
+            return $value;
+        }
+
+        $cents = isset($match[2]) ? str_pad($match[2], 2, '0') : '00';
+
+        return '$'.number_format((int) $match[1]).($cents === '00' ? '' : '.'.$cents);
+    }
+
     private function clean(?string $value): string
     {
         if ($value === null) {

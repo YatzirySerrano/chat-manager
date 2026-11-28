@@ -108,6 +108,18 @@ class ConversationPolicy
     }
 
     /**
+     * «Corregir tamaño de la solicitud»: moving messages between this request
+     * and the one next to it, or joining them (AdjustRequestBoundary). Only
+     * for whoever manages conversations (assigns them, or supervises them)
+     * within the operational reach, whatever their state: it is a correction
+     * of the record, checked on both requests.
+     */
+    public function adjustBoundary(User $actor, Conversation $conversation): bool
+    {
+        return $this->permits($actor, 'adjustBoundary', $conversation);
+    }
+
+    /**
      * Recording or correcting the credit result of a completed request
      * («Crédito aprobado» / «Rechazada»): permitsOutcome() and a request that
      * is still completed (closed as «Solicitud completada»).
@@ -121,8 +133,8 @@ class ConversationPolicy
 
     /**
      * Permission and reach of the result, whatever the state (a refusal is a
-     * 403): the closing permission, and being who completed it (while they
-     * can still see it) or managing the conversation (assigning or
+     * 403): the closing permission, and being who completed or attended it
+     * (while they can still see it) or managing the conversation (assigning or
      * supervising it within the operational reach). Imported history has no
      * result.
      */
@@ -133,8 +145,21 @@ class ConversationPolicy
         }
 
         return ($conversation->closed_by_user_id !== null && $conversation->closed_by_user_id === $actor->id)
+            || ($conversation->assigned_user_id !== null && $conversation->assigned_user_id === $actor->id)
             || (($actor->holdsPermission(Permission::AssignConversations) || $actor->holdsPermission(Permission::SuperviseConversations))
                 && $this->operates($actor, $conversation));
+    }
+
+    /**
+     * Correcting the resolution amounts («Monto autorizado», «Desembolso»,
+     * «Cantidad a pagar») of a request already completed, a typo included:
+     * whoever may record its result (recordOutcome), even when the closed
+     * conversation no longer admits keeping the rest of its request data
+     * (categorize). Never on imported history.
+     */
+    public function correctResolution(User $actor, Conversation $conversation): bool
+    {
+        return $this->recordOutcome($actor, $conversation);
     }
 
     public function reopen(User $actor, Conversation $conversation): bool
@@ -244,6 +269,8 @@ class ConversationPolicy
                 && (($conversation->not_request_by_user_id !== null && $conversation->not_request_by_user_id === $actor->id)
                     || $actor->holdsPermission(Permission::AssignConversations)),
             'reopen' => $actor->holdsPermission(Permission::ReopenConversations) && $this->operates($actor, $conversation),
+            'adjustBoundary' => ($actor->holdsPermission(Permission::AssignConversations) || $actor->holdsPermission(Permission::SuperviseConversations))
+                && $this->operates($actor, $conversation),
             'addNote' => $actor->holdsPermission(Permission::AddConversationNotes) && $this->operates($actor, $conversation),
             'tag' => $actor->holdsPermission(Permission::AssignTags) && $this->operates($actor, $conversation),
             'confirmReadiness' => $actor->holdsPermission(Permission::ConfirmConversationReady) && $this->operates($actor, $conversation),

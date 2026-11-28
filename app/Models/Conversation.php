@@ -55,6 +55,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $awaiting_info_at Since when a request returned for missing information waits for the customer, outside «Pendientes» (ResumeAwaitingInformation).
  * @property Carbon|null $not_request_at Closed as «No es solicitud»: outside every metric; the next message starts a new conversation.
  * @property int|null $not_request_by_user_id Who marked it as «No es solicitud».
+ * @property int|null $merged_into_conversation_id The conversation that absorbed this one (AdjustRequestBoundary); null once that one is erased.
+ * @property Carbon|null $merged_at Absorbed by the request next to it: hidden from every list, count, history and report.
  * @property int|null $open_response_cycle_id The open response cycle; kept and read only by ResponseClock, under the row lock.
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -110,6 +112,7 @@ class Conversation extends Model
             'outcome_at' => 'datetime',
             'awaiting_info_at' => 'datetime',
             'not_request_at' => 'datetime',
+            'merged_at' => 'datetime',
         ];
     }
 
@@ -129,6 +132,16 @@ class Conversation extends Model
     public function isNotRequest(): bool
     {
         return $this->not_request_at !== null;
+    }
+
+    /**
+     * Absorbed by the request next to it («Corregir tamaño de la solicitud»,
+     * AdjustRequestBoundary): its messages live in `merged_into_conversation_id`
+     * now, and it is outside every list, count, history and report.
+     */
+    public function isMerged(): bool
+    {
+        return $this->merged_at !== null;
     }
 
     /**

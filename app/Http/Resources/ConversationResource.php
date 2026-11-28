@@ -177,6 +177,8 @@ class ConversationResource extends JsonResource
                 'categorize' => $viewer->can('categorize', $this->resource),
                 // Record or correct the credit result of the completed request.
                 'record_outcome' => $viewer->can('recordOutcome', $this->resource),
+                // Correct the resolution amounts (a typo) of the completed request.
+                'correct_resolution' => $viewer->can('correctResolution', $this->resource),
                 // Irreversible, reserved to the root authority (permanent-deletion.conversations).
                 'delete_permanently' => $viewer->can('deletePermanently', $this->resource),
             ],

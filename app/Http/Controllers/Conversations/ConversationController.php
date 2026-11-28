@@ -392,6 +392,11 @@ class ConversationController extends Controller
      */
     public function show(Request $request, Conversation $conversation): RedirectResponse
     {
+        // Absorbed by the request next to it (AdjustRequestBoundary): an old link opens the one that holds its messages.
+        if ($conversation->isMerged() && $conversation->merged_into_conversation_id !== null) {
+            return redirect()->route('conversations.show', $conversation->merged_into_conversation_id);
+        }
+
         abort_unless(Gate::allows('view', $conversation), 404);
 
         $query = self::rememberedQuery();
@@ -577,8 +582,8 @@ class ConversationController extends Controller
     }
 
     /**
-     * The details panel: contact, verified origin, tags, previous
-     * conversations the viewer may see and the contact's latest notes.
+     * The details panel: contact, verified origin, tags, the contact's
+     * requests the viewer may see (this one included) and latest notes.
      *
      * @param  callable(): list<array{id: int, name: string, color: string, is_active: bool}>  $tagCatalog
      * @return array<string, mixed>
@@ -590,15 +595,29 @@ class ConversationController extends Controller
         $contact->loadMissing(['tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
         $canTag = $actor->can('tag', $conversation);
 
+        // «Solicitudes del contacto»: every request of the contact within reach, the one
+        // being viewed included (flagged `current`), newest first by when each one began
+        // (imported ones keep their original date), in a single query.
         $contactHistory = app(ContactConversationHistory::class);
-        $previousQuery = $contactHistory->query($actor, $contact->id)->whereKeyNot($conversation->id);
-        $history = (clone $previousQuery)
+        $historyQuery = $contactHistory->query($actor, $contact->id);
+        $history = (clone $historyQuery)
             ->with(['department:id,name,color,is_active', 'assignee:id,name'])
+            ->latest()
             ->latest('id')
             ->limit(self::CONTACT_HISTORY)
             ->get();
         // «Ver todas (N)»: counted only when the list was cut at its limit.
-        $historyTotal = $history->count() < self::CONTACT_HISTORY ? $history->count() : $previousQuery->count();
+        $historyTotal = $history->count() < self::CONTACT_HISTORY ? $history->count() : $historyQuery->count();
+
+        // The viewed conversation is always listed. Missing from a list cut at its limit it
+        // is an older one (already counted) and goes at the end, where its order places it;
+        // missing from a complete list it is outside the contact's reach rules and counts.
+        if (! $history->contains('id', $conversation->id)) {
+            $wasCut = $history->count() >= self::CONTACT_HISTORY;
+            $conversation->loadMissing(['department:id,name,color,is_active', 'assignee:id,name']);
+            $history->push($conversation);
+            $historyTotal += $wasCut ? 0 : 1;
+        }
         $requestSummary = app(RequestSummary::class);
 
         return [
@@ -624,10 +643,11 @@ class ConversationController extends Controller
             // «Perfil de WhatsApp»: picture, info and business profile (WhatsApp Web only; null without a WhatsApp identity).
             'whatsappProfile' => $this->whatsappProfile($profiles, $conversation, $avatarUrl),
             'origin' => ContactAttributionResource::collection($conversation->attributions()->with('recorder')->orderBy('captured_at')->get())->resolve($request),
-            // «Solicitudes anteriores»: whose request each one was and where it ended (RequestSummary).
-            'history' => array_values($history->map(fn (Conversation $previous): array => [
-                ...$requestSummary->of($previous, $actor),
-                ...$contactHistory->describe($previous, $actor),
+            // «Solicitudes del contacto»: whose request each one was and where it ended (RequestSummary).
+            'history' => array_values($history->map(fn (Conversation $item): array => [
+                ...$requestSummary->of($item, $actor),
+                ...$contactHistory->describe($item, $actor),
+                'current' => $item->id === $conversation->id,
             ])->all()),
             'historyTotal' => $historyTotal,
             'contactNotes' => $actor->can('manageNotes', $contact)

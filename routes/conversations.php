@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Conversations\BulkConversationPurgeController;
 use App\Http\Controllers\Conversations\ConversationAssignmentController;
+use App\Http\Controllers\Conversations\ConversationBoundaryController;
 use App\Http\Controllers\Conversations\ConversationCategoryController;
 use App\Http\Controllers\Conversations\ConversationController;
 use App\Http\Controllers\Conversations\ConversationFullHistoryController;
@@ -78,6 +79,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('conversations/{conversation}/full-history', [ConversationFullHistoryController::class, 'index'])
         ->middleware('throttle:120,1')
         ->name('conversations.full-history');
+    // «Corregir tamaño de la solicitud»: the boundary with the request right before this one.
+    Route::get('conversations/{conversation}/boundary', [ConversationBoundaryController::class, 'show'])
+        ->middleware('throttle:60,1')
+        ->name('conversations.boundary.show');
+    Route::post('conversations/{conversation}/boundary', [ConversationBoundaryController::class, 'store'])
+        ->middleware('throttle:20,1')
+        ->name('conversations.boundary.store');
     Route::post('conversations/{conversation}/read', [ConversationReadController::class, 'store'])
         ->middleware('throttle:120,1')
         ->name('conversations.read');

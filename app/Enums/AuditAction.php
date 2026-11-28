@@ -141,6 +141,7 @@ enum AuditAction: string
     case ConversationRequestFieldsChanged = 'conversation.request_fields_changed';
     case ConversationMarkedNotRequest = 'conversation.marked_not_request';
     case ConversationNotRequestUndone = 'conversation.not_request_undone';
+    case ConversationBoundaryAdjusted = 'conversation.boundary_adjusted';
     case ConversationPermanentlyDeleted = 'conversation.permanently_deleted';
     case ConversationsBulkPurged = 'conversation.bulk_purged';
     case AuditLogPurged = 'audit.purged';
@@ -289,6 +290,7 @@ enum AuditAction: string
             self::ConversationRequestFieldsChanged => 'Datos de la solicitud actualizados',
             self::ConversationMarkedNotRequest => 'Conversación marcada como «No es solicitud»',
             self::ConversationNotRequestUndone => 'Se deshizo «No es solicitud»',
+            self::ConversationBoundaryAdjusted => 'Tamaño de la solicitud corregido',
             self::ConversationPermanentlyDeleted => 'Chat eliminado definitivamente',
             self::ConversationsBulkPurged => 'Conversaciones eliminadas en bloque',
             self::AuditLogPurged => 'Registros de auditoría eliminados',
@@ -334,7 +336,7 @@ enum AuditAction: string
             self::HistoryImportRequested, self::HistoryImportDiscarded,
             self::DepartmentServiceRulesUpdated, self::ConversationCategoryRulesUpdated,
             self::ConversationReadinessReverted, self::ConversationQueueRulesOverridden,
-            self::ConnectionConversationsMoved => 'warning',
+            self::ConnectionConversationsMoved, self::ConversationBoundaryAdjusted => 'warning',
             self::UserCreated, self::UserActivated, self::DepartmentCreated, self::DepartmentMemberAdded,
             self::RoleCreated, self::ConnectionCreated, self::ConnectionActivated,
             self::ConnectionCredentialsVerified, self::ConnectionNumberRegistered, self::ConnectionWebLinked, self::ContactCreated, self::ContactRestored, self::TagCreated,

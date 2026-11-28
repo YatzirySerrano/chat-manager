@@ -1,6 +1,7 @@
 import { inject, provide } from 'vue';
 import type { ComputedRef, InjectionKey } from 'vue';
 import { toast } from 'vue-sonner';
+import { formatMoney, normalizeAmount } from '@/lib/outcomes';
 import type { ConversationMessage, ConversationRequestField } from '@/types';
 
 /**
@@ -14,6 +15,7 @@ import type { ConversationMessage, ConversationRequestField } from '@/types';
 /** Known labels offered by «Marcar como…» (RequestFieldCatalog). */
 export const REQUEST_FIELD_LABELS = [
     'Cliente',
+    'Grupo',
     'Sucursal',
     'Monto anterior',
     'Monto solicitado',
@@ -134,4 +136,29 @@ export async function copyRequestField(
             'No se pudo copiar. Selecciona el texto y cópialo con Ctrl+C.',
         );
     }
+}
+
+/** Request fields that hold an amount of money (QuickReplyRenderer). */
+export const MONEY_FIELD_KEYS: ReadonlySet<string> = new Set([
+    'monto_solicitado',
+    'monto_anterior',
+    'monto_autorizado',
+    'desembolso',
+    'cantidad_a_pagar',
+]);
+
+/**
+ * A field value as shown: amounts with the sign and thousands separators
+ * («3000» → «$3,000»); the stored value is not changed.
+ */
+export function displayRequestFieldValue(
+    field: Pick<ConversationRequestField, 'key' | 'value'>,
+): string {
+    if (!MONEY_FIELD_KEYS.has(field.key)) {
+        return field.value;
+    }
+
+    const amount = normalizeAmount(field.value);
+
+    return amount ? formatMoney(amount) : field.value;
 }

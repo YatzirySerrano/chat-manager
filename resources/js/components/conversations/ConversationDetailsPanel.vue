@@ -149,9 +149,12 @@ const emit = defineEmits<{
 }>();
 
 /*
- * «Solicitudes anteriores»: the latest few at a glance, «Ver todas (N)» for
- * the rest the panel received, and «Conversación completa» for the whole
- * history read as one chat (mounted the first time it is opened).
+ * «Solicitudes del contacto»: every request of the contact the viewer may
+ * see, the one being viewed included and marked «Estás aquí». The latest few
+ * at a glance (the current one always among them, kept in its place at the
+ * end when it is older), «Ver todas (N)» for the rest the panel received,
+ * and «Conversación completa» for the whole history read as one chat
+ * (mounted the first time it is opened).
  */
 const PREVIOUS_VISIBLE = 5;
 const showAllPrevious = ref(false);
@@ -160,11 +163,22 @@ const fullHistoryMounted = ref(false);
 const previousTotal = computed(
     () => props.details.historyTotal ?? props.details.history.length,
 );
-const visiblePrevious = computed(() =>
-    showAllPrevious.value
-        ? props.details.history
-        : props.details.history.slice(0, PREVIOUS_VISIBLE),
-);
+
+/** The request being viewed (older payloads without `current`: by id). */
+function isCurrentRequest(request: { id: number; current?: boolean }): boolean {
+    return request.current ?? request.id === props.conversation.id;
+}
+
+const visiblePrevious = computed(() => {
+    if (showAllPrevious.value) {
+        return props.details.history;
+    }
+
+    const shown = props.details.history.slice(0, PREVIOUS_VISIBLE);
+    const current = props.details.history.find(isCurrentRequest);
+
+    return current && !shown.includes(current) ? [...shown, current] : shown;
+});
 
 function openFullHistory(): void {
     fullHistoryMounted.value = true;
@@ -271,7 +285,7 @@ function safeUrl(url: string | null): string | null {
     <aside
         ref="panel"
         tabindex="-1"
-        class="flex h-full min-h-0 flex-col border-l bg-surface-sunken outline-none motion-safe:animate-in motion-safe:duration-300 motion-safe:ease-(--ease-out-quint) motion-safe:fade-in motion-safe:slide-in-from-right-4"
+        class="flex h-full min-h-0 w-full min-w-0 flex-col border-l bg-surface-sunken outline-none motion-safe:animate-in motion-safe:duration-300 motion-safe:ease-(--ease-out-quint) motion-safe:fade-in motion-safe:slide-in-from-right-4"
         aria-label="Información del cliente y de la conversación"
     >
         <header
@@ -295,7 +309,7 @@ function safeUrl(url: string | null): string | null {
             one after another when the panel opens.
         -->
         <div
-            class="grid min-h-0 flex-1 reveal-stagger auto-rows-max content-start gap-3 overflow-y-auto p-3"
+            class="grid min-h-0 flex-1 reveal-stagger auto-rows-max grid-cols-1 content-start gap-3 overflow-x-hidden overflow-y-auto p-3"
         >
             <section
                 class="relative grid grid-cols-1 gap-3 rounded-xl border bg-card px-4 pt-4 pb-4"
@@ -331,9 +345,9 @@ function safeUrl(url: string | null): string | null {
                             @error="photoFailed = true"
                         />
                     </component>
-                    <div class="min-w-0 pt-1">
+                    <div class="min-w-0 flex-1 pt-1">
                         <p
-                            class="truncate text-lg leading-snug font-semibold"
+                            class="line-clamp-2 text-lg leading-snug font-semibold break-words"
                             :title="details.contact.name"
                         >
                             {{ details.contact.name }}
@@ -504,7 +518,7 @@ function safeUrl(url: string | null): string | null {
 
             <section
                 v-if="conversation.sla"
-                class="grid gap-3 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
+                class="grid min-w-0 grid-cols-1 gap-3 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
                 data-sla-details
             >
                 <h3 class="section-title">Tiempo de respuesta (SLA)</h3>
@@ -512,7 +526,7 @@ function safeUrl(url: string | null): string | null {
             </section>
 
             <section
-                class="grid gap-3 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
+                class="grid min-w-0 grid-cols-1 gap-3 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
             >
                 <h3 class="section-title">Conversación</h3>
                 <dl
@@ -656,7 +670,7 @@ function safeUrl(url: string | null): string | null {
             <RequestFieldsSection :conversation="conversation" />
 
             <section
-                class="grid gap-2.5 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
+                class="grid min-w-0 grid-cols-1 gap-2.5 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
             >
                 <h3 class="flex items-center gap-1.5 section-title">
                     <Megaphone class="size-3.5" aria-hidden="true" />
@@ -702,18 +716,23 @@ function safeUrl(url: string | null): string | null {
             </section>
 
             <!--
-                «Solicitudes anteriores»: each previous conversation told as
-                the request it was (whose client, where it ended), the latest
-                five first; «Conversación completa» reads them all as one chat.
+                «Solicitudes del contacto»: each conversation of the contact
+                told as the request it was (whose client, where it ended),
+                newest first, the one being viewed marked «Estás aquí» and not
+                clickable; «Conversación completa» reads them all as one chat.
             -->
             <section
-                class="grid gap-2.5 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
+                class="grid min-w-0 grid-cols-1 gap-2.5 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
                 data-previous-requests
             >
-                <div class="flex items-center justify-between gap-2">
-                    <h3 class="flex items-center gap-1.5 section-title">
-                        <History class="size-3.5" aria-hidden="true" />
-                        Solicitudes anteriores
+                <div
+                    class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1"
+                >
+                    <h3
+                        class="flex items-center gap-1.5 section-title whitespace-nowrap"
+                    >
+                        <History class="size-3.5 shrink-0" aria-hidden="true" />
+                        Solicitudes del contacto
                         <span
                             v-if="previousTotal > 0"
                             class="font-normal text-muted-foreground tabular-nums"
@@ -723,7 +742,7 @@ function safeUrl(url: string | null): string | null {
                     <Button
                         variant="ghost"
                         size="sm"
-                        class="-mr-2 h-7 shrink-0 rounded-full px-2 text-xs text-primary pointer-coarse:h-10"
+                        class="-ml-2 h-7 shrink-0 rounded-full px-2 text-xs text-primary pointer-coarse:h-10"
                         title="Ver todos los mensajes del contacto, de todas sus solicitudes, en orden de fecha"
                         data-open-full-history
                         @click="openFullHistory"
@@ -732,30 +751,62 @@ function safeUrl(url: string | null): string | null {
                         Conversación completa
                     </Button>
                 </div>
-                <ul v-if="details.history.length > 0" class="grid gap-1.5">
+                <ul
+                    v-if="details.history.length > 0"
+                    class="grid grid-cols-1 gap-1.5"
+                >
                     <li
                         v-for="previous in visiblePrevious"
                         :key="previous.id"
                         data-previous-request
+                        :data-current="
+                            isCurrentRequest(previous) ? '' : undefined
+                        "
                     >
-                        <!-- History archived as read-only opens in «Historial de Whaticket». -->
+                        <!--
+                            The one being viewed is not a link; history archived
+                            as read-only opens in «Historial de Whaticket».
+                        -->
                         <component
-                            :is="previous.history_only ? Link : 'button'"
-                            v-bind="
-                                previous.history_only && previous.history_url
-                                    ? { href: previous.history_url }
-                                    : { type: 'button' }
+                            :is="
+                                isCurrentRequest(previous)
+                                    ? 'div'
+                                    : previous.history_only
+                                      ? Link
+                                      : 'button'
                             "
-                            class="grid w-full gap-0.5 rounded-lg border bg-surface-sunken/50 px-2.5 py-2 text-left outline-none hover:border-border-strong hover:bg-card focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
+                            v-bind="
+                                isCurrentRequest(previous)
+                                    ? { 'aria-current': 'page' }
+                                    : previous.history_only &&
+                                        previous.history_url
+                                      ? { href: previous.history_url }
+                                      : { type: 'button' }
+                            "
+                            class="grid w-full min-w-0 grid-cols-1 gap-0.5 rounded-lg border px-2.5 py-2 text-left outline-none pointer-coarse:min-h-11"
+                            :class="
+                                isCurrentRequest(previous)
+                                    ? 'border-primary/40 bg-primary-soft ring-1 ring-primary/30'
+                                    : 'bg-surface-sunken/50 hover:border-border-strong hover:bg-card focus-visible:ring-2 focus-visible:ring-ring'
+                            "
                             @click="
+                                isCurrentRequest(previous) ||
                                 previous.history_only
                                     ? undefined
                                     : emit('select', previous.id)
                             "
                         >
-                            <span class="flex min-w-0 items-start gap-2">
+                            <span
+                                v-if="isCurrentRequest(previous)"
+                                class="justify-self-start rounded-full bg-primary px-1.5 py-px text-[0.6875rem] font-semibold text-primary-foreground"
+                                data-current-badge
+                                >Estás aquí</span
+                            >
+                            <span
+                                class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1"
+                            >
                                 <span
-                                    class="min-w-0 flex-1 truncate text-sm font-medium"
+                                    class="line-clamp-2 min-w-0 flex-1 basis-40 text-sm font-medium break-words"
                                     :class="
                                         !previous.client &&
                                         'font-normal text-muted-foreground italic'
@@ -771,7 +822,7 @@ function safeUrl(url: string | null): string | null {
                                 >
                             </span>
                             <span
-                                class="block truncate text-xs text-muted-foreground"
+                                class="block text-xs break-words text-muted-foreground"
                             >
                                 <time
                                     :datetime="previous.created_at ?? undefined"
@@ -787,7 +838,7 @@ function safeUrl(url: string | null): string | null {
                                 >
                             </span>
                             <span
-                                class="block truncate text-xs text-muted-foreground"
+                                class="block text-xs break-words text-muted-foreground"
                             >
                                 {{
                                     previous.department?.name ??
@@ -811,7 +862,13 @@ function safeUrl(url: string | null): string | null {
                     class="flex items-center gap-2 text-sm text-muted-foreground"
                 >
                     <History class="size-4 shrink-0" aria-hidden="true" />
-                    Sin solicitudes anteriores
+                    Sin solicitudes del contacto
+                </p>
+                <p
+                    v-if="previousTotal === 1 && details.history.length === 1"
+                    class="text-xs text-muted-foreground"
+                >
+                    Es la única solicitud de este contacto.
                 </p>
                 <Button
                     v-if="details.history.length > PREVIOUS_VISIBLE"
@@ -842,7 +899,7 @@ function safeUrl(url: string | null): string | null {
 
             <section
                 v-if="details.contactNotes !== null"
-                class="grid gap-2 rounded-xl border bg-card px-4 py-4 text-sm"
+                class="grid min-w-0 grid-cols-1 gap-2 rounded-xl border bg-card px-4 py-4 text-sm"
             >
                 <h3 class="flex items-center gap-1.5 section-title">
                     <NotebookPen class="size-3.5" aria-hidden="true" />

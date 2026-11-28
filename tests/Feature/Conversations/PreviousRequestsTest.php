@@ -2,6 +2,7 @@
 
 use App\Enums\ConversationOrigin;
 use App\Enums\ConversationOutcome;
+use App\Enums\ConversationReadiness;
 use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
 use App\Enums\MessageType;
@@ -15,7 +16,8 @@ use Carbon\CarbonImmutable;
 use Inertia\Testing\AssertableInertia as Assert;
 
 /*
-| «Solicitudes anteriores» (details panel) tells each previous conversation
+| «Solicitudes del contacto» (details panel) tells each conversation of the
+| contact, the one being viewed included and flagged `current`, newest first,
 | as the request it was: whose client, its facts, who attended it and where
 | it ended. «Conversación completa» reads every visible conversation of the
 | contact as one chat, paged backwards with a cursor, with a boundary per
@@ -96,11 +98,13 @@ test('previous requests say whose client they were and where they ended', functi
     $this->actingAs($this->agent)
         ->get(route('conversations.index', ['c' => $this->conversation->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('details.historyTotal', 4)
+            ->where('details.historyTotal', 5)
             ->where('details.history', function ($history) use ($approved, $rejected, $completed, $closed) {
                 $rows = collect($history)->keyBy('id');
 
-                expect($rows->keys()->all())->toBe([$closed->id, $completed->id, $rejected->id, $approved->id])
+                expect($rows->keys()->all())->toBe([$this->conversation->id, $closed->id, $completed->id, $rejected->id, $approved->id])
+                    ->and($rows->filter(fn (array $row): bool => $row['current'])->keys()->all())->toBe([$this->conversation->id])
+                    ->and($rows[$this->conversation->id]['result']['value'])->toBe('open')
                     ->and($rows[$approved->id])->toMatchArray([
                         'client' => 'BEATRIZ GUERRERO OLVERA',
                         'type' => 'Reactivación',
@@ -128,8 +132,8 @@ test('an outcome only counts once the request was completed', function () {
     $this->actingAs($this->agent)
         ->get(route('conversations.index', ['c' => $this->conversation->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('details.history.0.id', $previous->id)
-            ->where('details.history.0.result.value', 'closed'));
+            ->where('details.history.1.id', $previous->id)
+            ->where('details.history.1.result.value', 'closed'));
 });
 
 test('previous requests only list what the viewer may see, and count only that', function () {
@@ -139,8 +143,55 @@ test('previous requests only list what the viewer may see, and count only that',
     $this->actingAs($this->agent)
         ->get(route('conversations.index', ['c' => $this->conversation->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('details.historyTotal', 1)
-            ->where('details.history', fn ($history) => collect($history)->pluck('id')->all() === [$own->id]));
+            ->where('details.historyTotal', 2)
+            ->where('details.history', fn ($history) => collect($history)->pluck('id')->all() === [$this->conversation->id, $own->id]));
+});
+
+test('the contact requests list newer ones first and the viewed one in its place', function () {
+    $older = previousRequest($this, $this->agent, '2026-11-20 10:00:00');
+    $newer = previousRequest($this, $this->agent, '2026-11-25 10:00:00', ['request_fields' => requestFieldsOf('CLIENTE NUEVO')]);
+    $viewed = previousRequest($this, $this->agent, '2026-11-22 10:00:00', ['not_request_at' => now()]);
+
+    $this->actingAs($this->agent)
+        ->get(route('conversations.index', ['c' => $viewed->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('details.historyTotal', 4)
+            ->where('details.history', function ($history) use ($older, $newer, $viewed) {
+                $rows = collect($history);
+
+                expect($rows->pluck('id')->all())->toBe([$this->conversation->id, $newer->id, $viewed->id, $older->id])
+                    ->and($rows->pluck('current', 'id')->all())->toBe([$this->conversation->id => false, $newer->id => false, $viewed->id => true, $older->id => false])
+                    ->and($rows->firstWhere('id', $viewed->id)['result']['value'])->toBe('not_request');
+
+                return true;
+            }));
+});
+
+test('a request waiting for information says so', function () {
+    $this->conversation->forceFill(['readiness' => ConversationReadiness::NeedsInfo])->save();
+
+    $this->actingAs($this->agent)
+        ->get(route('conversations.index', ['c' => $this->conversation->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('details.history.0.current', true)
+            ->where('details.history.0.result', ['value' => 'open', 'label' => 'Esperando información', 'amount' => null]));
+});
+
+test('the viewed request is listed even past the limit, counted once', function () {
+    $this->conversation->forceFill(['created_at' => CarbonImmutable::parse('2026-01-01 10:00:00', 'UTC')])->save();
+    // The viewed conversation has the lowest id: 25 newer ones fill the list.
+    foreach (range(1, 25) as $day) {
+        previousRequest($this, $this->agent, '2026-11-01 10:00:00');
+    }
+
+    $this->actingAs($this->agent)
+        ->get(route('conversations.index', ['c' => $this->conversation->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('details.historyTotal', 26)
+            ->has('details.history', 26)
+            ->where('details.history.25.id', $this->conversation->id)
+            ->where('details.history.25.current', true)
+            ->where('details.history.0.current', false));
 });
 
 test('the full history reads every visible conversation of the contact in chronological order, with a boundary per request', function () {

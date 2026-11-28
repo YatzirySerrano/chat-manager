@@ -274,13 +274,13 @@ test('the details panel only summarizes previous conversations the viewer may se
     $this->actingAs($this->agent)
         ->get(route('conversations.index', ['c' => $this->conversation->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('details.history', fn ($history) => collect($history)->pluck('id')->all() === [$previousOwn->id]));
+            ->where('details.history', fn ($history) => collect($history)->pluck('id')->all() === [$previousOwn->id, $this->conversation->id]));
 
     $admin = User::factory()->administrator()->create();
 
     $this->actingAs($admin)
         ->get(route('conversations.index', ['c' => $this->conversation->id]))
-        ->assertInertia(fn (Assert $page) => $page->has('details.history', 2));
+        ->assertInertia(fn (Assert $page) => $page->has('details.history', 3));
 });
 
 test('a team scope user only opens conversations of their departments', function () {

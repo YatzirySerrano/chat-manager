@@ -35,6 +35,12 @@ enum ConversationEventType: string
     case NotRequest = 'not_request';
     /** «Deshacer» right after «No es solicitud»: back where it was (UndoNotRequest). */
     case NotRequestUndone = 'not_request_undone';
+    /**
+     * «Corregir tamaño de la solicitud»: messages were moved between this
+     * request and the one next to it, or one absorbed the other
+     * (AdjustRequestBoundary). Recorded on both.
+     */
+    case BoundaryAdjusted = 'boundary_adjusted';
 
     public function label(): string
     {
@@ -63,6 +69,7 @@ enum ConversationEventType: string
             self::OutcomeRecorded => 'Resultado de la solicitud registrado',
             self::NotRequest => 'No es solicitud',
             self::NotRequestUndone => 'Se deshizo «No es solicitud»',
+            self::BoundaryAdjusted => 'Tamaño de la solicitud corregido',
         };
     }
 
@@ -92,6 +99,7 @@ enum ConversationEventType: string
             self::OutcomeRecorded => 'registró el resultado de la solicitud',
             self::NotRequest => 'marcó que no es solicitud',
             self::NotRequestUndone => 'deshizo «No es solicitud»',
+            self::BoundaryAdjusted => 'corrigió el tamaño de la solicitud',
             self::AutoAssigned, self::OutboundBlocked, self::MessageFailed, self::SlaBreached, self::ChatbotRouted, self::AiHandoff => null,
         };
     }

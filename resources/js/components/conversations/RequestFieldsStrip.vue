@@ -3,7 +3,10 @@ import { ChevronUp, ClipboardList, Pencil } from '@lucide/vue';
 import { useElementSize } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 import RequestFieldsDialog from '@/components/conversations/RequestFieldsDialog.vue';
-import { copyRequestField } from '@/components/conversations/requestFields';
+import {
+    copyRequestField,
+    displayRequestFieldValue,
+} from '@/components/conversations/requestFields';
 import { Button } from '@/components/ui/button';
 import type { ConversationMessage, ConversationSummary } from '@/types';
 
@@ -88,13 +91,15 @@ defineExpose({ capture });
                 <button
                     type="button"
                     class="inline-flex max-w-44 items-center gap-1 rounded-full border bg-muted/50 px-2 py-0.5 text-xs transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:max-w-64"
-                    :title="`${field.label}: ${field.value} (clic para copiar)`"
+                    :title="`${field.label}: ${displayRequestFieldValue(field)} (clic para copiar)`"
                     @click="copyRequestField(field)"
                 >
                     <span class="shrink-0 text-muted-foreground"
                         >{{ field.label }}:</span
                     >
-                    <span class="truncate font-medium">{{ field.value }}</span>
+                    <span class="truncate font-medium">{{
+                        displayRequestFieldValue(field)
+                    }}</span>
                 </button>
             </li>
             <li v-if="hidden > 0" class="shrink-0">

@@ -112,3 +112,18 @@ test('the resolution variables are filled from the conversation', function () {
     expect($renderer->render('{solicitud.monto_autorizado} / {solicitud.desembolso} / {solicitud.cantidad_a_pagar}', $renderer->context(conversation: $conversation))['text'])
         ->toBe('$3,000 / $2,130 / $398');
 });
+
+test('amounts are inserted with the sign and thousands separators', function () {
+    $body = "Se autoriza renovación\nMonto autorizado: \$\nDesembolso:\nCantidad a pagar: \$\nProducto:";
+    $values = ['monto_autorizado' => '3000', 'desembolso' => '2130.5', 'cantidad_a_pagar' => 'a revisar', 'producto' => '1000'];
+
+    expect(fillLines($body, $values)['text'])
+        ->toBe("Se autoriza renovación\nMonto autorizado: \$3,000\nDesembolso: \$2,130.50\nCantidad a pagar: \$a revisar\nProducto: 1000");
+
+    $renderer = app(QuickReplyRenderer::class);
+    $conversation = Conversation::factory()->create(['request_fields' => [
+        ['key' => 'monto_solicitado', 'label' => 'Monto solicitado', 'value' => '12500'],
+    ]]);
+
+    expect($renderer->render('{solicitud.monto_solicitado}', $renderer->context(conversation: $conversation))['text'])->toBe('$12,500');
+});

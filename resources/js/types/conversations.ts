@@ -54,6 +54,8 @@ export type ConversationAbilities = {
     categorize: boolean;
     /** May record or correct the credit result of the completed request. */
     record_outcome?: boolean;
+    /** May correct the resolution amounts (monto autorizado, desembolso, cantidad a pagar) of the completed request. */
+    correct_resolution?: boolean;
     /** May erase the chat for good (permanent-deletion.conversations, Superadministrador). */
     delete_permanently?: boolean;
 };
@@ -643,6 +645,45 @@ export type FullHistorySegment = {
     messages: ConversationMessage[];
     /** The page reached the conversation's first message. */
     starts: boolean;
+    /** «Corregir tamaño»: the viewer may move the boundary with the request before this one. */
+    can_adjust_boundary?: boolean;
+};
+
+/** One compact row of «Corregir tamaño de la solicitud». */
+export type RequestBoundaryMessage = {
+    id: number;
+    conversation_id: number;
+    direction: 'inbound' | 'outbound';
+    type: string;
+    at: string | null;
+    sender: string | null;
+    text: string | null;
+    file_name: string | null;
+    revoked: boolean;
+};
+
+/** What «Corregir tamaño de la solicitud» shows around the boundary (RequestBoundary::window()). */
+export type RequestBoundaryWindow = {
+    previous: RequestSummary & { version: number };
+    current: RequestSummary & { version: number };
+    /** The last messages of the earlier request and the first of the later one, oldest first. */
+    messages: RequestBoundaryMessage[];
+    previous_total: number;
+    current_total: number;
+    /** The earlier request has older messages than the ones listed. */
+    previous_more: boolean;
+    /** The later request has newer messages than the ones listed. */
+    current_more: boolean;
+};
+
+export type RequestBoundaryResult = {
+    previous_id: number;
+    current_id: number;
+    moved_to_previous: number;
+    moved_to_current: number;
+    merged: 'into_previous' | 'into_current' | null;
+    survivor_id: number | null;
+    message: string;
 };
 
 export type FullHistoryPage = {
@@ -678,9 +719,13 @@ export type ConversationDetails = {
     /** «Perfil de WhatsApp»; null when the contact has no WhatsApp identity. */
     whatsappProfile?: WhatsAppProfile | null;
     origin: ContactAttribution[];
-    /** «Solicitudes anteriores»: the latest ones the viewer may see. */
-    history: (RequestSummary & ConversationOriginInfo)[];
-    /** How many previous conversations the viewer may see (`history` holds the latest of them). */
+    /**
+     * «Solicitudes del contacto»: the latest ones the viewer may see, newest
+     * first, the one being viewed included (`current`) even past the limit.
+     */
+    history: (RequestSummary &
+        ConversationOriginInfo & { current?: boolean })[];
+    /** How many of the contact's conversations the viewer may see, this one included. */
     historyTotal?: number;
     contactNotes:
         | {

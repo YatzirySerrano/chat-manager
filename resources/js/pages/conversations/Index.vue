@@ -1006,7 +1006,7 @@ function onAliasSaved(): void {
 
         <div
             v-if="showDetailsColumn && conversation && window && details"
-            class="min-h-0"
+            class="min-h-0 min-w-0 overflow-hidden"
         >
             <ConversationDetailsPanel
                 :conversation="conversation"

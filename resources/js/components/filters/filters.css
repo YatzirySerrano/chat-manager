@@ -229,9 +229,13 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+    /* Hidden at once (no cross-fade): the time never shows through the bar. */
     .list-item:hover .list-time,
-    .list-item:focus-within .list-time {
+    .list-item:focus-within .list-time,
+    .list-item:has(.list-quick [data-state='open']) .list-time {
         opacity: 0;
+        visibility: hidden;
+        transition-duration: 0s;
     }
 }
 

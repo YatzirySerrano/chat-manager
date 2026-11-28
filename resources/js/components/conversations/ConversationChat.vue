@@ -200,6 +200,21 @@ useChannel(
             }
 
             /*
+             * «Corregir tamaño de la solicitud» moved messages in or out of
+             * this chat (or joined it into another request): everything is
+             * read again from scratch.
+             */
+            if (payload.reason === 'boundary_adjusted') {
+                afterVisit(() =>
+                    router.reload({
+                        onSuccess: () => timeline.reload(props.timeline),
+                    }),
+                );
+
+                return;
+            }
+
+            /*
              * A change of one message (its media finished downloading, a
              * download link was revoked) names that message: only it is
              * read again. Without the id, the whole selection is reloaded.
@@ -529,7 +544,7 @@ watch(conversationId, () => (dragDepth.value = 0));
         -->
         <div ref="header" :class="CHAT_TOPBAR">
             <header
-                class="chat-header @container/chat-header flex min-h-14 items-center gap-2 px-2 py-2 sm:min-h-16 sm:gap-3 sm:px-4 [@media(max-height:32rem)]:min-h-0 [@media(max-height:32rem)]:py-0.5"
+                class="chat-header @container/chat-header flex min-h-14 flex-wrap items-center gap-2 px-2 py-2 sm:min-h-16 sm:px-4 2xl:gap-3 [@media(max-height:32rem)]:min-h-0 [@media(max-height:32rem)]:py-0.5"
             >
                 <Button
                     variant="ghost"
@@ -571,7 +586,7 @@ watch(conversationId, () => (dragDepth.value = 0));
                 </span>
                 <button
                     type="button"
-                    class="@container min-w-0 flex-1 rounded-xl px-2 py-1 text-left transition-colors duration-(--duration-fast) outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring"
+                    class="@container min-w-24 flex-1 basis-0 rounded-xl px-2 py-1 text-left transition-colors duration-(--duration-fast) outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring"
                     :title="
                         detailsOpen
                             ? 'Ocultar detalles'
